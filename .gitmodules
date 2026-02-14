@@ -1,0 +1,3 @@
+[submodule "docs"]
+	path = docs
+	url = https://git.logal.dev/LogalDeveloper/Owlbot.wiki.git
