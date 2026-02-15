@@ -162,6 +162,6 @@ class HttpServer:
 
         return web.Response(status=202)
 
-    async def _handle_catch_all(self, request: web.Request) -> web.Response:
+    async def _handle_catch_all(self, request: web.Request) -> web.StreamResponse:
         """Delegate module route requests to the RouteDispatcher."""
         return await self._route_dispatcher.dispatch(request)

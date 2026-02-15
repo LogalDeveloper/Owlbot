@@ -330,7 +330,7 @@ class RouteDispatcher:
         """
         return self._route_registry.unregister_by_module(module_name)
 
-    async def dispatch(self, request: web.Request) -> web.Response:
+    async def dispatch(self, request: web.Request) -> web.StreamResponse:
         """
         Dispatch an HTTP request to the appropriate module route handler.
 
@@ -371,7 +371,7 @@ class RouteDispatcher:
         request: web.Request,
         route_info: RouteInfo,
         match_info: dict[str, str] | None = None,
-    ) -> web.Response:
+    ) -> web.StreamResponse:
         """
         Handle an HTTP request to a module-registered route.
 
@@ -418,7 +418,7 @@ class RouteDispatcher:
 
                 if result is None:
                     return web.Response(status=204)  # No Content.
-                elif isinstance(result, web.Response):
+                elif isinstance(result, web.StreamResponse):
                     return result
                 elif isinstance(result, dict):
                     return web.json_response(result)

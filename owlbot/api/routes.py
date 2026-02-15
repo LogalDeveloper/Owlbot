@@ -38,9 +38,9 @@ class RouteMark(TypedDict):
     methods: list[str] | None
 
 
-# Handler type: receives RouteContext, returns web.Response or dict (auto-JSON).
+# Handler type: receives RouteContext, returns a response or dict (auto-JSON).
 type RouteHandler = (
-    "Callable[[RouteContext], Awaitable[web.Response | dict[str, Any] | None]]"
+    "Callable[[RouteContext], Awaitable[web.StreamResponse | dict[str, Any] | None]]"
 )
 
 
