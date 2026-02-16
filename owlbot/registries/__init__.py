@@ -19,15 +19,12 @@ from .events import EventDispatcher, EventRegistry, ModuleEvents
 from .routes import ModuleRoutes, RouteDispatcher, RouteRegistry
 
 __all__ = [
-    # Commands.
     "CommandDispatcher",
     "CommandRegistry",
-    "ModuleCommands",
-    # Events.
     "EventDispatcher",
     "EventRegistry",
+    "ModuleCommands",
     "ModuleEvents",
-    # Routes.
     "ModuleRoutes",
     "RouteDispatcher",
     "RouteRegistry",

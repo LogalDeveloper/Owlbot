@@ -175,7 +175,8 @@ class ModuleStorage:
 
         :param sql: SELECT statement.
         :param parameters: Query parameters.
-        :return: List of rows as sqlite3.Row objects (support both index and key access).
+        :return: List of rows as sqlite3.Row objects
+            (support both index and key access).
         :raises StorageError: If execution fails.
         """
         async with self._connection() as conn:
