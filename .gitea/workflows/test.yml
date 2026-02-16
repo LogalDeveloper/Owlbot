@@ -30,4 +30,7 @@ jobs:
         run: uv sync
 
       - name: Run unit tests with Pytest
-        run: uv run pytest -v
+        run: uv run pytest -v --cov --cov-report=
+
+      - name: Report code coverage
+        run: uv run coverage report
