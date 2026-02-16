@@ -19,45 +19,15 @@ templates and user scenarios.
 """
 
 import random
-from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import ClassVar
-from unittest.mock import patch
 
 import aiosqlite
 import pytest
+from freezegun import freeze_time
 
-import owlbot.builtin_modules.custom_commands.placeholder_handlers as _ph
 from owlbot.builtin_modules.custom_commands.placeholder_handlers import _format_duration
 from owlbot.builtin_modules.custom_commands.placeholders import process_placeholders
-
-_real_datetime = datetime
-
-
-class _FrozenDatetime(datetime):
-    """datetime subclass whose now() returns a fixed instant."""
-
-    _frozen: datetime
-
-    @classmethod
-    def now(cls, tz=None):
-        return cls._frozen
-
-
-@contextmanager
-def freeze_time(year, month, day, hour=0, minute=0, second=0):
-    """Temporarily replace datetime in placeholder_handlers with a frozen clock."""
-    _FrozenDatetime._frozen = _real_datetime(
-        year,
-        month,
-        day,
-        hour,
-        minute,
-        second,
-        tzinfo=UTC,
-    )
-    with patch.object(_ph, "datetime", _FrozenDatetime):
-        yield _FrozenDatetime._frozen
 
 
 class MockStorage:
@@ -583,17 +553,19 @@ class TestCountdownCountup:
 
     async def test_countdown_future_date(self):
         """$(countdown) with a future date returns the formatted duration."""
-        with freeze_time(2026, 6, 15, 12, 0, 0) as now:
+        with freeze_time("2026-06-15 12:00:00", tz_offset=0):
+            now = datetime.now(UTC)
             # Dec 25 2099 00:00:00 EST = Dec 25 2099 05:00:00 UTC
-            target = _real_datetime(2099, 12, 25, 5, 0, 0, tzinfo=UTC)
+            target = datetime(2099, 12, 25, 5, 0, 0, tzinfo=UTC)
             expected = _format_duration(int((target - now).total_seconds()))
             result = await process("$(countdown Dec 25 2099 12:00:00 AM EST)")
             assert result == expected
 
     async def test_countup_past_date(self):
         """$(countup) with a past date returns the formatted elapsed duration."""
-        with freeze_time(2026, 6, 15, 12, 0, 0) as now:
-            target = _real_datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
+        with freeze_time("2026-06-15 12:00:00", tz_offset=0):
+            now = datetime.now(UTC)
+            target = datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
             expected = _format_duration(int((now - target).total_seconds()))
             result = await process("$(countup Jan 1 2020 12:00:00 AM UTC)")
             assert result == expected
@@ -642,9 +614,10 @@ class TestCountdownCountup:
 
     async def test_fractional_timezone_offset(self):
         """A fractional timezone offset like IST (UTC+5:30) is applied correctly."""
-        with freeze_time(2026, 6, 15, 12, 0, 0) as now:
+        with freeze_time("2026-06-15 12:00:00", tz_offset=0):
+            now = datetime.now(UTC)
             # Jan 1 2020 12:00:00 AM IST = Dec 31 2019 18:30:00 UTC
-            target = _real_datetime(2019, 12, 31, 18, 30, 0, tzinfo=UTC)
+            target = datetime(2019, 12, 31, 18, 30, 0, tzinfo=UTC)
             expected = _format_duration(int((now - target).total_seconds()))
             result = await process("$(countup Jan 1 2020 12:00:00 AM IST)")
             assert result == expected
@@ -905,8 +878,9 @@ class TestCaseInsensitivity:
 
     async def test_countup_case_insensitive(self):
         """$(COUNTUP) resolves the same as $(countup)."""
-        with freeze_time(2026, 6, 15, 12, 0, 0) as now:
-            target = _real_datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
+        with freeze_time("2026-06-15 12:00:00", tz_offset=0):
+            now = datetime.now(UTC)
+            target = datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
             expected = _format_duration(int((now - target).total_seconds()))
             result = await process("$(COUNTUP Jan 1 2020 12:00:00 AM UTC)")
             assert result == expected
