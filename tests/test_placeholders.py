@@ -19,10 +19,9 @@ templates and user scenarios.
 """
 
 import random
+import sqlite3
 from datetime import UTC, datetime
-from typing import ClassVar
 
-import aiosqlite
 import pytest
 from freezegun import freeze_time
 
@@ -33,51 +32,26 @@ from owlbot.builtin_modules.custom_commands.placeholders import process_placehol
 class MockStorage:
     """In-memory SQLite storage that executes real SQL queries."""
 
-    _instances: ClassVar[list[MockStorage]] = []
-
     def __init__(self, counter_values=None):
-        self._seed_data = counter_values or {}
-        self._conn = None
-        MockStorage._instances.append(self)
-
-    async def _ensure_conn(self):
-        if self._conn is not None:
-            return
-        self._conn = await aiosqlite.connect(":memory:")
-        self._conn.row_factory = aiosqlite.Row
-        await self._conn.execute(
+        self._conn = sqlite3.connect(":memory:")
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute(
             "CREATE TABLE counters ("
             "name TEXT PRIMARY KEY NOT NULL, "
             "value INTEGER DEFAULT 0)"
         )
-        for name, value in self._seed_data.items():
-            await self._conn.execute(
+        for name, value in (counter_values or {}).items():
+            self._conn.execute(
                 "INSERT INTO counters (name, value) VALUES (?, ?)",
                 (name, value),
             )
-        await self._conn.commit()
+        self._conn.commit()
 
     async def fetch_one(self, query, params=None):
-        await self._ensure_conn()
-        cursor = await self._conn.execute(query, params or ())
-        row = await cursor.fetchone()
-        await self._conn.commit()
+        cursor = self._conn.execute(query, params or ())
+        row = cursor.fetchone()
+        self._conn.commit()
         return row
-
-    async def close(self):
-        if self._conn is not None:
-            await self._conn.close()
-            self._conn = None
-
-
-@pytest.fixture(autouse=True)
-async def _close_mock_storages():
-    """Close all MockStorage connections after each test."""
-    MockStorage._instances.clear()
-    yield
-    for storage in MockStorage._instances:
-        await storage.close()
-    MockStorage._instances.clear()
 
 
 async def process(
@@ -198,20 +172,18 @@ class TestArgPlaceholders:
         result = await process("[$(1)] [$(2)] [$(3)]")
         assert result == "[] [] []"
 
-    async def test_zero_is_not_a_valid_arg_index(self):
-        """$(0) is not a valid positional argument and passes through unchanged."""
-        result = await process("$(0)", args=["first"])
-        assert result == "$(0)"
-
-    async def test_out_of_range_numeric_placeholder(self):
-        """$(10) is not registered (only 1-9), so it passes through."""
-        result = await process("$(10)", args=["a"] * 10)
-        assert result == "$(10)"
-
-    async def test_high_numeric_placeholder_passthrough(self):
-        """$(99) passes through as an unknown placeholder."""
-        result = await process("$(99)")
-        assert result == "$(99)"
+    @pytest.mark.parametrize(
+        "template,args,expected",
+        [
+            ("$(0)", ["first"], "$(0)"),
+            ("$(10)", ["a"] * 10, "$(10)"),
+            ("$(99)", [], "$(99)"),
+        ],
+    )
+    async def test_invalid_arg_index_passthrough(self, template, args, expected):
+        """Out-of-range or unregistered numeric indices pass through unchanged."""
+        result = await process(template, args=args)
+        assert result == expected
 
     async def test_empty_string_argument(self):
         """$(1) with an empty string argument returns an empty string."""
@@ -417,17 +389,10 @@ class TestCounterNameValidation:
         )
         assert row["value"] == 1
 
-    async def test_count_hyphen_in_name_rejected(self):
-        """Hyphens are not allowed in counter names."""
-        result = await process("$(count boss-kills)")
-        assert result == (
-            "Invalid $(count): counter name may only contain "
-            "letters, numbers, and underscores"
-        )
-
-    async def test_count_dot_in_name_rejected(self):
-        """Dots are not allowed in counter names."""
-        result = await process("$(count boss.kills)")
+    @pytest.mark.parametrize("name", ["boss-kills", "boss.kills", "+5", "-3"])
+    async def test_count_invalid_name_rejected(self, name):
+        """Names with hyphens, dots, or leading +/- are rejected."""
+        result = await process(f"$(count {name})")
         assert result == (
             "Invalid $(count): counter name may only contain "
             "letters, numbers, and underscores"
@@ -451,22 +416,6 @@ class TestCounterNameValidation:
         result = await process("$(getcount boss-kills)")
         assert result == (
             "Invalid $(getcount): counter name may only contain "
-            "letters, numbers, and underscores"
-        )
-
-    async def test_count_modifier_syntax_as_name_rejected(self):
-        """$(count +5) treats '+5' as the counter name, which fails validation."""
-        result = await process("$(count +5)")
-        assert result == (
-            "Invalid $(count): counter name may only contain "
-            "letters, numbers, and underscores"
-        )
-
-    async def test_count_negative_modifier_syntax_as_name_rejected(self):
-        """$(count -3) treats '-3' as the counter name, which fails validation."""
-        result = await process("$(count -3)")
-        assert result == (
-            "Invalid $(count): counter name may only contain "
             "letters, numbers, and underscores"
         )
 
@@ -575,9 +524,17 @@ class TestCountdownCountup:
         result = await process("$(countdown Jan 1 2000 12:00:00 AM UTC)")
         assert result == "0 seconds"
 
-    async def test_countdown_invalid_date(self):
+    @pytest.mark.parametrize(
+        "bad_date",
+        [
+            "not a real date",
+            "monday",
+            "Dec 25 2099 12:00:00 AM XYZ",
+        ],
+    )
+    async def test_countdown_invalid_date(self, bad_date):
         """$(countdown) with an unparseable date reports an error."""
-        result = await process("$(countdown not a real date)")
+        result = await process(f"$(countdown {bad_date})")
         assert result == (
             "Invalid $(countdown): unrecognized date format, "
             "expected $(countdown Dec 25 2025 12:00:00 AM EST)"
@@ -589,22 +546,6 @@ class TestCountdownCountup:
         assert result == (
             "Invalid $(countup): unrecognized date format, "
             "expected $(countup Dec 25 2025 12:00:00 AM EST)"
-        )
-
-    async def test_countdown_single_word_date(self):
-        """$(countdown) with a single-word date reports an error."""
-        result = await process("$(countdown monday)")
-        assert result == (
-            "Invalid $(countdown): unrecognized date format, "
-            "expected $(countdown Dec 25 2025 12:00:00 AM EST)"
-        )
-
-    async def test_unrecognized_timezone(self):
-        """$(countdown) with an unknown timezone abbreviation reports an error."""
-        result = await process("$(countdown Dec 25 2099 12:00:00 AM XYZ)")
-        assert result == (
-            "Invalid $(countdown): unrecognized date format, "
-            "expected $(countdown Dec 25 2025 12:00:00 AM EST)"
         )
 
     async def test_countup_future_date_returns_zero(self):
@@ -627,35 +568,28 @@ class TestCountdownCountup:
         result = await process("$(countdown Jan 1 2000 12:00:00 AM utc)")
         assert result == "0 seconds"
 
-    async def test_countdown_exactly_one_day(self):
-        """Exactly 86400 seconds formats as '1 day' in singular form."""
-        assert _format_duration(86400) == "1 day"
-
-    async def test_duration_singular_forms(self):
-        """Each time unit uses singular form when the value is exactly 1."""
-        assert _format_duration(1) == "1 second"
-        assert _format_duration(60) == "1 minute"
-        assert _format_duration(3600) == "1 hour"
-        assert _format_duration(86400) == "1 day"
-        assert _format_duration(90061) == "1 day 1 hour 1 minute 1 second"
-
-    async def test_duration_plural_forms(self):
-        """Each unit uses plural form when the value is greater than 1."""
-        assert _format_duration(172800) == "2 days"
-        assert _format_duration(7200) == "2 hours"
-        assert _format_duration(120) == "2 minutes"
-        assert _format_duration(2) == "2 seconds"
-        assert _format_duration(180183) == "2 days 2 hours 3 minutes 3 seconds"
-
-    async def test_duration_skipped_intermediate_units(self):
-        """Units with zero value are omitted from the output."""
-        assert _format_duration(86401) == "1 day 1 second"
-        assert _format_duration(3601) == "1 hour 1 second"
-        assert _format_duration(86460) == "1 day 1 minute"
-
-    async def test_duration_zero(self):
-        """Zero seconds produces '0 seconds'."""
-        assert _format_duration(0) == "0 seconds"
+    @pytest.mark.parametrize(
+        "seconds,expected",
+        [
+            (0, "0 seconds"),
+            (1, "1 second"),
+            (2, "2 seconds"),
+            (60, "1 minute"),
+            (120, "2 minutes"),
+            (3600, "1 hour"),
+            (7200, "2 hours"),
+            (86400, "1 day"),
+            (172800, "2 days"),
+            (3601, "1 hour 1 second"),
+            (86401, "1 day 1 second"),
+            (86460, "1 day 1 minute"),
+            (90061, "1 day 1 hour 1 minute 1 second"),
+            (180183, "2 days 2 hours 3 minutes 3 seconds"),
+        ],
+    )
+    async def test_format_duration(self, seconds, expected):
+        """_format_duration produces the correct human-readable string."""
+        assert _format_duration(seconds) == expected
 
 
 class TestNesting:
@@ -845,36 +779,25 @@ class TestEscaping:
 class TestCaseInsensitivity:
     """Placeholder names are lowercased before handler lookup."""
 
-    async def test_user_uppercase(self):
-        """$(USER) resolves the same as $(user)."""
-        result = await process("$(USER)")
-        assert result == "Alice"
-
-    async def test_user_mixed_case(self):
-        """$(User) resolves the same as $(user)."""
-        result = await process("$(User)")
-        assert result == "Alice"
-
-    async def test_rand_mixed_case(self):
-        """$(Rand) resolves the same as $(rand)."""
-        result = await process("$(Rand 1 1)")
-        assert result == "1"
-
-    async def test_count_uppercase(self):
-        """$(COUNT) resolves the same as $(count)."""
-        result = await process("$(COUNT)", use_count=5)
-        assert result == "5"
+    @pytest.mark.parametrize(
+        "template,kwargs,expected",
+        [
+            ("$(USER)", {}, "Alice"),
+            ("$(User)", {}, "Alice"),
+            ("$(Rand 1 1)", {}, "1"),
+            ("$(COUNT)", {"use_count": 5}, "5"),
+            ("$(COUNTDOWN Jan 1 2000 12:00:00 AM UTC)", {}, "0 seconds"),
+        ],
+    )
+    async def test_placeholder_name_case_ignored(self, template, kwargs, expected):
+        """Placeholder names are case-insensitive."""
+        assert await process(template, **kwargs) == expected
 
     async def test_getcount_mixed_case(self):
         """$(GetCount) resolves the same as $(getcount)."""
         storage = MockStorage({"x": 3})
         result = await process("$(GetCount x)", storage=storage)
         assert result == "3"
-
-    async def test_countdown_uppercase(self):
-        """$(COUNTDOWN) resolves the same as $(countdown)."""
-        result = await process("$(COUNTDOWN Jan 1 2000 12:00:00 AM UTC)")
-        assert result == "0 seconds"
 
     async def test_countup_case_insensitive(self):
         """$(COUNTUP) resolves the same as $(countup)."""
@@ -1041,36 +964,21 @@ class TestParserBoundaries:
 class TestUnknownPlaceholders:
     """Unknown placeholder names pass through unchanged."""
 
-    async def test_unknown_placeholder_passthrough(self):
-        """An unrecognized placeholder with arguments passes through unchanged."""
-        result = await process("$(madeup stuff)")
-        assert result == "$(madeup stuff)"
-
-    async def test_unknown_no_args_passthrough(self):
-        """An unrecognized placeholder with no arguments passes through unchanged."""
-        result = await process("$(banana)")
-        assert result == "$(banana)"
-
-    async def test_multiple_spaces_normalized(self):
-        """Extra whitespace inside an unknown placeholder is collapsed."""
-        result = await process("$(madeup   lots   of   space)")
-        assert result == "$(madeup lots of space)"
-
-    async def test_unknown_no_args_preserved(self):
-        """An unknown placeholder with no arguments stays as-is."""
-        result = await process("$(madeup)")
-        assert result == "$(madeup)"
-
-    async def test_unicode_name_passes_through(self):
-        """$(café) is parsed as a valid name but unknown,
-        and passes through unchanged."""
-        result = await process("$(café)")
-        assert result == "$(café)"
-
-    async def test_unicode_name_with_args(self):
-        """$(café latte) is unknown and passes through with arguments reconstructed."""
-        result = await process("$(café latte)")
-        assert result == "$(café latte)"
+    @pytest.mark.parametrize(
+        "template,expected",
+        [
+            ("$(madeup stuff)", "$(madeup stuff)"),
+            ("$(banana)", "$(banana)"),
+            ("$(madeup   lots   of   space)", "$(madeup lots of space)"),
+            ("$(madeup)", "$(madeup)"),
+            ("$(café)", "$(café)"),
+            ("$(café latte)", "$(café latte)"),
+        ],
+    )
+    async def test_unknown_placeholder_passthrough(self, template, expected):
+        """Unrecognized placeholders pass through unchanged."""
+        result = await process(template)
+        assert result == expected
 
 
 class TestEvaluationSafety:
@@ -1106,89 +1014,59 @@ class TestEvaluationSafety:
 class TestRuntimeErrors:
     """A PlaceholderError cancels the entire render and returns the message."""
 
-    async def test_rand_one_arg(self):
-        """$(rand) with only one argument reports too few."""
-        result = await process("$(rand 1)")
-        assert (
-            result == "Invalid $(rand): too few arguments, expected $(rand start stop)"
-        )
-
-    async def test_rand_no_args(self):
-        """$(rand) with no arguments reports too few."""
-        result = await process("$(rand)")
-        assert (
-            result == "Invalid $(rand): too few arguments, expected $(rand start stop)"
-        )
-
-    async def test_rand_three_args(self):
-        """$(rand) with three arguments reports too many."""
-        result = await process("$(rand 1 2 3)")
-        assert (
-            result == "Invalid $(rand): too many arguments, expected $(rand start stop)"
-        )
-
-    async def test_rand_non_integer(self):
-        """$(rand) with non-integer arguments reports a type error."""
-        result = await process("$(rand a b)")
-        assert (
-            result == "Invalid $(rand): arguments must be integers, e.g., $(rand 1 100)"
-        )
-
-    async def test_rand_float_args(self):
-        """$(rand) with float arguments reports a type error."""
-        result = await process("$(rand 1.5 2.5)")
-        assert (
-            result == "Invalid $(rand): arguments must be integers, e.g., $(rand 1 100)"
-        )
-
-    async def test_user_with_args(self):
-        """$(user) with unexpected arguments reports an error."""
-        result = await process("$(user extra)")
-        assert result == "Invalid $(user): does not accept arguments"
-
-    async def test_getcount_missing_name(self):
-        """$(getcount) with no counter name reports the omission."""
-        result = await process("$(getcount)")
-        assert result == "Invalid $(getcount): a counter name is required"
-
-    async def test_getcount_extra_args(self):
-        """$(getcount) with extra arguments reports too many."""
-        result = await process("$(getcount deaths extra)")
-        assert (
-            result
-            == "Invalid $(getcount): too many arguments, expected $(getcount name)"
-        )
-
-    async def test_count_bad_modifier(self):
-        """$(count) with a non-integer modifier reports a type error."""
-        result = await process("$(count deaths abc)")
-        assert (
-            result == "Invalid $(count): modifier must be an integer (e.g., +5, -1, 0)"
-        )
-
-    async def test_count_too_many_args(self):
-        """$(count) with three arguments reports too many."""
-        result = await process("$(count deaths +1 extra)")
-        assert (
-            result
-            == "Invalid $(count): too many arguments, expected $(count name [modifier])"
-        )
-
-    async def test_countdown_no_date(self):
-        """$(countdown) with no date argument reports the omission."""
-        result = await process("$(countdown)")
-        assert (
-            result == "Invalid $(countdown): missing date, expected"
-            " $(countdown Dec 25 2025 12:00:00 AM EST)"
-        )
-
-    async def test_countup_no_date(self):
-        """$(countup) with no date argument reports the omission."""
-        result = await process("$(countup)")
-        assert (
-            result == "Invalid $(countup): missing date, expected"
-            " $(countup Dec 25 2025 12:00:00 AM EST)"
-        )
+    @pytest.mark.parametrize(
+        "template,expected_error",
+        [
+            (
+                "$(rand 1)",
+                "Invalid $(rand): too few arguments, expected $(rand start stop)",
+            ),
+            (
+                "$(rand)",
+                "Invalid $(rand): too few arguments, expected $(rand start stop)",
+            ),
+            (
+                "$(rand 1 2 3)",
+                "Invalid $(rand): too many arguments, expected $(rand start stop)",
+            ),
+            (
+                "$(rand a b)",
+                "Invalid $(rand): arguments must be integers, e.g., $(rand 1 100)",
+            ),
+            (
+                "$(rand 1.5 2.5)",
+                "Invalid $(rand): arguments must be integers, e.g., $(rand 1 100)",
+            ),
+            ("$(user extra)", "Invalid $(user): does not accept arguments"),
+            ("$(getcount)", "Invalid $(getcount): a counter name is required"),
+            (
+                "$(getcount deaths extra)",
+                "Invalid $(getcount): too many arguments, expected $(getcount name)",
+            ),
+            (
+                "$(count deaths abc)",
+                "Invalid $(count): modifier must be an integer (e.g., +5, -1, 0)",
+            ),
+            (
+                "$(count deaths +1 extra)",
+                "Invalid $(count): too many arguments,"
+                " expected $(count name [modifier])",
+            ),
+            (
+                "$(countdown)",
+                "Invalid $(countdown): missing date,"
+                " expected $(countdown Dec 25 2025 12:00:00 AM EST)",
+            ),
+            (
+                "$(countup)",
+                "Invalid $(countup): missing date,"
+                " expected $(countup Dec 25 2025 12:00:00 AM EST)",
+            ),
+        ],
+    )
+    async def test_error_message(self, template, expected_error):
+        """Placeholder errors produce the correct diagnostic message."""
+        assert await process(template) == expected_error
 
     async def test_error_cancels_entire_render(self):
         """An error in any placeholder cancels the whole template."""
