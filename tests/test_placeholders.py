@@ -19,8 +19,8 @@ templates and user scenarios.
 """
 
 import random
-import sqlite3
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from freezegun import freeze_time
@@ -28,48 +28,38 @@ from freezegun import freeze_time
 from owlbot.builtin_modules.custom_commands.placeholder_handlers import _format_duration
 from owlbot.builtin_modules.custom_commands.placeholders import process_placeholders
 
+if TYPE_CHECKING:
+    from owlbot.api.storage import ModuleStorage
 
-class MockStorage:
-    """In-memory SQLite storage that executes real SQL queries."""
+CREATE_COUNTERS = (
+    "CREATE TABLE IF NOT EXISTS counters ("
+    "name TEXT PRIMARY KEY NOT NULL, "
+    "value INTEGER DEFAULT 0)"
+)
 
-    def __init__(self, counter_values=None):
-        self._conn = sqlite3.connect(":memory:")
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute(
-            "CREATE TABLE counters ("
-            "name TEXT PRIMARY KEY NOT NULL, "
-            "value INTEGER DEFAULT 0)"
-        )
-        for name, value in (counter_values or {}).items():
-            self._conn.execute(
-                "INSERT INTO counters (name, value) VALUES (?, ?)",
-                (name, value),
-            )
-        self._conn.commit()
 
-    async def fetch_one(self, query, params=None):
-        cursor = self._conn.execute(query, params or ())
-        row = cursor.fetchone()
-        self._conn.commit()
-        return row
-
-    async def fetch_value(self, query, params=None):
-        row = await self.fetch_one(query, params)
-        if row is None:
-            return None
-        return row[0]
+@pytest.fixture
+async def placeholder_storage(storage: ModuleStorage) -> ModuleStorage:
+    """Storage instance with the counters table created."""
+    await storage.execute(CREATE_COUNTERS)
+    return storage
 
 
 async def process(
-    template, args=None, user="Alice", use_count=1, storage=None, max_depth=4
-):
+    template: str,
+    storage: ModuleStorage,
+    args: list[str] | None = None,
+    user: str = "Alice",
+    use_count: int = 1,
+    max_depth: int = 4,
+) -> str:
     """Shorthand for process_placeholders with sensible defaults."""
     return await process_placeholders(
         template,
         args or [],
         user,
         use_count,
-        storage or MockStorage(),
+        storage,
         max_depth=max_depth,
     )
 
@@ -131,19 +121,29 @@ class TestSimpleSubstitution:
             ),
         ],
     )
-    async def test_substitution(self, template, kwargs, expected):
+    async def test_substitution(
+        self,
+        placeholder_storage: ModuleStorage,
+        template: str,
+        kwargs: dict[str, Any],
+        expected: str,
+    ) -> None:
         """Placeholders and plain text resolve to the expected string."""
-        assert await process(template, **kwargs) == expected
+        assert await process(template, placeholder_storage, **kwargs) == expected
 
-    async def test_multiple_placeholders_in_one_template(self):
+    async def test_multiple_placeholders_in_one_template(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """Multiple different placeholder types resolve in a single template."""
-        storage = MockStorage({"score": 42})
+        await placeholder_storage.execute(
+            "INSERT INTO counters (name, value) VALUES (?, ?)", ("score", 42)
+        )
         random.seed(99)
         expected_roll = random.randint(1, 6)
         random.seed(99)
         result = await process(
             "$(user) has $(getcount score) points (roll: $(rand 1 6))",
-            storage=storage,
+            placeholder_storage,
         )
         assert result == f"Alice has 42 points (roll: {expected_roll})"
 
@@ -173,9 +173,15 @@ class TestArgPlaceholders:
             ),
         ],
     )
-    async def test_arg_substitution(self, template, args, expected):
+    async def test_arg_substitution(
+        self,
+        placeholder_storage: ModuleStorage,
+        template: str,
+        args: list[str],
+        expected: str,
+    ) -> None:
         """Positional arguments resolve correctly."""
-        assert await process(template, args=args) == expected
+        assert await process(template, placeholder_storage, args=args) == expected
 
     @pytest.mark.parametrize(
         "template,args,expected",
@@ -185,9 +191,15 @@ class TestArgPlaceholders:
             pytest.param("$(99)", [], "$(99)", id="index-ninety-nine"),
         ],
     )
-    async def test_invalid_arg_index_passthrough(self, template, args, expected):
+    async def test_invalid_arg_index_passthrough(
+        self,
+        placeholder_storage: ModuleStorage,
+        template: str,
+        args: list[str],
+        expected: str,
+    ) -> None:
         """Out-of-range or unregistered numeric indices pass through unchanged."""
-        result = await process(template, args=args)
+        result = await process(template, placeholder_storage, args=args)
         assert result == expected
 
     @pytest.mark.parametrize(
@@ -207,39 +219,51 @@ class TestArgPlaceholders:
             ),
         ],
     )
-    async def test_arg_extra_args_error(self, template, args, expected):
+    async def test_arg_extra_args_error(
+        self,
+        placeholder_storage: ModuleStorage,
+        template: str,
+        args: list[str],
+        expected: str,
+    ) -> None:
         """Positional arguments with extra tokens report an error."""
-        assert await process(template, args=args) == expected
+        assert await process(template, placeholder_storage, args=args) == expected
 
 
 class TestNamedCounters:
     """$(count name), $(getcount name), increments, resets, and deltas."""
 
-    async def test_named_death_counter_increments(self):
+    async def test_named_death_counter_increments(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """$(count name) increments the named counter by 1 each call."""
-        storage = MockStorage()
         result = await process(
             "We have died $(count deaths) times.",
-            storage=storage,
+            placeholder_storage,
         )
         assert result == "We have died 1 times."
         result = await process(
             "We have died $(count deaths) times.",
-            storage=storage,
+            placeholder_storage,
         )
         assert result == "We have died 2 times."
 
-    async def test_getcount_without_changing(self):
+    async def test_getcount_without_changing(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """$(getcount name) reads the counter without modifying it."""
-        storage = MockStorage({"deaths": 5})
+        await placeholder_storage.execute(
+            "INSERT INTO counters (name, value) VALUES (?, ?)", ("deaths", 5)
+        )
         result = await process(
             "Total deaths so far: $(getcount deaths)",
-            storage=storage,
+            placeholder_storage,
         )
         assert result == "Total deaths so far: 5"
-        row = await storage.fetch_one(
+        row = await placeholder_storage.fetch_one(
             "SELECT value FROM counters WHERE name = ?", ("deaths",)
         )
+        assert row is not None
         assert row["value"] == 5
 
     @pytest.mark.parametrize(
@@ -262,15 +286,25 @@ class TestNamedCounters:
         ],
     )
     async def test_count_with_db_check(
-        self, counter_values, template, expected, db_name, db_value
-    ):
+        self,
+        placeholder_storage: ModuleStorage,
+        counter_values: dict[str, int],
+        template: str,
+        expected: str,
+        db_name: str,
+        db_value: int,
+    ) -> None:
         """$(count) modifies the counter and produces the expected text."""
-        storage = MockStorage(counter_values)
-        result = await process(template, storage=storage)
+        for name, value in counter_values.items():
+            await placeholder_storage.execute(
+                "INSERT INTO counters (name, value) VALUES (?, ?)", (name, value)
+            )
+        result = await process(template, placeholder_storage)
         assert result == expected
-        row = await storage.fetch_one(
+        row = await placeholder_storage.fetch_one(
             "SELECT value FROM counters WHERE name = ?", (db_name,)
         )
+        assert row is not None
         assert row["value"] == db_value
 
     @pytest.mark.parametrize(
@@ -287,62 +321,84 @@ class TestNamedCounters:
             pytest.param({}, "$(count boss_2_kills)", "1", id="underscore-in-name"),
         ],
     )
-    async def test_count_simple(self, counter_values, template, expected):
+    async def test_count_simple(
+        self,
+        placeholder_storage: ModuleStorage,
+        counter_values: dict[str, int],
+        template: str,
+        expected: str,
+    ) -> None:
         """Named counter operations produce the expected text."""
-        storage = MockStorage(counter_values)
-        result = await process(template, storage=storage)
+        for name, value in counter_values.items():
+            await placeholder_storage.execute(
+                "INSERT INTO counters (name, value) VALUES (?, ?)", (name, value)
+            )
+        result = await process(template, placeholder_storage)
         assert result == expected
 
-    async def test_multiple_named_counters(self):
+    async def test_multiple_named_counters(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """Different named counters are independent of each other."""
-        storage = MockStorage({"wins": 3, "losses": 1})
+        await placeholder_storage.execute(
+            "INSERT INTO counters (name, value) VALUES (?, ?)", ("wins", 3)
+        )
+        await placeholder_storage.execute(
+            "INSERT INTO counters (name, value) VALUES (?, ?)", ("losses", 1)
+        )
         result = await process(
             "Wins: $(getcount wins) | Losses: $(getcount losses)",
-            storage=storage,
+            placeholder_storage,
         )
         assert result == "Wins: 3 | Losses: 1"
 
-    async def test_adjacent_counters_both_increment(self):
+    async def test_adjacent_counters_both_increment(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """Two different counters in one template both increment independently."""
-        storage = MockStorage()
         result = await process(
             "A: $(count a) B: $(count b)",
-            storage=storage,
+            placeholder_storage,
         )
         assert result == "A: 1 B: 1"
-        row = await storage.fetch_one(
+        row = await placeholder_storage.fetch_one(
             "SELECT value FROM counters WHERE name = ?", ("a",)
         )
+        assert row is not None
         assert row["value"] == 1
-        row = await storage.fetch_one(
+        row = await placeholder_storage.fetch_one(
             "SELECT value FROM counters WHERE name = ?", ("b",)
         )
+        assert row is not None
         assert row["value"] == 1
 
-    async def test_same_counter_twice_in_one_template(self):
+    async def test_same_counter_twice_in_one_template(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """Two references to the same counter both increment."""
-        storage = MockStorage()
         result = await process(
             "$(count x) then $(count x)",
-            storage=storage,
+            placeholder_storage,
         )
         assert result == "1 then 2"
 
-    async def test_count_and_getcount_same_counter(self):
+    async def test_count_and_getcount_same_counter(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """$(count) increments, then $(getcount) reads the new value."""
-        storage = MockStorage()
         result = await process(
             "Now: $(count pts) Total: $(getcount pts)",
-            storage=storage,
+            placeholder_storage,
         )
         assert result == "Now: 1 Total: 1"
 
-    async def test_count_absolute_set_then_read(self):
+    async def test_count_absolute_set_then_read(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """Absolute set followed by getcount confirms persistence."""
-        storage = MockStorage()
         result = await process(
             "$(count score 42) -> $(getcount score)",
-            storage=storage,
+            placeholder_storage,
         )
         assert result == "42 -> 42"
 
@@ -353,9 +409,11 @@ class TestNamedCounters:
             pytest.param("-", id="minus"),
         ],
     )
-    async def test_bare_sign_rejected(self, sign):
+    async def test_bare_sign_rejected(
+        self, placeholder_storage: ModuleStorage, sign: str
+    ) -> None:
         """$(count x +) and $(count x -) report an error."""
-        result = await process(f"$(count x {sign})")
+        result = await process(f"$(count x {sign})", placeholder_storage)
         assert (
             result == "Invalid $(count): modifier must be an integer (e.g., +5, -1, 0)"
         )
@@ -371,14 +429,21 @@ class TestCounterNameValidation:
             pytest.param("$(count 123)", "1", "123", 1, id="numeric-name"),
         ],
     )
-    async def test_count_name_normalized(self, template, expected, db_name, db_value):
+    async def test_count_name_normalized(
+        self,
+        placeholder_storage: ModuleStorage,
+        template: str,
+        expected: str,
+        db_name: str,
+        db_value: int,
+    ) -> None:
         """Counter names are normalized and accepted."""
-        storage = MockStorage()
-        result = await process(template, storage=storage)
+        result = await process(template, placeholder_storage)
         assert result == expected
-        row = await storage.fetch_one(
+        row = await placeholder_storage.fetch_one(
             "SELECT value FROM counters WHERE name = ?", (db_name,)
         )
+        assert row is not None
         assert row["value"] == db_value
 
     @pytest.mark.parametrize(
@@ -390,30 +455,40 @@ class TestCounterNameValidation:
             pytest.param("-3", id="leading-minus"),
         ],
     )
-    async def test_count_invalid_name_rejected(self, name):
+    async def test_count_invalid_name_rejected(
+        self, placeholder_storage: ModuleStorage, name: str
+    ) -> None:
         """Names with hyphens, dots, or leading +/- are rejected."""
-        result = await process(f"$(count {name})")
+        result = await process(f"$(count {name})", placeholder_storage)
         assert result == (
             "Invalid $(count): counter name may only contain "
             "letters, numbers, and underscores"
         )
 
-    async def test_count_space_in_name_rejected(self):
+    async def test_count_space_in_name_rejected(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """A name with a space becomes two arguments; the second is a bad modifier."""
-        result = await process("$(count my counter)")
+        result = await process("$(count my counter)", placeholder_storage)
         assert (
             result == "Invalid $(count): modifier must be an integer (e.g., +5, -1, 0)"
         )
 
-    async def test_getcount_uppercase_name_lowered(self):
+    async def test_getcount_uppercase_name_lowered(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """Uppercase getcount names are normalized to lowercase."""
-        storage = MockStorage({"deaths": 5})
-        result = await process("$(getcount Deaths)", storage=storage)
+        await placeholder_storage.execute(
+            "INSERT INTO counters (name, value) VALUES (?, ?)", ("deaths", 5)
+        )
+        result = await process("$(getcount Deaths)", placeholder_storage)
         assert result == "5"
 
-    async def test_getcount_hyphen_in_name_rejected(self):
+    async def test_getcount_hyphen_in_name_rejected(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """Hyphens are not allowed in getcount names."""
-        result = await process("$(getcount boss-kills)")
+        result = await process("$(getcount boss-kills)", placeholder_storage)
         assert result == (
             "Invalid $(getcount): counter name may only contain "
             "letters, numbers, and underscores"
@@ -423,12 +498,12 @@ class TestCounterNameValidation:
 class TestRand:
     """All $(rand) behavior: basic usage, negative ranges, and boundaries."""
 
-    async def test_dice_roll(self):
+    async def test_dice_roll(self, placeholder_storage: ModuleStorage) -> None:
         """$(rand 1 6) produces a random integer in range."""
         random.seed(0)
         expected_roll = random.randint(1, 6)
         random.seed(0)
-        result = await process("$(user) rolled a $(rand 1 6)!")
+        result = await process("$(user) rolled a $(rand 1 6)!", placeholder_storage)
         assert result == f"Alice rolled a {expected_roll}!"
 
     @pytest.mark.parametrize(
@@ -439,63 +514,77 @@ class TestRand:
             pytest.param("$(rand  1  1)", "1", id="extra-whitespace"),
         ],
     )
-    async def test_rand_deterministic(self, template, expected):
+    async def test_rand_deterministic(
+        self, placeholder_storage: ModuleStorage, template: str, expected: str
+    ) -> None:
         """$(rand) with fixed bounds produces a deterministic result."""
-        assert await process(template) == expected
+        assert await process(template, placeholder_storage) == expected
 
-    async def test_rand_reversed_range(self):
+    async def test_rand_reversed_range(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """$(rand 10 1) auto-sorts bounds and produces a value in range."""
         random.seed(0)
         expected = random.randint(1, 10)
         random.seed(0)
-        result = await process("$(rand 10 1)")
+        result = await process("$(rand 10 1)", placeholder_storage)
         assert result == str(expected)
 
-    async def test_both_negative(self):
+    async def test_both_negative(self, placeholder_storage: ModuleStorage) -> None:
         """$(rand) works with both bounds negative."""
         random.seed(0)
         expected = random.randint(-10, -1)
         random.seed(0)
-        result = await process("$(rand -10 -1)")
+        result = await process("$(rand -10 -1)", placeholder_storage)
         assert result == str(expected)
 
-    async def test_negative_to_positive(self):
+    async def test_negative_to_positive(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """$(rand) works with a range crossing zero."""
         random.seed(0)
         expected = random.randint(-5, 5)
         random.seed(0)
-        result = await process("$(rand -5 5)")
+        result = await process("$(rand -5 5)", placeholder_storage)
         assert result == str(expected)
 
-    async def test_zero_crossing_reversed(self):
+    async def test_zero_crossing_reversed(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """$(rand 5 -5) auto-sorts bounds to produce a valid range."""
         random.seed(0)
         expected = random.randint(-5, 5)
         random.seed(0)
-        result = await process("$(rand 5 -5)")
+        result = await process("$(rand 5 -5)", placeholder_storage)
         assert result == str(expected)
 
 
 class TestCountdownCountup:
     """Date/time placeholders and duration formatting."""
 
-    async def test_countdown_future_date(self):
+    async def test_countdown_future_date(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """$(countdown) with a future date returns the formatted duration."""
         with freeze_time("2026-06-15 12:00:00", tz_offset=0):
             now = datetime.now(UTC)
             # Dec 25 2099 00:00:00 EST = Dec 25 2099 05:00:00 UTC
             target = datetime(2099, 12, 25, 5, 0, 0, tzinfo=UTC)
             expected = _format_duration(int((target - now).total_seconds()))
-            result = await process("$(countdown Dec 25 2099 12:00:00 AM EST)")
+            result = await process(
+                "$(countdown Dec 25 2099 12:00:00 AM EST)", placeholder_storage
+            )
             assert result == expected
 
-    async def test_countup_past_date(self):
+    async def test_countup_past_date(self, placeholder_storage: ModuleStorage) -> None:
         """$(countup) with a past date returns the formatted elapsed duration."""
         with freeze_time("2026-06-15 12:00:00", tz_offset=0):
             now = datetime.now(UTC)
             target = datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
             expected = _format_duration(int((now - target).total_seconds()))
-            result = await process("$(countup Jan 1 2020 12:00:00 AM UTC)")
+            result = await process(
+                "$(countup Jan 1 2020 12:00:00 AM UTC)", placeholder_storage
+            )
             assert result == expected
 
     @pytest.mark.parametrize(
@@ -508,9 +597,11 @@ class TestCountdownCountup:
             pytest.param("$(countdown Jan 1 2000 12:00:00 AM utc)", id="lowercase-tz"),
         ],
     )
-    async def test_zero_seconds(self, template):
+    async def test_zero_seconds(
+        self, placeholder_storage: ModuleStorage, template: str
+    ) -> None:
         """Elapsed/remaining time of zero returns '0 seconds'."""
-        assert await process(template) == "0 seconds"
+        assert await process(template, placeholder_storage) == "0 seconds"
 
     @pytest.mark.parametrize(
         "placeholder,bad_date",
@@ -522,22 +613,28 @@ class TestCountdownCountup:
             pytest.param("countdown", "not a valid date UTC", id="gibberish-with-tz"),
         ],
     )
-    async def test_invalid_date(self, placeholder, bad_date):
+    async def test_invalid_date(
+        self, placeholder_storage: ModuleStorage, placeholder: str, bad_date: str
+    ) -> None:
         """Placeholders with an unparseable date report an error."""
-        result = await process(f"$({placeholder} {bad_date})")
+        result = await process(f"$({placeholder} {bad_date})", placeholder_storage)
         assert result == (
             f"Invalid $({placeholder}): unrecognized date format, "
             f"expected $({placeholder} Dec 25 2025 12:00:00 AM EST)"
         )
 
-    async def test_fractional_timezone_offset(self):
+    async def test_fractional_timezone_offset(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """A fractional timezone offset like IST (UTC+5:30) is applied correctly."""
         with freeze_time("2026-06-15 12:00:00", tz_offset=0):
             now = datetime.now(UTC)
             # Jan 1 2020 12:00:00 AM IST = Dec 31 2019 18:30:00 UTC
             target = datetime(2019, 12, 31, 18, 30, 0, tzinfo=UTC)
             expected = _format_duration(int((now - target).total_seconds()))
-            result = await process("$(countup Jan 1 2020 12:00:00 AM IST)")
+            result = await process(
+                "$(countup Jan 1 2020 12:00:00 AM IST)", placeholder_storage
+            )
             assert result == expected
 
     @pytest.mark.parametrize(
@@ -563,7 +660,7 @@ class TestCountdownCountup:
             ),
         ],
     )
-    async def test_format_duration(self, seconds, expected):
+    async def test_format_duration(self, seconds: int, expected: str) -> None:
         """_format_duration produces the correct human-readable string."""
         assert _format_duration(seconds) == expected
 
@@ -571,67 +668,84 @@ class TestCountdownCountup:
 class TestNesting:
     """Nested placeholder resolution and child whitespace behavior."""
 
-    async def test_rand_with_arg_placeholders(self):
+    async def test_rand_with_arg_placeholders(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """$(rand $(1) $(2)) resolves inner arguments before calling rand."""
         random.seed(0)
         expected = random.randint(5, 10)
         random.seed(0)
-        result = await process("$(rand $(1) $(2))", args=["5", "10"])
+        result = await process(
+            "$(rand $(1) $(2))", placeholder_storage, args=["5", "10"]
+        )
         assert result == str(expected)
 
-    async def test_multi_level_nesting(self):
+    async def test_multi_level_nesting(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """$(rand 1 $(rand 5 10)) resolves the inner rand first."""
         random.seed(0)
         inner = random.randint(5, 10)
         outer = random.randint(1, inner)
         random.seed(0)
-        result = await process("$(rand 1 $(rand 5 10))")
+        result = await process("$(rand 1 $(rand 5 10))", placeholder_storage)
         assert result == str(outer)
 
-    async def test_nested_in_sentence(self):
+    async def test_nested_in_sentence(self, placeholder_storage: ModuleStorage) -> None:
         """Nested placeholders work when surrounded by literal text."""
         random.seed(0)
         expected_roll = random.randint(1, 20)
         random.seed(0)
         result = await process(
             "$(user) rolled $(rand $(1) $(2))!",
+            placeholder_storage,
             args=["1", "20"],
         )
         assert result == f"Alice rolled {expected_roll}!"
 
-    async def test_nested_getcount_as_rand_bound(self):
+    async def test_nested_getcount_as_rand_bound(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """$(getcount) result feeds into $(rand) as a bound."""
-        storage = MockStorage({"max": 50})
+        await placeholder_storage.execute(
+            "INSERT INTO counters (name, value) VALUES (?, ?)", ("max", 50)
+        )
         random.seed(0)
         expected = random.randint(1, 50)
         random.seed(0)
-        result = await process("$(rand 1 $(getcount max))", storage=storage)
+        result = await process("$(rand 1 $(getcount max))", placeholder_storage)
         assert result == str(expected)
 
-    async def test_nested_count_as_rand_bound(self):
+    async def test_nested_count_as_rand_bound(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """A counter result feeds into rand as an argument."""
-        storage = MockStorage({"upper": 9})
+        await placeholder_storage.execute(
+            "INSERT INTO counters (name, value) VALUES (?, ?)", ("upper", 9)
+        )
         # $(count upper) increments 9 -> 10.
         random.seed(0)
         expected = random.randint(1, 10)
         random.seed(0)
         result = await process(
             "$(rand 1 $(count upper))",
-            storage=storage,
+            placeholder_storage,
         )
         assert result == str(expected)
 
-    async def test_three_levels_deep(self):
+    async def test_three_levels_deep(self, placeholder_storage: ModuleStorage) -> None:
         """$(rand 1 $(rand 1 $(rand 5 10))) resolves inside-out."""
         random.seed(0)
         innermost = random.randint(5, 10)
         middle = random.randint(1, innermost)
         outer = random.randint(1, middle)
         random.seed(0)
-        result = await process("$(rand 1 $(rand 1 $(rand 5 10)))")
+        result = await process("$(rand 1 $(rand 1 $(rand 5 10)))", placeholder_storage)
         assert result == str(outer)
 
-    async def test_multiple_nested_placeholders_in_one_template(self):
+    async def test_multiple_nested_placeholders_in_one_template(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """Two separate nested expressions in one template both resolve."""
         random.seed(0)
         low = random.randint(1, 5)
@@ -639,18 +753,23 @@ class TestNesting:
         random.seed(0)
         result = await process(
             "Low: $(rand $(1) $(2)) High: $(rand $(3) $(4))",
+            placeholder_storage,
             args=["1", "5", "50", "100"],
         )
         assert result == f"Low: {low} High: {high}"
 
-    async def test_nested_user_in_other_placeholder(self):
+    async def test_nested_user_in_other_placeholder(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """$(user) nested inside an unknown placeholder passes through."""
-        result = await process("$(greet $(user))")
+        result = await process("$(greet $(user))", placeholder_storage)
         assert result == "$(greet Alice)"
 
-    async def test_meta_nesting_degrades(self):
+    async def test_meta_nesting_degrades(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """$($(1)) is not valid and degrades gracefully."""
-        result = await process("$($(1))", args=["test"])
+        result = await process("$($(1))", placeholder_storage, args=["test"])
         assert result == "$(test)"
 
     @pytest.mark.parametrize(
@@ -661,16 +780,22 @@ class TestNesting:
             pytest.param("$(rand $(1)$(2))", ["5", "10"], id="no-space-between"),
         ],
     )
-    async def test_nested_too_few_args(self, template, args):
+    async def test_nested_too_few_args(
+        self, placeholder_storage: ModuleStorage, template: str, args: list[str]
+    ) -> None:
         """Nested $(rand) with insufficient tokens reports too few arguments."""
-        result = await process(template, args=args)
+        result = await process(template, placeholder_storage, args=args)
         assert (
             result == "Invalid $(rand): too few arguments, expected $(rand start stop)"
         )
 
-    async def test_adjacent_children_with_explicit_space(self):
+    async def test_adjacent_children_with_explicit_space(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """$(rand $(1) $(2)) with space between children works normally."""
-        result = await process("$(rand $(1) $(2))", args=["3", "3"])
+        result = await process(
+            "$(rand $(1) $(2))", placeholder_storage, args=["3", "3"]
+        )
         assert result == "3"
 
 
@@ -714,9 +839,15 @@ class TestEscaping:
             pytest.param("\\$5", {}, "\\$5", id="dollar-number"),
         ],
     )
-    async def test_escaping(self, template, kwargs, expected):
+    async def test_escaping(
+        self,
+        placeholder_storage: ModuleStorage,
+        template: str,
+        kwargs: dict[str, Any],
+        expected: str,
+    ) -> None:
         """Escape sequences produce the expected literal text."""
-        assert await process(template, **kwargs) == expected
+        assert await process(template, placeholder_storage, **kwargs) == expected
 
 
 class TestCaseInsensitivity:
@@ -737,41 +868,60 @@ class TestCaseInsensitivity:
             ),
         ],
     )
-    async def test_placeholder_name_case_ignored(self, template, kwargs, expected):
+    async def test_placeholder_name_case_ignored(
+        self,
+        placeholder_storage: ModuleStorage,
+        template: str,
+        kwargs: dict[str, Any],
+        expected: str,
+    ) -> None:
         """Placeholder names are case-insensitive."""
-        assert await process(template, **kwargs) == expected
+        assert await process(template, placeholder_storage, **kwargs) == expected
 
-    async def test_getcount_mixed_case(self):
+    async def test_getcount_mixed_case(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """$(GetCount) resolves the same as $(getcount)."""
-        storage = MockStorage({"x": 3})
-        result = await process("$(GetCount x)", storage=storage)
+        await placeholder_storage.execute(
+            "INSERT INTO counters (name, value) VALUES (?, ?)", ("x", 3)
+        )
+        result = await process("$(GetCount x)", placeholder_storage)
         assert result == "3"
 
-    async def test_countup_case_insensitive(self):
+    async def test_countup_case_insensitive(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """$(COUNTUP) resolves the same as $(countup)."""
         with freeze_time("2026-06-15 12:00:00", tz_offset=0):
             now = datetime.now(UTC)
             target = datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
             expected = _format_duration(int((now - target).total_seconds()))
-            result = await process("$(COUNTUP Jan 1 2020 12:00:00 AM UTC)")
+            result = await process(
+                "$(COUNTUP Jan 1 2020 12:00:00 AM UTC)", placeholder_storage
+            )
             assert result == expected
 
 
 class TestMaxDepth:
     """Depth limiting behavior for nested placeholders."""
 
-    async def test_max_depth_limits_nesting(self):
+    async def test_max_depth_limits_nesting(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """With max_depth=0, all $( are treated as literal text."""
-        result = await process("$(user) $(rand 1 6)", max_depth=0)
+        result = await process("$(user) $(rand 1 6)", placeholder_storage, max_depth=0)
         assert result == "$(user) $(rand 1 6)"
 
-    async def test_max_depth_one_blocks_inner(self):
+    async def test_max_depth_one_blocks_inner(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """With max_depth=1, outer placeholder works but inner $( is literal."""
-        result = await process("$(user)", max_depth=1)
+        result = await process("$(user)", placeholder_storage, max_depth=1)
         assert result == "Alice"
         # Inner nesting should not resolve.
         result = await process(
             "$(rand $(1) $(2))",
+            placeholder_storage,
             args=["5", "10"],
             max_depth=1,
         )
@@ -780,16 +930,21 @@ class TestMaxDepth:
             result == "Invalid $(rand): too few arguments, expected $(rand start stop)"
         )
 
-    async def test_max_depth_two_allows_one_level(self):
+    async def test_max_depth_two_allows_one_level(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """max_depth=2: depth-0 outer and depth-1 inner both resolve."""
         result = await process(
             "$(rand $(1) $(2))",
+            placeholder_storage,
             args=["3", "3"],
             max_depth=2,
         )
         assert result == "3"
 
-    async def test_nesting_at_default_depth_limit(self):
+    async def test_nesting_at_default_depth_limit(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """Four levels of nesting hits the default max_depth=4 boundary.
 
         Levels: $(rand 1 $(rand 1 $(rand 1 $(rand 5 5))))
@@ -802,16 +957,23 @@ class TestMaxDepth:
         d1 = random.randint(1, d2)
         d0 = random.randint(1, d1)
         random.seed(0)
-        result = await process("$(rand 1 $(rand 1 $(rand 1 $(rand 5 5))))")
+        result = await process(
+            "$(rand 1 $(rand 1 $(rand 1 $(rand 5 5))))", placeholder_storage
+        )
         assert result == str(d0)
 
-    async def test_nesting_beyond_default_depth_limit(self):
+    async def test_nesting_beyond_default_depth_limit(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """Five levels of nesting exceeds default max_depth=4.
 
         The innermost $( at depth 4 becomes literal text, breaking the
         outer placeholders.
         """
-        result = await process("$(rand 1 $(rand 1 $(rand 1 $(rand 1 $(rand 5 5)))))")
+        result = await process(
+            "$(rand 1 $(rand 1 $(rand 1 $(rand 1 $(rand 5 5)))))",
+            placeholder_storage,
+        )
         # The depth-4 $( is literal, so the depth-3 rand gets malformed args.
         assert (
             result == "Invalid $(rand): too many arguments, expected $(rand start stop)"
@@ -842,9 +1004,11 @@ class TestParserBoundaries:
             pytest.param("$(rand$", "$(rand$", id="trailing-dollar-in-name"),
         ],
     )
-    async def test_parser_boundary(self, template, expected):
+    async def test_parser_boundary(
+        self, placeholder_storage: ModuleStorage, template: str, expected: str
+    ) -> None:
         """Parser edge cases degrade to literal text."""
-        assert await process(template) == expected
+        assert await process(template, placeholder_storage) == expected
 
 
 class TestUnknownPlaceholders:
@@ -865,9 +1029,11 @@ class TestUnknownPlaceholders:
             pytest.param("$(café latte)", "$(café latte)", id="unicode-with-args"),
         ],
     )
-    async def test_unknown_placeholder_passthrough(self, template, expected):
+    async def test_unknown_placeholder_passthrough(
+        self, placeholder_storage: ModuleStorage, template: str, expected: str
+    ) -> None:
         """Unrecognized placeholders pass through unchanged."""
-        result = await process(template)
+        result = await process(template, placeholder_storage)
         assert result == expected
 
 
@@ -894,17 +1060,28 @@ class TestEvaluationSafety:
             ),
         ],
     )
-    async def test_resolved_text_not_reparsed(self, template, kwargs, expected):
+    async def test_resolved_text_not_reparsed(
+        self,
+        placeholder_storage: ModuleStorage,
+        template: str,
+        kwargs: dict[str, Any],
+        expected: str,
+    ) -> None:
         """Resolved text containing placeholder syntax is not re-evaluated."""
-        assert await process(template, **kwargs) == expected
+        assert await process(template, placeholder_storage, **kwargs) == expected
 
-    async def test_nested_arg_placeholder_syntax_not_reprocessed(self):
+    async def test_nested_arg_placeholder_syntax_not_reprocessed(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """An inner result containing $() syntax is not reprocessed."""
-        result = await process("$(rand $(1) $(2))", args=["5", "5"])
+        result = await process(
+            "$(rand $(1) $(2))", placeholder_storage, args=["5", "5"]
+        )
         assert result == "5"
         # Now with args that contain placeholder syntax.
         result = await process(
             "Say: $(1)",
+            placeholder_storage,
             args=["$(count) times"],
         )
         assert result == "Say: $(count) times"
@@ -981,26 +1158,34 @@ class TestRuntimeErrors:
             ),
         ],
     )
-    async def test_error_message(self, template, expected_error):
+    async def test_error_message(
+        self, placeholder_storage: ModuleStorage, template: str, expected_error: str
+    ) -> None:
         """Placeholder errors produce the correct diagnostic message."""
-        assert await process(template) == expected_error
+        assert await process(template, placeholder_storage) == expected_error
 
-    async def test_error_cancels_entire_render(self):
+    async def test_error_cancels_entire_render(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """An error in any placeholder cancels the whole template."""
-        result = await process("$(user) says $(rand 1)")
+        result = await process("$(user) says $(rand 1)", placeholder_storage)
         assert (
             result == "Invalid $(rand): too few arguments, expected $(rand start stop)"
         )
 
-    async def test_first_error_wins(self):
+    async def test_first_error_wins(self, placeholder_storage: ModuleStorage) -> None:
         """The first PlaceholderError encountered is returned."""
-        result = await process("$(rand 1) $(getcount) $(user extra)")
+        result = await process(
+            "$(rand 1) $(getcount) $(user extra)", placeholder_storage
+        )
         # Evaluation is left-to-right; $(rand 1) fails first.
         assert (
             result == "Invalid $(rand): too few arguments, expected $(rand start stop)"
         )
 
-    async def test_nested_inner_error_cancels_render(self):
+    async def test_nested_inner_error_cancels_render(
+        self, placeholder_storage: ModuleStorage
+    ) -> None:
         """An error in a nested placeholder cancels the whole render."""
-        result = await process("$(rand $(getcount) $(2))")
+        result = await process("$(rand $(getcount) $(2))", placeholder_storage)
         assert result == "Invalid $(getcount): a counter name is required"

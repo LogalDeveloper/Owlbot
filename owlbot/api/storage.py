@@ -71,6 +71,23 @@ class ModuleStorage:
         self._logger = logging.getLogger(f"owlbot.modules.{module_name}.storage")
         self._logger.info(f"Database initialized at: {self._db_path.absolute()}")
 
+    async def __aenter__(self) -> ModuleStorage:
+        """Enter an async context manager that closes the storage on exit.
+
+        Enables ``async with ModuleStorage(...) as s:`` for scoped usage
+        (e.g. test fixtures).
+
+        In production, ``ModuleLoader`` manages storage lifecycle with explicit
+        ``_close()`` calls because the storage is created during module load
+        but closed in separate code paths (unload, load failure, setup failure),
+        so there is no single scope an ``async with`` block could wrap.
+        """
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        """Close the storage when leaving the ``async with`` block."""
+        await self._close()
+
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[ModuleStorage]:
         """
@@ -307,16 +324,10 @@ class ModuleStorage:
         self._closed = True
 
         for conn in self._all_connections:
-            try:
-                await conn.close()
-            except Exception as e:
-                self._logger.debug(f"Exception closing connection: {e}")
+            await conn.close()
 
         while not self._pool.empty():
-            try:
-                self._pool.get_nowait()
-            except asyncio.QueueEmpty:
-                break
+            self._pool.get_nowait()
 
         self._all_connections.clear()
         self._logger.info("All pool connections closed.")
