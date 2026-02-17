@@ -360,13 +360,13 @@ async def _evaluate_count(
             raise PlaceholderError(
                 "Invalid $(count): modifier must be an integer (e.g., +5, -1, 0)"
             ) from e
-        row = await ctx.storage.fetch_one(
+        result = await ctx.storage.fetch_value(
             "INSERT INTO counters (name, value) VALUES (?, ?) "
             "ON CONFLICT(name) DO UPDATE SET value = value + ? "
             "RETURNING value",
             (counter_name, delta, delta),
         )
-        return str(row["value"])
+        return str(result)
     else:
         try:
             value = int(modifier_str)
@@ -374,12 +374,12 @@ async def _evaluate_count(
             raise PlaceholderError(
                 "Invalid $(count): modifier must be an integer (e.g., +5, -1, 0)"
             ) from e
-        row = await ctx.storage.fetch_one(
+        result = await ctx.storage.fetch_value(
             "INSERT OR REPLACE INTO counters (name, value) VALUES (?, ?) "
             "RETURNING value",
             (counter_name, value),
         )
-        return str(row["value"])
+        return str(result)
 
 
 async def _evaluate_getcount(

@@ -53,6 +53,12 @@ class MockStorage:
         self._conn.commit()
         return row
 
+    async def fetch_value(self, query, params=None):
+        row = await self.fetch_one(query, params)
+        if row is None:
+            return None
+        return row[0]
+
 
 async def process(
     template, args=None, user="Alice", use_count=1, storage=None, max_depth=4
