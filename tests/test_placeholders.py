@@ -80,7 +80,9 @@ class TestSimpleSubstitution:
     @pytest.mark.parametrize(
         "template,kwargs,expected",
         [
-            pytest.param("Just a plain message.", {}, "Just a plain message.", id="plain-text"),
+            pytest.param(
+                "Just a plain message.", {}, "Just a plain message.", id="plain-text"
+            ),
             pytest.param("", {}, "", id="empty-string"),
             pytest.param("   ", {}, "   ", id="whitespace-only"),
             pytest.param(
@@ -103,10 +105,30 @@ class TestSimpleSubstitution:
                 id="arg-in-sentence",
             ),
             pytest.param("$(user)", {}, "Alice", id="user-only"),
-            pytest.param("$(1)$(2)$(3)", {"args": ["a", "b", "c"]}, "abc", id="three-args-adjacent"),
-            pytest.param("$(user) likes $(1)", {"args": ["cats"]}, "Alice likes cats", id="user-and-arg"),
-            pytest.param("Hello $(user)!", {"user": "O'Brien [MOD]"}, "Hello O'Brien [MOD]!", id="special-chars-in-user"),
-            pytest.param("$(1)", {"args": ["hello world & goodbye"]}, "hello world & goodbye", id="special-chars-in-arg"),
+            pytest.param(
+                "$(1)$(2)$(3)",
+                {"args": ["a", "b", "c"]},
+                "abc",
+                id="three-args-adjacent",
+            ),
+            pytest.param(
+                "$(user) likes $(1)",
+                {"args": ["cats"]},
+                "Alice likes cats",
+                id="user-and-arg",
+            ),
+            pytest.param(
+                "Hello $(user)!",
+                {"user": "O'Brien [MOD]"},
+                "Hello O'Brien [MOD]!",
+                id="special-chars-in-user",
+            ),
+            pytest.param(
+                "$(1)",
+                {"args": ["hello world & goodbye"]},
+                "hello world & goodbye",
+                id="special-chars-in-arg",
+            ),
         ],
     )
     async def test_substitution(self, template, kwargs, expected):
@@ -138,10 +160,17 @@ class TestArgPlaceholders:
                 "abcdefghi",
                 id="all-nine-args",
             ),
-            pytest.param("Hello $(1) and $(2)", ["Alice"], "Hello Alice and ", id="missing-arg-empty"),
+            pytest.param(
+                "Hello $(1) and $(2)",
+                ["Alice"],
+                "Hello Alice and ",
+                id="missing-arg-empty",
+            ),
             pytest.param("[$(1)] [$(2)] [$(3)]", [], "[] [] []", id="all-args-empty"),
             pytest.param("$(1)", [""], "", id="empty-string-arg"),
-            pytest.param("Hello $(1)world", [""], "Hello world", id="empty-arg-adjacent-text"),
+            pytest.param(
+                "Hello $(1)world", [""], "Hello world", id="empty-arg-adjacent-text"
+            ),
         ],
     )
     async def test_arg_substitution(self, template, args, expected):
@@ -164,8 +193,18 @@ class TestArgPlaceholders:
     @pytest.mark.parametrize(
         "template,args,expected",
         [
-            pytest.param("$(1 extra)", ["hello"], "Invalid $(1): does not accept arguments", id="arg1-with-extra"),
-            pytest.param("$(9 extra)", [], "Invalid $(9): does not accept arguments", id="arg9-with-extra"),
+            pytest.param(
+                "$(1 extra)",
+                ["hello"],
+                "Invalid $(1): does not accept arguments",
+                id="arg1-with-extra",
+            ),
+            pytest.param(
+                "$(9 extra)",
+                [],
+                "Invalid $(9): does not accept arguments",
+                id="arg9-with-extra",
+            ),
         ],
     )
     async def test_arg_extra_args_error(self, template, args, expected):
@@ -217,7 +256,9 @@ class TestNamedCounters:
             pytest.param({}, "$(count score 5)", "5", "score", 5, id="set-absolute"),
             pytest.param({"x": 7}, "$(count x +0)", "7", "x", 7, id="plus-zero"),
             pytest.param({"x": 7}, "$(count x -0)", "7", "x", 7, id="minus-zero"),
-            pytest.param({"x": 0}, "$(count x -1)", "-1", "x", -1, id="negative-result"),
+            pytest.param(
+                {"x": 0}, "$(count x -1)", "-1", "x", -1, id="negative-result"
+            ),
         ],
     )
     async def test_count_with_db_check(
@@ -236,7 +277,12 @@ class TestNamedCounters:
         "counter_values,template,expected",
         [
             pytest.param({}, "$(count deaths +5)", "5", id="plus-five"),
-            pytest.param({"lives": 3}, "$(count lives -1) lives remaining", "2 lives remaining", id="decrement"),
+            pytest.param(
+                {"lives": 3},
+                "$(count lives -1) lives remaining",
+                "2 lives remaining",
+                id="decrement",
+            ),
             pytest.param({}, "$(getcount missing)", "0", id="getcount-missing"),
             pytest.param({}, "$(count boss_2_kills)", "1", id="underscore-in-name"),
         ],
@@ -300,10 +346,13 @@ class TestNamedCounters:
         )
         assert result == "42 -> 42"
 
-    @pytest.mark.parametrize("sign", [
-        pytest.param("+", id="plus"),
-        pytest.param("-", id="minus"),
-    ])
+    @pytest.mark.parametrize(
+        "sign",
+        [
+            pytest.param("+", id="plus"),
+            pytest.param("-", id="minus"),
+        ],
+    )
     async def test_bare_sign_rejected(self, sign):
         """$(count x +) and $(count x -) report an error."""
         result = await process(f"$(count x {sign})")
@@ -332,12 +381,15 @@ class TestCounterNameValidation:
         )
         assert row["value"] == db_value
 
-    @pytest.mark.parametrize("name", [
-        pytest.param("boss-kills", id="hyphen"),
-        pytest.param("boss.kills", id="dot"),
-        pytest.param("+5", id="leading-plus"),
-        pytest.param("-3", id="leading-minus"),
-    ])
+    @pytest.mark.parametrize(
+        "name",
+        [
+            pytest.param("boss-kills", id="hyphen"),
+            pytest.param("boss.kills", id="dot"),
+            pytest.param("+5", id="leading-plus"),
+            pytest.param("-3", id="leading-minus"),
+        ],
+    )
     async def test_count_invalid_name_rejected(self, name):
         """Names with hyphens, dots, or leading +/- are rejected."""
         result = await process(f"$(count {name})")
@@ -449,7 +501,9 @@ class TestCountdownCountup:
     @pytest.mark.parametrize(
         "template",
         [
-            pytest.param("$(countdown Jan 1 2000 12:00:00 AM UTC)", id="countdown-past"),
+            pytest.param(
+                "$(countdown Jan 1 2000 12:00:00 AM UTC)", id="countdown-past"
+            ),
             pytest.param("$(countup Dec 25 2099 12:00:00 AM UTC)", id="countup-future"),
             pytest.param("$(countdown Jan 1 2000 12:00:00 AM utc)", id="lowercase-tz"),
         ],
@@ -501,8 +555,12 @@ class TestCountdownCountup:
             pytest.param(3601, "1 hour 1 second", id="hour-and-second"),
             pytest.param(86401, "1 day 1 second", id="day-and-second"),
             pytest.param(86460, "1 day 1 minute", id="day-and-minute"),
-            pytest.param(90061, "1 day 1 hour 1 minute 1 second", id="all-units-singular"),
-            pytest.param(180183, "2 days 2 hours 3 minutes 3 seconds", id="all-units-plural"),
+            pytest.param(
+                90061, "1 day 1 hour 1 minute 1 second", id="all-units-singular"
+            ),
+            pytest.param(
+                180183, "2 days 2 hours 3 minutes 3 seconds", id="all-units-plural"
+            ),
         ],
     )
     async def test_format_duration(self, seconds, expected):
@@ -628,12 +686,26 @@ class TestEscaping:
                 "Use $(user) to insert your name.",
                 id="escaped-user",
             ),
-            pytest.param(r"\$(user) and \$(count)", {}, "$(user) and $(count)", id="two-escaped"),
-            pytest.param(r"\$(user) said hello to $(user)", {}, "$(user) said hello to Alice", id="escaped-and-live"),
+            pytest.param(
+                r"\$(user) and \$(count)", {}, "$(user) and $(count)", id="two-escaped"
+            ),
+            pytest.param(
+                r"\$(user) said hello to $(user)",
+                {},
+                "$(user) said hello to Alice",
+                id="escaped-and-live",
+            ),
             pytest.param(r"path\to\file", {}, "path\\to\\file", id="backslash-in-text"),
             pytest.param("\\\\$(user)", {}, "\\$(user)", id="double-backslash"),
-            pytest.param("before \\$(unclosed", {}, "before \\$(unclosed", id="escaped-unclosed"),
-            pytest.param("\\$(rand $(1) $(2))", {"args": ["5", "10"]}, "$(rand $(1) $(2))", id="escaped-nested"),
+            pytest.param(
+                "before \\$(unclosed", {}, "before \\$(unclosed", id="escaped-unclosed"
+            ),
+            pytest.param(
+                "\\$(rand $(1) $(2))",
+                {"args": ["5", "10"]},
+                "$(rand $(1) $(2))",
+                id="escaped-nested",
+            ),
             pytest.param(r"\$()", {}, "$()", id="escaped-empty-parens"),
             pytest.param("text \\$(", {}, "text \\$(", id="trailing-escaped-dollar"),
             pytest.param(r"\$(rand 1)", {}, "$(rand 1)", id="escaped-with-body"),
@@ -657,7 +729,12 @@ class TestCaseInsensitivity:
             pytest.param("$(User)", {}, "Alice", id="title-case-user"),
             pytest.param("$(Rand 1 1)", {}, "1", id="title-case-rand"),
             pytest.param("$(COUNT)", {"use_count": 5}, "5", id="all-upper-count"),
-            pytest.param("$(COUNTDOWN Jan 1 2000 12:00:00 AM UTC)", {}, "0 seconds", id="all-upper-countdown"),
+            pytest.param(
+                "$(COUNTDOWN Jan 1 2000 12:00:00 AM UTC)",
+                {},
+                "0 seconds",
+                id="all-upper-countdown",
+            ),
         ],
     )
     async def test_placeholder_name_case_ignored(self, template, kwargs, expected):
@@ -748,7 +825,9 @@ class TestParserBoundaries:
         "template,expected",
         [
             pytest.param("$(rand 1", "$(rand 1", id="unclosed-rand"),
-            pytest.param("before $(rand 1 after", "before $(rand 1 after", id="unclosed-in-text"),
+            pytest.param(
+                "before $(rand 1 after", "before $(rand 1 after", id="unclosed-in-text"
+            ),
             pytest.param("$()", "$()", id="empty-parens"),
             pytest.param("$", "$", id="lone-dollar"),
             pytest.param("Price: $5", "Price: $5", id="dollar-amount"),
@@ -776,7 +855,11 @@ class TestUnknownPlaceholders:
         [
             pytest.param("$(madeup stuff)", "$(madeup stuff)", id="with-args"),
             pytest.param("$(banana)", "$(banana)", id="bare-name"),
-            pytest.param("$(madeup   lots   of   space)", "$(madeup lots of space)", id="extra-spaces"),
+            pytest.param(
+                "$(madeup   lots   of   space)",
+                "$(madeup lots of space)",
+                id="extra-spaces",
+            ),
             pytest.param("$(madeup)", "$(madeup)", id="no-args"),
             pytest.param("$(café)", "$(café)", id="unicode-name"),
             pytest.param("$(café latte)", "$(café latte)", id="unicode-with-args"),
@@ -794,9 +877,21 @@ class TestEvaluationSafety:
     @pytest.mark.parametrize(
         "template,kwargs,expected",
         [
-            pytest.param("$(1)", {"args": ["$(user)"]}, "$(user)", id="arg-contains-user"),
-            pytest.param("$(1)", {"args": ["$(rand 1 100)"]}, "$(rand 1 100)", id="arg-contains-rand"),
-            pytest.param("$(user)", {"user": "$(rand 1 100)"}, "$(rand 1 100)", id="user-contains-rand"),
+            pytest.param(
+                "$(1)", {"args": ["$(user)"]}, "$(user)", id="arg-contains-user"
+            ),
+            pytest.param(
+                "$(1)",
+                {"args": ["$(rand 1 100)"]},
+                "$(rand 1 100)",
+                id="arg-contains-rand",
+            ),
+            pytest.param(
+                "$(user)",
+                {"user": "$(rand 1 100)"},
+                "$(rand 1 100)",
+                id="user-contains-rand",
+            ),
         ],
     )
     async def test_resolved_text_not_reparsed(self, template, kwargs, expected):
@@ -846,8 +941,16 @@ class TestRuntimeErrors:
                 "Invalid $(rand): arguments must be integers, e.g., $(rand 1 100)",
                 id="rand-float-args",
             ),
-            pytest.param("$(user extra)", "Invalid $(user): does not accept arguments", id="user-extra-args"),
-            pytest.param("$(getcount)", "Invalid $(getcount): a counter name is required", id="getcount-no-name"),
+            pytest.param(
+                "$(user extra)",
+                "Invalid $(user): does not accept arguments",
+                id="user-extra-args",
+            ),
+            pytest.param(
+                "$(getcount)",
+                "Invalid $(getcount): a counter name is required",
+                id="getcount-no-name",
+            ),
             pytest.param(
                 "$(getcount deaths extra)",
                 "Invalid $(getcount): too many arguments, expected $(getcount name)",
