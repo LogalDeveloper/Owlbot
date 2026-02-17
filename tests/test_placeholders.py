@@ -71,61 +71,38 @@ async def process(
 class TestSimpleSubstitution:
     """Basic happy-path usage of placeholders and plain text."""
 
-    async def test_plain_text_no_placeholders(self):
-        """Text without any $( sequences is returned unchanged."""
-        result = await process("Just a plain message.")
-        assert result == "Just a plain message."
-
-    async def test_empty_response(self):
-        """An empty template produces an empty string."""
-        result = await process("")
-        assert result == ""
-
-    async def test_only_whitespace_template(self):
-        """A whitespace-only template is returned unchanged."""
-        result = await process("   ")
-        assert result == "   "
-
-    async def test_greeting(self):
-        """$(user) is replaced with the invoking user's display name."""
-        result = await process("Hello, $(user)! Welcome to the stream.")
-        assert result == "Hello, Alice! Welcome to the stream."
-
-    async def test_use_counter(self):
-        """Bare $(count) returns the command's use count."""
-        result = await process(
-            "The hype train has been called $(count) times! HYPE!",
-            use_count=7,
-        )
-        assert result == "The hype train has been called 7 times! HYPE!"
-
-    async def test_use_counter_zero(self):
-        """Bare $(count) with use_count=0 returns '0'."""
-        result = await process("$(count)", use_count=0)
-        assert result == "0"
-
-    async def test_shoutout_with_argument(self):
-        """$(1) is replaced with the first command argument."""
-        result = await process(
-            "Go check out $(1)! They're awesome.",
-            args=["Bob"],
-        )
-        assert result == "Go check out Bob! They're awesome."
-
-    async def test_template_is_just_one_placeholder(self):
-        """A template that is only a placeholder produces just the value."""
-        result = await process("$(user)")
-        assert result == "Alice"
-
-    async def test_adjacent_placeholders(self):
-        """Placeholders directly next to each other concatenate their values."""
-        result = await process("$(1)$(2)$(3)", args=["a", "b", "c"])
-        assert result == "abc"
-
-    async def test_placeholder_at_start_and_end(self):
-        """Placeholders at the start and end of a template resolve normally."""
-        result = await process("$(user) likes $(1)", args=["cats"])
-        assert result == "Alice likes cats"
+    @pytest.mark.parametrize(
+        "template,kwargs,expected",
+        [
+            ("Just a plain message.", {}, "Just a plain message."),
+            ("", {}, ""),
+            ("   ", {}, "   "),
+            (
+                "Hello, $(user)! Welcome to the stream.",
+                {},
+                "Hello, Alice! Welcome to the stream.",
+            ),
+            (
+                "The hype train has been called $(count) times! HYPE!",
+                {"use_count": 7},
+                "The hype train has been called 7 times! HYPE!",
+            ),
+            ("$(count)", {"use_count": 0}, "0"),
+            (
+                "Go check out $(1)! They're awesome.",
+                {"args": ["Bob"]},
+                "Go check out Bob! They're awesome.",
+            ),
+            ("$(user)", {}, "Alice"),
+            ("$(1)$(2)$(3)", {"args": ["a", "b", "c"]}, "abc"),
+            ("$(user) likes $(1)", {"args": ["cats"]}, "Alice likes cats"),
+            ("Hello $(user)!", {"user": "O'Brien [MOD]"}, "Hello O'Brien [MOD]!"),
+            ("$(1)", {"args": ["hello world & goodbye"]}, "hello world & goodbye"),
+        ],
+    )
+    async def test_substitution(self, template, kwargs, expected):
+        """Placeholders and plain text resolve to the expected string."""
+        assert await process(template, **kwargs) == expected
 
     async def test_multiple_placeholders_in_one_template(self):
         """Multiple different placeholder types resolve in a single template."""
@@ -139,38 +116,27 @@ class TestSimpleSubstitution:
         )
         assert result == f"Alice has 42 points (roll: {expected_roll})"
 
-    async def test_user_with_special_characters(self):
-        """Special characters in the display name are preserved literally."""
-        result = await process("Hello $(user)!", user="O'Brien [MOD]")
-        assert result == "Hello O'Brien [MOD]!"
-
-    async def test_argument_with_special_characters(self):
-        """Special characters in arguments are preserved literally."""
-        result = await process("$(1)", args=["hello world & goodbye"])
-        assert result == "hello world & goodbye"
-
 
 class TestArgPlaceholders:
     """Positional arguments $(1) through $(9)."""
 
-    async def test_all_nine_arguments(self):
-        """All positional arguments $(1) through $(9) resolve in order."""
-        args = ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
-        result = await process(
-            "$(1)$(2)$(3)$(4)$(5)$(6)$(7)$(8)$(9)",
-            args=args,
-        )
-        assert result == "abcdefghi"
-
-    async def test_missing_argument_becomes_empty(self):
-        """An argument beyond the supplied list resolves to an empty string."""
-        result = await process("Hello $(1) and $(2)", args=["Alice"])
-        assert result == "Hello Alice and "
-
-    async def test_all_args_missing(self):
-        """All positional arguments resolve to empty when none are supplied."""
-        result = await process("[$(1)] [$(2)] [$(3)]")
-        assert result == "[] [] []"
+    @pytest.mark.parametrize(
+        "template,args,expected",
+        [
+            (
+                "$(1)$(2)$(3)$(4)$(5)$(6)$(7)$(8)$(9)",
+                ["a", "b", "c", "d", "e", "f", "g", "h", "i"],
+                "abcdefghi",
+            ),
+            ("Hello $(1) and $(2)", ["Alice"], "Hello Alice and "),
+            ("[$(1)] [$(2)] [$(3)]", [], "[] [] []"),
+            ("$(1)", [""], ""),
+            ("Hello $(1)world", [""], "Hello world"),
+        ],
+    )
+    async def test_arg_substitution(self, template, args, expected):
+        """Positional arguments resolve correctly."""
+        assert await process(template, args=args) == expected
 
     @pytest.mark.parametrize(
         "template,args,expected",
@@ -185,25 +151,16 @@ class TestArgPlaceholders:
         result = await process(template, args=args)
         assert result == expected
 
-    async def test_empty_string_argument(self):
-        """$(1) with an empty string argument returns an empty string."""
-        result = await process("$(1)", args=[""])
-        assert result == ""
-
-    async def test_empty_arg_in_sentence(self):
-        """An empty argument spliced into text leaves no visible gap."""
-        result = await process("Hello $(1)world", args=[""])
-        assert result == "Hello world"
-
-    async def test_arg_with_extra_args(self):
-        """$(1 extra) reports an error for unexpected arguments."""
-        result = await process("$(1 extra)", args=["hello"])
-        assert result == "Invalid $(1): does not accept arguments"
-
-    async def test_arg_9_with_extra_args(self):
-        """$(9 extra) reports an error for unexpected arguments."""
-        result = await process("$(9 extra)")
-        assert result == "Invalid $(9): does not accept arguments"
+    @pytest.mark.parametrize(
+        "template,args,expected",
+        [
+            ("$(1 extra)", ["hello"], "Invalid $(1): does not accept arguments"),
+            ("$(9 extra)", [], "Invalid $(9): does not accept arguments"),
+        ],
+    )
+    async def test_arg_extra_args_error(self, template, args, expected):
+        """Positional arguments with extra tokens report an error."""
+        assert await process(template, args=args) == expected
 
 
 class TestNamedCounters:
@@ -236,26 +193,48 @@ class TestNamedCounters:
         )
         assert row["value"] == 5
 
-    async def test_counter_reset_to_zero(self):
-        """$(count name 0) sets the counter to exactly zero."""
-        storage = MockStorage({"deaths": 10})
-        result = await process(
-            "$(count deaths 0) deaths. Counter reset!",
-            storage=storage,
+    @pytest.mark.parametrize(
+        "counter_values,template,expected,db_name,db_value",
+        [
+            (
+                {"deaths": 10},
+                "$(count deaths 0) deaths. Counter reset!",
+                "0 deaths. Counter reset!",
+                "deaths",
+                0,
+            ),
+            ({}, "$(count score 5)", "5", "score", 5),
+            ({"x": 7}, "$(count x +0)", "7", "x", 7),
+            ({"x": 7}, "$(count x -0)", "7", "x", 7),
+            ({"x": 0}, "$(count x -1)", "-1", "x", -1),
+        ],
+    )
+    async def test_count_with_db_check(
+        self, counter_values, template, expected, db_name, db_value
+    ):
+        """$(count) modifies the counter and produces the expected text."""
+        storage = MockStorage(counter_values)
+        result = await process(template, storage=storage)
+        assert result == expected
+        row = await storage.fetch_one(
+            "SELECT value FROM counters WHERE name = ?", (db_name,)
         )
-        assert result == "0 deaths. Counter reset!"
+        assert row["value"] == db_value
 
-    async def test_counter_increment_by_five(self):
-        """$(count name +5) increments the counter by 5."""
-        storage = MockStorage()
-        result = await process("$(count deaths +5)", storage=storage)
-        assert result == "5"
-
-    async def test_counter_decrement(self):
-        """$(count name -1) decrements the counter by 1."""
-        storage = MockStorage({"lives": 3})
-        result = await process("$(count lives -1) lives remaining", storage=storage)
-        assert result == "2 lives remaining"
+    @pytest.mark.parametrize(
+        "counter_values,template,expected",
+        [
+            ({}, "$(count deaths +5)", "5"),
+            ({"lives": 3}, "$(count lives -1) lives remaining", "2 lives remaining"),
+            ({}, "$(getcount missing)", "0"),
+            ({}, "$(count boss_2_kills)", "1"),
+        ],
+    )
+    async def test_count_simple(self, counter_values, template, expected):
+        """Named counter operations produce the expected text."""
+        storage = MockStorage(counter_values)
+        result = await process(template, storage=storage)
+        assert result == expected
 
     async def test_multiple_named_counters(self):
         """Different named counters are independent of each other."""
@@ -283,17 +262,6 @@ class TestNamedCounters:
         )
         assert row["value"] == 1
 
-    async def test_getcount_nonexistent_counter(self):
-        """$(getcount name) returns '0' for a counter that has never been set."""
-        result = await process("$(getcount missing)")
-        assert result == "0"
-
-    async def test_counter_name_with_underscores_and_numbers(self):
-        """Counter names may contain underscores and digits."""
-        storage = MockStorage()
-        result = await process("$(count boss_2_kills)", storage=storage)
-        assert result == "1"
-
     async def test_same_counter_twice_in_one_template(self):
         """Two references to the same counter both increment."""
         storage = MockStorage()
@@ -312,16 +280,6 @@ class TestNamedCounters:
         )
         assert result == "Now: 1 Total: 1"
 
-    async def test_count_absolute_set_nonzero(self):
-        """$(count name 5) sets the counter to exactly 5."""
-        storage = MockStorage()
-        result = await process("$(count score 5)", storage=storage)
-        assert result == "5"
-        row = await storage.fetch_one(
-            "SELECT value FROM counters WHERE name = ?", ("score",)
-        )
-        assert row["value"] == 5
-
     async def test_count_absolute_set_then_read(self):
         """Absolute set followed by getcount confirms persistence."""
         storage = MockStorage()
@@ -331,46 +289,10 @@ class TestNamedCounters:
         )
         assert result == "42 -> 42"
 
-    async def test_count_zero_delta_plus(self):
-        """$(count name +0) increments by zero, leaving the value unchanged."""
-        storage = MockStorage({"x": 7})
-        result = await process("$(count x +0)", storage=storage)
-        assert result == "7"
-        row = await storage.fetch_one(
-            "SELECT value FROM counters WHERE name = ?", ("x",)
-        )
-        assert row["value"] == 7
-
-    async def test_count_zero_delta_minus(self):
-        """$(count name -0) decrements by zero, leaving the value unchanged."""
-        storage = MockStorage({"x": 7})
-        result = await process("$(count x -0)", storage=storage)
-        assert result == "7"
-        row = await storage.fetch_one(
-            "SELECT value FROM counters WHERE name = ?", ("x",)
-        )
-        assert row["value"] == 7
-
-    async def test_counter_decrement_past_zero(self):
-        """Decrementing from zero produces a negative value."""
-        storage = MockStorage({"x": 0})
-        result = await process("$(count x -1)", storage=storage)
-        assert result == "-1"
-        row = await storage.fetch_one(
-            "SELECT value FROM counters WHERE name = ?", ("x",)
-        )
-        assert row["value"] == -1
-
-    async def test_bare_plus_sign(self):
-        """$(count x +) reports an error because '+' alone is not a valid integer."""
-        result = await process("$(count x +)")
-        assert (
-            result == "Invalid $(count): modifier must be an integer (e.g., +5, -1, 0)"
-        )
-
-    async def test_bare_minus_sign(self):
-        """$(count x -) reports an error because '-' alone is not a valid integer."""
-        result = await process("$(count x -)")
+    @pytest.mark.parametrize("sign", ["+", "-"])
+    async def test_bare_sign_rejected(self, sign):
+        """$(count x +) and $(count x -) report an error."""
+        result = await process(f"$(count x {sign})")
         assert (
             result == "Invalid $(count): modifier must be an integer (e.g., +5, -1, 0)"
         )
@@ -379,15 +301,22 @@ class TestNamedCounters:
 class TestCounterNameValidation:
     """Counter names are lowercased and must match ^[a-z0-9_]+$."""
 
-    async def test_count_uppercase_name_lowered(self):
-        """Uppercase counter names are normalized to lowercase."""
+    @pytest.mark.parametrize(
+        "template,expected,db_name,db_value",
+        [
+            ("$(count Deaths)", "1", "deaths", 1),
+            ("$(count 123)", "1", "123", 1),
+        ],
+    )
+    async def test_count_name_normalized(self, template, expected, db_name, db_value):
+        """Counter names are normalized and accepted."""
         storage = MockStorage()
-        result = await process("$(count Deaths)", storage=storage)
-        assert result == "1"
+        result = await process(template, storage=storage)
+        assert result == expected
         row = await storage.fetch_one(
-            "SELECT value FROM counters WHERE name = ?", ("deaths",)
+            "SELECT value FROM counters WHERE name = ?", (db_name,)
         )
-        assert row["value"] == 1
+        assert row["value"] == db_value
 
     @pytest.mark.parametrize("name", ["boss-kills", "boss.kills", "+5", "-3"])
     async def test_count_invalid_name_rejected(self, name):
@@ -419,16 +348,6 @@ class TestCounterNameValidation:
             "letters, numbers, and underscores"
         )
 
-    async def test_count_numeric_only_name_accepted(self):
-        """A counter name consisting of only digits is valid."""
-        storage = MockStorage()
-        result = await process("$(count 123)", storage=storage)
-        assert result == "1"
-        row = await storage.fetch_one(
-            "SELECT value FROM counters WHERE name = ?", ("123",)
-        )
-        assert row["value"] == 1
-
 
 class TestRand:
     """All $(rand) behavior: basic usage, negative ranges, and boundaries."""
@@ -441,10 +360,17 @@ class TestRand:
         result = await process("$(user) rolled a $(rand 1 6)!")
         assert result == f"Alice rolled a {expected_roll}!"
 
-    async def test_rand_equal_start_stop(self):
-        """$(rand N N) with equal bounds always returns N."""
-        result = await process("$(rand 5 5)")
-        assert result == "5"
+    @pytest.mark.parametrize(
+        "template,expected",
+        [
+            ("$(rand 5 5)", "5"),
+            ("$(rand 0 0)", "0"),
+            ("$(rand  1  1)", "1"),
+        ],
+    )
+    async def test_rand_deterministic(self, template, expected):
+        """$(rand) with fixed bounds produces a deterministic result."""
+        assert await process(template) == expected
 
     async def test_rand_reversed_range(self):
         """$(rand 10 1) auto-sorts bounds and produces a value in range."""
@@ -453,14 +379,6 @@ class TestRand:
         random.seed(0)
         result = await process("$(rand 10 1)")
         assert result == str(expected)
-
-    async def test_rand_with_seeded_random(self):
-        """The same seed produces the same result across calls."""
-        random.seed(42)
-        result = await process("$(rand 1 100)")
-        random.seed(42)
-        result2 = await process("$(rand 1 100)")
-        assert result == result2
 
     async def test_both_negative(self):
         """$(rand) works with both bounds negative."""
@@ -486,16 +404,6 @@ class TestRand:
         result = await process("$(rand 5 -5)")
         assert result == str(expected)
 
-    async def test_rand_zero_zero(self):
-        """$(rand 0 0) with both bounds at zero returns '0'."""
-        result = await process("$(rand 0 0)")
-        assert result == "0"
-
-    async def test_rand_extra_whitespace_in_children(self):
-        """Extra whitespace between nested children is collapsed by split()."""
-        result = await process("$(rand  1  1)")
-        assert result == "1"
-
 
 class TestCountdownCountup:
     """Date/time placeholders and duration formatting."""
@@ -519,47 +427,35 @@ class TestCountdownCountup:
             result = await process("$(countup Jan 1 2020 12:00:00 AM UTC)")
             assert result == expected
 
-    async def test_countdown_past_date_returns_zero(self):
-        """$(countdown) with a past date returns '0 seconds'."""
-        result = await process("$(countdown Jan 1 2000 12:00:00 AM UTC)")
-        assert result == "0 seconds"
-
     @pytest.mark.parametrize(
-        "bad_date",
+        "template",
         [
-            "not a real date",
-            "monday",
-            "Dec 25 2099 12:00:00 AM XYZ",
+            "$(countdown Jan 1 2000 12:00:00 AM UTC)",
+            "$(countup Dec 25 2099 12:00:00 AM UTC)",
+            "$(countdown Jan 1 2000 12:00:00 AM utc)",
         ],
     )
-    async def test_countdown_invalid_date(self, bad_date):
-        """$(countdown) with an unparseable date reports an error."""
-        result = await process(f"$(countdown {bad_date})")
-        assert result == (
-            "Invalid $(countdown): unrecognized date format, "
-            "expected $(countdown Dec 25 2025 12:00:00 AM EST)"
-        )
+    async def test_zero_seconds(self, template):
+        """Elapsed/remaining time of zero returns '0 seconds'."""
+        assert await process(template) == "0 seconds"
 
-    async def test_countup_invalid_date(self):
-        """$(countup) with an invalid date reports an error."""
-        result = await process("$(countup not a real date)")
+    @pytest.mark.parametrize(
+        "placeholder,bad_date",
+        [
+            ("countdown", "not a real date"),
+            ("countdown", "monday"),
+            ("countdown", "Dec 25 2099 12:00:00 AM XYZ"),
+            ("countup", "not a real date"),
+            ("countdown", "not a valid date UTC"),
+        ],
+    )
+    async def test_invalid_date(self, placeholder, bad_date):
+        """Placeholders with an unparseable date report an error."""
+        result = await process(f"$({placeholder} {bad_date})")
         assert result == (
-            "Invalid $(countup): unrecognized date format, "
-            "expected $(countup Dec 25 2025 12:00:00 AM EST)"
+            f"Invalid $({placeholder}): unrecognized date format, "
+            f"expected $({placeholder} Dec 25 2025 12:00:00 AM EST)"
         )
-
-    async def test_countdown_valid_timezone_bad_date_format(self):
-        """$(countdown) with a recognized timezone but malformed date reports an error."""
-        result = await process("$(countdown not a valid date UTC)")
-        assert result == (
-            "Invalid $(countdown): unrecognized date format, "
-            "expected $(countdown Dec 25 2025 12:00:00 AM EST)"
-        )
-
-    async def test_countup_future_date_returns_zero(self):
-        """$(countup) with a future date returns '0 seconds'."""
-        result = await process("$(countup Dec 25 2099 12:00:00 AM UTC)")
-        assert result == "0 seconds"
 
     async def test_fractional_timezone_offset(self):
         """A fractional timezone offset like IST (UTC+5:30) is applied correctly."""
@@ -570,11 +466,6 @@ class TestCountdownCountup:
             expected = _format_duration(int((now - target).total_seconds()))
             result = await process("$(countup Jan 1 2020 12:00:00 AM IST)")
             assert result == expected
-
-    async def test_lowercase_timezone_abbreviation(self):
-        """Timezone abbreviation lookup is case-insensitive."""
-        result = await process("$(countdown Jan 1 2000 12:00:00 AM utc)")
-        assert result == "0 seconds"
 
     @pytest.mark.parametrize(
         "seconds,expected",
@@ -685,25 +576,17 @@ class TestNesting:
         result = await process("$($(1))", args=["test"])
         assert result == "$(test)"
 
-    async def test_missing_args_collapse_to_empty(self):
-        """$(rand $(1) $(2)) with no arguments collapses to empty, reporting too few."""
-        result = await process("$(rand $(1) $(2))")
-        assert (
-            result == "Invalid $(rand): too few arguments, expected $(rand start stop)"
-        )
-
-    async def test_one_missing_arg_gives_one_token(self):
-        """$(rand $(1) $(2)) with one argument produces only
-        one token, reporting too few."""
-        result = await process("$(rand $(1) $(2))", args=["5"])
-        assert (
-            result == "Invalid $(rand): too few arguments, expected $(rand start stop)"
-        )
-
-    async def test_adjacent_children_merge_tokens(self):
-        """$(rand $(1)$(2)) with no space merges results into one token."""
-        result = await process("$(rand $(1)$(2))", args=["5", "10"])
-        # "5" and "10" merge to "510", rand sees one arg.
+    @pytest.mark.parametrize(
+        "template,args",
+        [
+            ("$(rand $(1) $(2))", []),
+            ("$(rand $(1) $(2))", ["5"]),
+            ("$(rand $(1)$(2))", ["5", "10"]),
+        ],
+    )
+    async def test_nested_too_few_args(self, template, args):
+        """Nested $(rand) with insufficient tokens reports too few arguments."""
+        result = await process(template, args=args)
         assert (
             result == "Invalid $(rand): too few arguments, expected $(rand start stop)"
         )
@@ -717,71 +600,31 @@ class TestNesting:
 class TestEscaping:
     """Escape sequences and backslash boundary conditions."""
 
-    async def test_escaped_placeholder(self):
-        r"""\$(user) produces the literal string $(user)."""
-        result = await process(r"Use \$(user) to insert your name.")
-        assert result == "Use $(user) to insert your name."
-
-    async def test_multiple_escaped_placeholders(self):
-        r"""Multiple \$() sequences each produce literal text."""
-        result = await process(r"\$(user) and \$(count)")
-        assert result == "$(user) and $(count)"
-
-    async def test_escaped_and_real_mixed(self):
-        r"""Escaped and real placeholders coexist in one template."""
-        result = await process(r"\$(user) said hello to $(user)")
-        assert result == "$(user) said hello to Alice"
-
-    async def test_backslash_not_before_placeholder(self):
-        r"""Backslashes not preceding $( are preserved as literal text."""
-        result = await process(r"path\to\file")
-        assert result == "path\\to\\file"
-
-    async def test_double_backslash_before_placeholder(self):
-        r"""\\$(user) treats the first \ as literal and the second \ as an escape."""
-        result = await process("\\\\$(user)")
-        assert result == "\\$(user)"
-
-    async def test_escaped_unclosed_group(self):
-        r"""\$(unclosed with no matching ) preserves the backslash as literal text."""
-        result = await process("before \\$(unclosed")
-        assert result == "before \\$(unclosed"
-
-    async def test_escaped_with_nested_content(self):
-        r"""\$(rand $(1) $(2)) preserves inner $() literally."""
-        result = await process("\\$(rand $(1) $(2))", args=["5", "10"])
-        assert result == "$(rand $(1) $(2))"
-
-    async def test_escaped_empty_placeholder(self):
-        r"""\$() produces literal $()."""
-        result = await process(r"\$()")
-        assert result == "$()"
-
-    async def test_escaped_opening_at_end_of_string(self):
-        r"""\$( at end of string with no matching close is treated as literal text."""
-        result = await process("text \\$(")
-        assert result == "text \\$("
-
-    async def test_escaped_invalid_not_checked(self):
-        r"""Escaped placeholders are not evaluated."""
-        result = await process(r"\$(rand 1)")
-        assert result == "$(rand 1)"
-
-    async def test_trailing_backslash(self):
-        r"""Trailing backslash at end of string is literal."""
-        result = await process("hello\\")
-        assert result == "hello\\"
-
-    async def test_triple_backslash_before_placeholder(self):
-        r"""\\\$(user) treats the first two backslashes as
-        literal and the third as an escape."""
-        result = await process("\\\\\\$(user)")
-        assert result == "\\\\$(user)"
-
-    async def test_backslash_before_regular_dollar(self):
-        r"""Backslash before $ without ( is just literal text."""
-        result = await process("\\$5")
-        assert result == "\\$5"
+    @pytest.mark.parametrize(
+        "template,kwargs,expected",
+        [
+            (
+                r"Use \$(user) to insert your name.",
+                {},
+                "Use $(user) to insert your name.",
+            ),
+            (r"\$(user) and \$(count)", {}, "$(user) and $(count)"),
+            (r"\$(user) said hello to $(user)", {}, "$(user) said hello to Alice"),
+            (r"path\to\file", {}, "path\\to\\file"),
+            ("\\\\$(user)", {}, "\\$(user)"),
+            ("before \\$(unclosed", {}, "before \\$(unclosed"),
+            ("\\$(rand $(1) $(2))", {"args": ["5", "10"]}, "$(rand $(1) $(2))"),
+            (r"\$()", {}, "$()"),
+            ("text \\$(", {}, "text \\$("),
+            (r"\$(rand 1)", {}, "$(rand 1)"),
+            ("hello\\", {}, "hello\\"),
+            ("\\\\\\$(user)", {}, "\\\\$(user)"),
+            ("\\$5", {}, "\\$5"),
+        ],
+    )
+    async def test_escaping(self, template, kwargs, expected):
+        """Escape sequences produce the expected literal text."""
+        assert await process(template, **kwargs) == expected
 
 
 class TestCaseInsensitivity:
@@ -840,22 +683,6 @@ class TestMaxDepth:
             result == "Invalid $(rand): too few arguments, expected $(rand start stop)"
         )
 
-    async def test_max_depth_one_inner_literal(self):
-        """At max_depth=1, inner $( tokens become literal text.
-
-        The $( at depth 1 is literal, so the ) after "1" closes the outer
-        rand placeholder early.  Rand receives child content " $(1" which
-        is only one arg -- triggering a too-few-arguments error.
-        """
-        result = await process(
-            "$(rand $(1) $(2))",
-            args=["5", "10"],
-            max_depth=1,
-        )
-        assert (
-            result == "Invalid $(rand): too few arguments, expected $(rand start stop)"
-        )
-
     async def test_max_depth_two_allows_one_level(self):
         """max_depth=2: depth-0 outer and depth-1 inner both resolve."""
         result = await process(
@@ -897,76 +724,28 @@ class TestMaxDepth:
 class TestParserBoundaries:
     """Parser edge cases around incomplete or unusual $( sequences."""
 
-    async def test_unclosed_placeholder_is_literal(self):
-        """$( with no matching ) degrades to literal text."""
-        result = await process("$(rand 1")
-        assert result == "$(rand 1"
-
-    async def test_unclosed_in_middle_of_text(self):
-        """An unclosed $( in the middle of text degrades to literal text."""
-        result = await process("before $(rand 1 after")
-        assert result == "before $(rand 1 after"
-
-    async def test_empty_placeholder_is_literal(self):
-        """$() with no name degrades to literal text."""
-        result = await process("$()")
-        assert result == "$()"
-
-    async def test_dollar_sign_alone(self):
-        """A bare $ without ( is literal text."""
-        assert await process("$") == "$"
-        assert await process("Price: $5") == "Price: $5"
-
-    async def test_dollar_not_followed_by_paren(self):
-        """$ followed by a non-paren character is literal text."""
-        assert await process("$x $y $z") == "$x $y $z"
-
-    async def test_close_paren_in_text(self):
-        """A ) outside any placeholder is literal text."""
-        result = await process("Hello :) world")
-        assert result == "Hello :) world"
-
-    async def test_multiple_close_parens(self):
-        """Multiple ) outside placeholders are all literal text."""
-        result = await process(":) :) :)")
-        assert result == ":) :) :)"
-
-    async def test_opening_token_at_end_of_string(self):
-        """$( at end of string with no room for a name degrades to literal text."""
-        result = await process("hello $(")
-        assert result == "hello $("
-
-    async def test_unclosed_name_at_end_of_string(self):
-        """$(name at end of string with no space or close
-        paren degrades to literal text."""
-        result = await process("hello $(user")
-        assert result == "hello $(user"
-
-    async def test_space_immediately_after_opening(self):
-        """$( ) with a space as the first character has an
-        empty name and degrades to literal text."""
-        result = await process("$( )")
-        assert result == "$( )"
-
-    async def test_name_followed_by_dollar_paren(self):
-        """$(name$(...)) with $ immediately after the name degrades to literal text."""
-        # The name parser stops at $, sees $( immediately, and returns None.
-        # So $( is literal, then rand is literal, then $(user) resolves.
-        result = await process("$(rand$(user))")
-        assert result == "$(randAlice)"
-
-    async def test_name_dollar_no_paren(self):
-        """$(name$other) with $ after the name but without (
-        degrades to literal text."""
-        # Parser reads name "rand", hits $, it's not $(, returns None.
-        # $( degrades to literal, then "rand$5)" is scanned as text.
-        result = await process("$(rand$5)")
-        assert result == "$(rand$5)"
-
-    async def test_name_dollar_end_of_string(self):
-        """$(name$ at end of string degrades to literal text."""
-        result = await process("$(rand$")
-        assert result == "$(rand$"
+    @pytest.mark.parametrize(
+        "template,expected",
+        [
+            ("$(rand 1", "$(rand 1"),
+            ("before $(rand 1 after", "before $(rand 1 after"),
+            ("$()", "$()"),
+            ("$", "$"),
+            ("Price: $5", "Price: $5"),
+            ("$x $y $z", "$x $y $z"),
+            ("Hello :) world", "Hello :) world"),
+            (":) :) :)", ":) :) :)"),
+            ("hello $(", "hello $("),
+            ("hello $(user", "hello $(user"),
+            ("$( )", "$( )"),
+            ("$(rand$(user))", "$(randAlice)"),
+            ("$(rand$5)", "$(rand$5)"),
+            ("$(rand$", "$(rand$"),
+        ],
+    )
+    async def test_parser_boundary(self, template, expected):
+        """Parser edge cases degrade to literal text."""
+        assert await process(template) == expected
 
 
 class TestUnknownPlaceholders:
@@ -992,20 +771,17 @@ class TestUnknownPlaceholders:
 class TestEvaluationSafety:
     """Verify that resolved text is never re-parsed as placeholders."""
 
-    async def test_arg_containing_placeholder_syntax_not_evaluated(self):
-        """$(1) resolving to '$(user)' outputs the literal string."""
-        result = await process("$(1)", args=["$(user)"])
-        assert result == "$(user)"
-
-    async def test_arg_containing_rand_syntax_not_evaluated(self):
-        """$(1) resolving to '$(rand 1 100)' does not produce a number."""
-        result = await process("$(1)", args=["$(rand 1 100)"])
-        assert result == "$(rand 1 100)"
-
-    async def test_user_display_name_with_placeholder_syntax(self):
-        """A display name containing $(...) is not evaluated."""
-        result = await process("$(user)", user="$(rand 1 100)")
-        assert result == "$(rand 1 100)"
+    @pytest.mark.parametrize(
+        "template,kwargs,expected",
+        [
+            ("$(1)", {"args": ["$(user)"]}, "$(user)"),
+            ("$(1)", {"args": ["$(rand 1 100)"]}, "$(rand 1 100)"),
+            ("$(user)", {"user": "$(rand 1 100)"}, "$(rand 1 100)"),
+        ],
+    )
+    async def test_resolved_text_not_reparsed(self, template, kwargs, expected):
+        """Resolved text containing placeholder syntax is not re-evaluated."""
+        assert await process(template, **kwargs) == expected
 
     async def test_nested_arg_placeholder_syntax_not_reprocessed(self):
         """An inner result containing $() syntax is not reprocessed."""
