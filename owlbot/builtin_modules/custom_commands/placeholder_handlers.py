@@ -366,8 +366,6 @@ async def _evaluate_count(
             "RETURNING value",
             (counter_name, delta, delta),
         )
-        if row is None:
-            raise PlaceholderError("Internal error: counter update failed")
         return str(row["value"])
     else:
         try:
@@ -381,8 +379,6 @@ async def _evaluate_count(
             "RETURNING value",
             (counter_name, value),
         )
-        if row is None:
-            raise PlaceholderError("Internal error: counter update failed")
         return str(row["value"])
 
 

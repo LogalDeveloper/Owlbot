@@ -548,6 +548,14 @@ class TestCountdownCountup:
             "expected $(countup Dec 25 2025 12:00:00 AM EST)"
         )
 
+    async def test_countdown_valid_timezone_bad_date_format(self):
+        """$(countdown) with a recognized timezone but malformed date reports an error."""
+        result = await process("$(countdown not a valid date UTC)")
+        assert result == (
+            "Invalid $(countdown): unrecognized date format, "
+            "expected $(countdown Dec 25 2025 12:00:00 AM EST)"
+        )
+
     async def test_countup_future_date_returns_zero(self):
         """$(countup) with a future date returns '0 seconds'."""
         result = await process("$(countup Dec 25 2099 12:00:00 AM UTC)")
