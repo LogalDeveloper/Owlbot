@@ -138,7 +138,7 @@ def _parse_placeholder(
 ) -> tuple[PlaceholderNode, int] | None:
     """Parse a single placeholder after the opening ``$(`` has been consumed.
 
-    Reads the placeholder name (word characters up to a space, ``)``, ``$``,
+    Reads the placeholder name (any characters up to a space, ``)``, ``$``,
     or end-of-string), then parses children if the name is followed by a space.
 
     :param template: The full template string.
@@ -150,11 +150,9 @@ def _parse_placeholder(
     """
     length = len(template)
 
-    # Read the placeholder name: word characters (\w) up to a delimiter.
+    # Read the placeholder name: any characters up to a delimiter.
     name_start = pos
     while pos < length and template[pos] not in (" ", ")", "$"):
-        if not (template[pos].isalnum() or template[pos] == "_"):
-            break
         pos += 1
 
     name = template[name_start:pos]
