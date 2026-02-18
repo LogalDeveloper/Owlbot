@@ -248,8 +248,8 @@ TIMEZONE_OFFSETS: dict[str, float] = {
     "YEKT": 5,
 }
 
-# Pattern for validating counter names.
-_COUNTER_NAME_RE = re.compile(r"^[a-z0-9_]+$")
+# Pattern for validating identifiers (command names, counter names, aliases).
+NAME_RE = re.compile(r"^[a-z0-9_]+$")
 
 
 def _parse_placeholder_date(date_str: str) -> datetime | None:
@@ -341,7 +341,7 @@ async def _evaluate_count(
 
     # Named counter.
     counter_name = args[0].lower()
-    if not _COUNTER_NAME_RE.match(counter_name):
+    if not NAME_RE.match(counter_name):
         raise PlaceholderError(
             "Invalid $(count): counter name may only contain "
             "letters, numbers, and underscores"
@@ -395,7 +395,7 @@ async def _evaluate_getcount(
             "Invalid $(getcount): too many arguments, expected $(getcount name)"
         )
     counter_name = args[0].lower()
-    if not _COUNTER_NAME_RE.match(counter_name):
+    if not NAME_RE.match(counter_name):
         raise PlaceholderError(
             "Invalid $(getcount): counter name may only contain "
             "letters, numbers, and underscores"

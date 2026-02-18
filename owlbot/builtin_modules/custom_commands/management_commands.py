@@ -14,7 +14,6 @@
 
 """Management commands for custom commands (add, edit, delete, etc.)."""
 
-import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -27,6 +26,7 @@ from .handler import (
     resolve_command_name,
     update_and_reregister,
 )
+from .placeholder_handlers import NAME_RE
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -83,7 +83,7 @@ async def addcommand(ctx: CommandContext) -> None:
 
     name = _clean_raw_name(args[0], prefix)
 
-    if not re.match(r"^[a-z0-9_]+$", name):
+    if not NAME_RE.match(name):
         await ctx.owncast_client.send_message(
             "Invalid command name. Only letters, numbers, and underscores are allowed."
         )
@@ -284,6 +284,69 @@ async def resetcommand(ctx: CommandContext) -> None:
     await ctx.owncast_client.send_message(f"Command {prefix}{name} counter reset.")
 
 
+@on_command("editcounter", aliases=["editcount"], requires_moderator=True)
+async def editcounter(ctx: CommandContext) -> None:
+    """
+    Set, increment, or decrement a named counter.
+
+    Usage: !editcounter <name> <value>
+
+    The value can be an absolute number (e.g. ``15``), or a relative
+    modifier prefixed with ``+`` or ``-`` (e.g. ``+1``, ``-3``).
+    If the counter does not exist it is created on the fly.
+
+    :param ctx: The command context.
+    """
+    prefix = ctx.commands.prefix
+    args = ctx.args_list
+
+    if len(args) != 2:
+        await ctx.owncast_client.send_message(
+            f"Usage: {prefix}editcounter name <value>"
+        )
+        return
+
+    counter_name = args[0].lower()
+
+    if not NAME_RE.match(counter_name):
+        await ctx.owncast_client.send_message(
+            "Invalid counter name. Only letters, numbers, and underscores are allowed."
+        )
+        return
+
+    value_str = args[1]
+
+    try:
+        value = int(value_str)
+    except ValueError:
+        await ctx.owncast_client.send_message(
+            "Invalid value. Must be an integer (e.g. 15, +1, -3)."
+        )
+        return
+
+    # Fetch old value (default 0 if counter doesn't exist yet).
+    row = await ctx.storage.fetch_one(
+        "SELECT value FROM counters WHERE name = ?", (counter_name,)
+    )
+    old_value = row["value"] if row else 0
+
+    # Leading +/- means relative delta; otherwise absolute.
+    new_value = old_value + value if value_str[0] in ("+", "-") else value
+
+    await ctx.storage.execute(
+        "INSERT INTO counters (name, value) VALUES (?, ?) "
+        "ON CONFLICT(name) DO UPDATE SET value = ?",
+        (counter_name, new_value, new_value),
+    )
+
+    ctx.logger.info(
+        f"Counter '{counter_name}' changed from {old_value} to {new_value}."
+    )
+    await ctx.owncast_client.send_message(
+        f"Changed the {counter_name} counter from {old_value} to {new_value}."
+    )
+
+
 @on_command("commandcooldown", aliases=["cmdcooldown"], requires_moderator=True)
 async def commandcooldown(ctx: CommandContext) -> None:
     """
@@ -357,7 +420,7 @@ async def addalias(ctx: CommandContext) -> None:
 
     alias = _clean_raw_name(args[1], prefix)
 
-    if not re.match(r"^[a-z0-9_]+$", alias):
+    if not NAME_RE.match(alias):
         await ctx.owncast_client.send_message(
             "Invalid alias name. Only letters, numbers, and underscores are allowed."
         )
