@@ -45,6 +45,7 @@ Owlbot is a modular, event-driven chat bot for Owncast.
 - `uv run ruff format --check --diff .`: check formatting without changing files.
 - `uv run ruff check .`: run lint checks.
 - `uv run mypy .`: run strict type checking.
+- `uv run pip-audit --skip-editable`: audit dependencies for known vulnerabilities.
 
 ## Creating Modules
 - Read `docs/Modules.md` first, then focused references:
@@ -90,3 +91,4 @@ Since `docs/` is a git submodule, doc updates require normal submodule workflow:
 
 ## CI Parity
 The pre-commit checklist mirrors `.gitea/workflows/ci.yml`. Keep local checks and CI checks aligned when adding or changing quality gates.
+A separate `.gitea/workflows/audit.yml` runs `pip-audit` when dependencies change. Run `uv run pip-audit --skip-editable` locally when updating dependencies.

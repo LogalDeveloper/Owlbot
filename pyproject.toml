@@ -30,6 +30,7 @@ dev = [
     "mypy>=1.18.1",
     "types-PyYAML>=6.0.12.20250915",
     "ruff>=0.15.1",
+    "pip-audit>=2.10.0",
 ]
 
 [tool.uv]
