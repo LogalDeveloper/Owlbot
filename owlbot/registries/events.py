@@ -138,7 +138,9 @@ class EventRegistry:
 
         :return: Dict mapping event type values to handler lists.
         """
-        return self._handlers.copy()
+        return {
+            event_type: entries.copy() for event_type, entries in self._handlers.items()
+        }
 
     def get_handler_module(self, handler: EventHandler) -> str | None:
         """
