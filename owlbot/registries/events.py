@@ -17,6 +17,8 @@
 Internal infrastructure for managing event handler registration and dispatch.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import time

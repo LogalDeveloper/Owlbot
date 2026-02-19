@@ -18,6 +18,8 @@ Tests exercise the public API (process_placeholders) with realistic
 templates and user scenarios.
 """
 
+from __future__ import annotations
+
 import random
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any

@@ -20,6 +20,8 @@ command dispatch phase), ModuleEvents (ownership checks), and
 EventContext/PropagationState.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import types

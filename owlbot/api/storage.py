@@ -14,6 +14,8 @@
 
 """SQLite storage API for Owlbot modules."""
 
+from __future__ import annotations
+
 import asyncio
 import contextvars
 import logging

@@ -21,6 +21,8 @@ transaction commit/rollback, built-in commands), ModuleCommands
 (ownership-scoped wrapper), and CommandContext.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import types

@@ -20,6 +20,8 @@ This module provides the module-facing API for HTTP routes:
 - RouteHandler type alias
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypedDict
 

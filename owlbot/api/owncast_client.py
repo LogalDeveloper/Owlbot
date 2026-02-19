@@ -14,11 +14,14 @@
 
 """Async HTTP client for the Owncast Integration API."""
 
+from __future__ import annotations
+
 import json
 import logging
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
+from aiohttp import ContentTypeError
 
 if TYPE_CHECKING:
     from .http_client import HttpClient
@@ -35,7 +38,7 @@ def _extract_error(text: str) -> str:
     """
     try:
         data = json.loads(text)
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return text
     if isinstance(data, dict):
         if "error" in data:
@@ -236,7 +239,7 @@ class OwncastClient:
                 if response.content_type == "application/json":
                     try:
                         result = await response.json()
-                    except ValueError, aiohttp.ContentTypeError:
+                    except (ValueError, ContentTypeError):
                         text = await response.text()
                         self._logger.error(f"Invalid JSON on POST {endpoint}: {text}")
                         raise OwncastError(response.status, text) from None
@@ -295,7 +298,7 @@ class OwncastClient:
                 self._logger.debug(f"GET {endpoint} -> {response.status}")
                 try:
                     result = await response.json()
-                except ValueError, aiohttp.ContentTypeError:
+                except (ValueError, ContentTypeError):
                     text = await response.text()
                     self._logger.error(f"Invalid JSON on GET {endpoint}: {text}")
                     raise OwncastError(response.status, text) from None

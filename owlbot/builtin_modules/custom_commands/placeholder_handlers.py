@@ -21,6 +21,8 @@ arguments; the engine immediately stops processing and returns ``str(e)`` as
 the entire response, discarding any other template content.
 """
 
+from __future__ import annotations
+
 import random
 import re
 from collections.abc import Awaitable, Callable

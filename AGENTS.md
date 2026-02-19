@@ -2,7 +2,7 @@
 
 ## Project Overview
 Owlbot is a modular, event-driven chat bot for Owncast.
-- Python `3.14+`
+- Python `3.12+`
 - Fully async stack (`aiohttp`, `aiosqlite`)
 - Built-in features include custom commands, quote management, and recurring timers
 

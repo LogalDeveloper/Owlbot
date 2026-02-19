@@ -21,6 +21,8 @@ This module provides the module-facing API for commands:
 - CommandHandler type alias
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypedDict
 

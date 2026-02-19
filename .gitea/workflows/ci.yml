@@ -49,8 +49,14 @@ jobs:
         run: uv run ruff check .
 
   tests:
-    name: Tests
+    name: Tests (Python ${{ matrix.python-version }})
     runs-on: logaldeveloper-archlinux
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+      UV_PYTHON_PREFERENCE: system
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -61,7 +67,7 @@ jobs:
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: ~/.cache/uv
-          key: uv-${{ hashFiles('uv.lock') }}
+          key: uv-${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
 
       - name: Cache Owncast binary
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3

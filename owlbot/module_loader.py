@@ -14,6 +14,8 @@
 
 """Dynamic module loading for Owlbot."""
 
+from __future__ import annotations
+
 import importlib.util
 import logging
 import sys

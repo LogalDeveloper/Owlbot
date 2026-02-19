@@ -19,6 +19,8 @@ messages at the right moment. Also provides interval parsing utilities and
 shared state for chat line counting.
 """
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import re
@@ -160,7 +162,7 @@ def _next_fire_time(row: aiosqlite.Row, now: datetime) -> datetime | None:
     try:
         anchor = last_fired_dt if last_fired_dt is not None else now
         return next(CronSim(row["interval_value"], anchor))
-    except ValueError, KeyError, CronSimError:
+    except (ValueError, KeyError, CronSimError):
         return None
 
 

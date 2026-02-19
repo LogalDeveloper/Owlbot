@@ -20,6 +20,8 @@ This module provides the module-facing API for event handlers:
 - EventHandler type alias
 """
 
+from __future__ import annotations
+
 from enum import IntEnum
 from typing import TYPE_CHECKING, Any, TypedDict
 
