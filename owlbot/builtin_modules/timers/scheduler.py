@@ -51,8 +51,7 @@ _MIN_CRON_MINUTES = 1
 
 
 def parse_interval(value: str) -> tuple[IntervalType, str]:
-    """
-    Parse and validate an interval string.
+    """Parse and validate an interval string.
 
     Simple durations (no spaces) are parsed with a regex. Cron expressions
     (contain spaces) are validated with cronsim. Returns the detected type
@@ -72,8 +71,7 @@ def parse_interval(value: str) -> tuple[IntervalType, str]:
 
 
 def _parse_simple(value: str) -> tuple[IntervalType, str]:
-    """
-    Parse and validate a simple duration string.
+    """Parse and validate a simple duration string.
 
     :param value: Duration string like "30s", "5m", "1h30m".
     :return: Tuple of (IntervalType.SIMPLE, value).
@@ -99,8 +97,7 @@ def _parse_simple(value: str) -> tuple[IntervalType, str]:
 
 
 def _parse_cron(value: str) -> tuple[IntervalType, str]:
-    """
-    Validate a cron expression.
+    """Validate a cron expression.
 
     :param value: Cron expression string (5 fields).
     :return: Tuple of (IntervalType.CRON, value).
@@ -125,8 +122,7 @@ def _parse_cron(value: str) -> tuple[IntervalType, str]:
 
 
 def _duration_to_seconds(value: str) -> int:
-    """
-    Convert a validated simple duration string to total seconds.
+    """Convert a validated simple duration string to total seconds.
 
     :param value: A previously validated duration string.
     :return: Total seconds.
@@ -141,8 +137,7 @@ def _duration_to_seconds(value: str) -> int:
 
 
 def _next_fire_time(row: aiosqlite.Row, now: datetime) -> datetime | None:
-    """
-    Compute when a timer will next be time-due.
+    """Compute when a timer will next be time-due.
 
     :param row: Database row with interval_type, interval_value, last_fired_at.
     :param now: Current UTC time.
@@ -167,8 +162,7 @@ def _next_fire_time(row: aiosqlite.Row, now: datetime) -> datetime | None:
 
 
 def _is_timer_due(row: aiosqlite.Row, now: datetime) -> bool:
-    """
-    Check whether a timer should fire based on its interval and last fire time.
+    """Check whether a timer should fire based on its interval and last fire time.
 
     :param row: Database row with interval_type, interval_value, last_fired_at.
     :param now: Current UTC time.
@@ -187,6 +181,7 @@ class TimerScheduler:
     """
 
     def __init__(self) -> None:
+        """Initialize an empty scheduler with no running task."""
         self._task: asyncio.Task[None] | None = None
         self._counted_ids: dict[int, set[str]] = {}
         self._wake_event: asyncio.Event | None = None
@@ -197,8 +192,7 @@ class TimerScheduler:
         return self._counted_ids
 
     def init_counted_ids(self, timer_ids: list[int]) -> None:
-        """
-        Initialize empty counter sets for the given timer IDs.
+        """Initialize empty counter sets for the given timer IDs.
 
         Called during module setup to prepare tracking for enabled timers.
 
@@ -207,8 +201,7 @@ class TimerScheduler:
         self._counted_ids = {tid: set() for tid in timer_ids}
 
     def start(self, ctx: ModuleContext) -> None:
-        """
-        Start the background scheduler task.
+        """Start the background scheduler task.
 
         :param ctx: The module context.
         """
@@ -219,8 +212,7 @@ class TimerScheduler:
         ctx.logger.debug("Timer scheduler started.")
 
     async def stop(self, ctx: ModuleContext) -> None:
-        """
-        Cancel the background scheduler task and wait for it to exit.
+        """Cancel the background scheduler task and wait for it to exit.
 
         :param ctx: The module context.
         """
@@ -233,8 +225,7 @@ class TimerScheduler:
             ctx.logger.info("Timer scheduler stopped.")
 
     def reschedule(self) -> None:
-        """
-        Wake the scheduler so it recalculates the next fire time.
+        """Wake the scheduler so it recalculates the next fire time.
 
         Called by timer management commands when timer state changes.
         """
@@ -242,8 +233,7 @@ class TimerScheduler:
             self._wake_event.set()
 
     async def _scheduler_loop(self, ctx: ModuleContext, wake: asyncio.Event) -> None:
-        """
-        Background loop that sleeps until the next timer is due and fires it.
+        """Background loop that sleeps until the next timer is due and fires it.
 
         Uses an asyncio.Event to allow early wake-ups when timer state changes.
 
@@ -283,8 +273,7 @@ class TimerScheduler:
                 ctx.logger.exception("Scheduler tick failed.")
 
     async def _tick(self, ctx: ModuleContext) -> None:
-        """
-        Single scheduler tick: query enabled timers and fire any that are due.
+        """Single scheduler tick: query enabled timers and fire any that are due.
 
         :param ctx: The module context.
         """
@@ -342,8 +331,7 @@ class TimerScheduler:
 
 
 async def _compute_next_delay(ctx: ModuleContext) -> tuple[float | None, str | None]:
-    """
-    Query enabled timers and return seconds until the soonest one is time-due.
+    """Query enabled timers and return seconds until the soonest one is time-due.
 
     :param ctx: The module context.
     :return: Tuple of (seconds until next timer, display name of that timer),
@@ -394,8 +382,7 @@ _scheduler: TimerScheduler | None = None
 
 
 def get_scheduler() -> TimerScheduler:
-    """
-    Return the active scheduler instance.
+    """Return the active scheduler instance.
 
     :return: The active TimerScheduler.
     :raises RuntimeError: If the scheduler has not been initialized.
@@ -406,8 +393,7 @@ def get_scheduler() -> TimerScheduler:
 
 
 def set_scheduler(scheduler: TimerScheduler) -> None:
-    """
-    Set the active scheduler instance.
+    """Set the active scheduler instance.
 
     :param scheduler: The TimerScheduler to install.
     """

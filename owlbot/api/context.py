@@ -44,8 +44,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class ModuleContext:
-    """
-    Shared services available to all module handlers.
+    """Shared services available to all module handlers.
 
     Created once per module during loading and reused for all handler
     invocations. This bundles the common dependencies that every handler needs.
@@ -83,6 +82,7 @@ class ModuleContext:
     logger: logging.Logger = field(init=False)
 
     def __post_init__(self) -> None:
+        """Derive the module-scoped logger from the module name."""
         self.logger = logging.getLogger(f"owlbot.modules.{self.module_name}")
 
 
@@ -96,8 +96,7 @@ class PropagationState:
 
 @dataclass
 class EventContext[E]:
-    """
-    Context passed to event handlers.
+    """Context passed to event handlers.
 
     Each handler invocation receives its own EventContext instance with the event
     data and access to shared services via the module context.
@@ -165,16 +164,14 @@ class EventContext[E]:
 
     @property
     def propagation_stopped(self) -> bool:
-        """
-        Check if event propagation has been stopped by a handler.
+        """Check if event propagation has been stopped by a handler.
 
         :return: True if stop_propagation() was called by any handler.
         """
         return self._propagation.stopped
 
     def stop_propagation(self, reason: str | None = None) -> None:
-        """
-        Stop event from being dispatched to remaining handlers and commands.
+        """Stop event from being dispatched to remaining handlers and commands.
 
         Once called, no further handlers will be invoked for this event, and
         command dispatch (for CHAT events) will be skipped.
@@ -189,8 +186,7 @@ class EventContext[E]:
 
 @dataclass
 class CommandContext:
-    """
-    Context passed to command handlers.
+    """Context passed to command handlers.
 
     Provides access to the parsed command data, original chat event context,
     and shared services. Like EventContext and RouteContext, all ModuleContext
@@ -289,8 +285,7 @@ class CommandContext:
 
 @dataclass
 class RouteContext:
-    """
-    Context passed to HTTP route handlers.
+    """Context passed to HTTP route handlers.
 
     Similar to EventContext but includes the aiohttp request object
     for accessing HTTP-specific data (body, headers, query params).

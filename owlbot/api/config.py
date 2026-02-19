@@ -36,8 +36,7 @@ class Config:
         config_path: str | Path = "config.yaml",
         overrides: dict[str, Any] | None = None,
     ):
-        """
-        Initialize the configuration manager.
+        """Initialize the configuration manager.
 
         :param config_path: Path to the YAML config file.
         :param overrides: CLI overrides (keys match property names).
@@ -91,9 +90,9 @@ class Config:
         default: Any = _UNSET,
         type_fn: type = str,
     ) -> Any:
-        """
-        Resolve a setting through the priority chain:
-        CLI arg > env var > config file > default.
+        """Resolve a setting through the priority chain.
+
+        Priority order: CLI arg > env var > config file > default.
 
         When *default* is a ``str``, the resolved value is coerced to ``str``
         (the implicit *type_fn*).  For non-string types, pass both *default*
@@ -123,8 +122,7 @@ class Config:
 
     @property
     def webhook_secret(self) -> str:
-        """
-        Secret string for the webhook URL path.
+        """Secret string for the webhook URL path.
 
         The webhook endpoint is always /webhook/<secret>. A cryptographically
         secure value is generated on first run if not explicitly configured.
@@ -139,8 +137,7 @@ class Config:
 
     @property
     def webhook_path(self) -> str:
-        """
-        URL path where Owncast sends webhooks.
+        """URL path where Owncast sends webhooks.
 
         Always returns /webhook/<secret>. The secret is auto-generated
         on first run if not configured.
@@ -207,8 +204,7 @@ class Config:
 
     @property
     def public_base_url(self) -> str:
-        """
-        Public base URL for Owlbot's web server.
+        """Public base URL for Owlbot's web server.
 
         Used to construct URLs for module routes and the webhook endpoint.
         Falls back to ``owncast.url`` if not explicitly set.
@@ -224,8 +220,7 @@ class Config:
 
     @property
     def storage_dir(self) -> Path:
-        """
-        Directory for module database files.
+        """Directory for module database files.
 
         Each module gets its own database file named '<module_name>.db'.
         Defaults to 'data/' in the working directory.
@@ -242,8 +237,7 @@ class Config:
 
     @property
     def modules_dir(self) -> Path:
-        """
-        Directory containing user modules.
+        """Directory containing user modules.
 
         Built-in modules are loaded from the package regardless of this setting.
         Defaults to 'modules/' in the working directory.
@@ -260,8 +254,7 @@ class Config:
 
     @property
     def log_dir(self) -> Path | None:
-        """
-        Directory for the log file.
+        """Directory for the log file.
 
         When set, an ``owlbot.log`` file is written to this directory in
         addition to stdout.  Returns ``None`` when unset (stdout only).
@@ -405,8 +398,7 @@ class Config:
         logger.info(f"Configuration saved to: {self.config_path.absolute()}")
 
     def is_module_enabled(self, module_name: str) -> bool:
-        """
-        Check if a module is enabled.
+        """Check if a module is enabled.
 
         Modules are enabled by default unless explicitly disabled with
         ``modules.<name>.enabled: false`` in the config file.
@@ -424,8 +416,7 @@ class Config:
         return True
 
     def get_module_config(self, module_name: str) -> dict[str, Any]:
-        """
-        Get the configuration dict for a module.
+        """Get the configuration dict for a module.
 
         Returns merged defaults and config file values, with config file
         values taking precedence.
@@ -443,8 +434,7 @@ class Config:
         return {**defaults, **config}
 
     def set_module_config(self, module_name: str, config: dict[str, Any]) -> None:
-        """
-        Update the configuration for a module at runtime and persist to disk.
+        """Update the configuration for a module at runtime and persist to disk.
 
         :param module_name: The module name.
         :param config: Dict of configuration values to set.
@@ -459,8 +449,7 @@ class Config:
     def register_module_defaults(
         self, module_name: str, defaults: dict[str, Any]
     ) -> None:
-        """
-        Register default configuration values for a module.
+        """Register default configuration values for a module.
 
         Called by modules during setup to declare their expected config keys
         and default values. Missing keys are backfilled into the config file
@@ -516,8 +505,7 @@ class ModuleConfig:
     """Pre-scoped configuration for a specific module."""
 
     def __init__(self, config: Config, module_name: str):
-        """
-        Initialize a module-scoped configuration.
+        """Initialize a module-scoped configuration.
 
         :param config: The parent Config object.
         :param module_name: The name of the module this config
@@ -537,8 +525,7 @@ class ModuleConfig:
         return self._config.public_base_url
 
     def get(self, key: str, default: Any = None) -> Any:
-        """
-        Get a config value by key.
+        """Get a config value by key.
 
         :param key: The configuration key.
         :param default: Value to return if key is not found.
@@ -547,16 +534,14 @@ class ModuleConfig:
         return self.as_dict().get(key, default)
 
     def as_dict(self) -> dict[str, Any]:
-        """
-        Get the full config dict for this module.
+        """Get the full config dict for this module.
 
         :return: Dict of all configuration values.
         """
         return self._config.get_module_config(self._module_name)
 
     def set(self, key: str, value: Any) -> None:
-        """
-        Set a config value at runtime and persist to disk.
+        """Set a config value at runtime and persist to disk.
 
         :param key: The configuration key.
         :param value: The value to set.
@@ -566,8 +551,7 @@ class ModuleConfig:
         self._config.set_module_config(self._module_name, current)
 
     def register_defaults(self, defaults: dict[str, Any]) -> None:
-        """
-        Register default values for this module's config.
+        """Register default values for this module's config.
 
         Called during setup() to declare expected config keys and their
         default values.

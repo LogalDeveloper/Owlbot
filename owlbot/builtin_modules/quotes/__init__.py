@@ -41,8 +41,7 @@ _jinja_env = jinja2.Environment(
 
 @on_setup
 async def setup(ctx: ModuleContext) -> None:
-    """
-    Initialize the quotes module.
+    """Initialize the quotes module.
 
     Creates the database schema.
 
@@ -63,8 +62,7 @@ async def setup(ctx: ModuleContext) -> None:
 
 @on_route("/list", methods=["GET"])
 async def quotes_list_page(ctx: RouteContext) -> web.Response:
-    """
-    Serve an HTML page listing all quotes in a table.
+    """Serve an HTML page listing all quotes in a table.
 
     Columns: #, Quote, Added By, Date Added.
     Accessible at /owlbot/quotes/list.
@@ -94,8 +92,7 @@ async def quotes_list_page(ctx: RouteContext) -> web.Response:
 
 @on_command("quote", aliases=["q"])
 async def quote_command(ctx: CommandContext) -> None:
-    """
-    Display a quote. Random if no argument, specific if an ID is given.
+    """Display a quote. Random if no argument, specific if an ID is given.
 
     :param ctx: The command context.
     """
@@ -137,8 +134,7 @@ async def quote_command(ctx: CommandContext) -> None:
 
 @on_command("addquote", requires_moderator=True)
 async def addquote_command(ctx: CommandContext) -> None:
-    """
-    Add a new quote to the database. Moderator only.
+    """Add a new quote to the database. Moderator only.
 
     :param ctx: The command context.
     """
@@ -159,8 +155,7 @@ async def addquote_command(ctx: CommandContext) -> None:
 
 @on_command("deletequote", aliases=["delquote"], requires_moderator=True)
 async def deletequote_command(ctx: CommandContext) -> None:
-    """
-    Delete a quote by ID. Moderator only.
+    """Delete a quote by ID. Moderator only.
 
     :param ctx: The command context.
     """
@@ -190,8 +185,7 @@ async def deletequote_command(ctx: CommandContext) -> None:
 
 @on_command("listquotes", cooldown=15)
 async def listquotes_command(ctx: CommandContext) -> None:
-    """
-    Send the URL to the quotes list web page.
+    """Send the URL to the quotes list web page.
 
     :param ctx: The command context.
     """

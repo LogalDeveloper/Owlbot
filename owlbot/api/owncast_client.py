@@ -52,8 +52,7 @@ class OwncastError(Exception):
     """Raised when an Owncast API request fails."""
 
     def __init__(self, status: int, message: str):
-        """
-        Initialize the error.
+        """Initialize the error.
 
         :param status: HTTP status code from the failed request, or 0 if the
             request failed due to a connection error before receiving a response.
@@ -72,8 +71,7 @@ class OwncastClient:
     """
 
     def __init__(self, base_url: str, access_token: str, http_client: HttpClient):
-        """
-        Initialize the Owncast client.
+        """Initialize the Owncast client.
 
         :param base_url: The Owncast server URL (e.g., "https://stream.logal.dev").
         :param access_token: API access token from Owncast admin settings.
@@ -94,8 +92,7 @@ class OwncastClient:
         return self._base_url
 
     async def get_status(self) -> dict[str, Any]:
-        """
-        Get the public server status.
+        """Get the public server status.
 
         This is a public endpoint that does not require authentication.
         Returns server info including version, online status, and viewer count.
@@ -106,8 +103,7 @@ class OwncastClient:
         return dict(await self._get("/api/status"))
 
     async def send_message(self, body: str) -> str:
-        """
-        Send a chat message visible to all viewers.
+        """Send a chat message visible to all viewers.
 
         :param body: The message text (supports markdown).
         :return: Success message from the server.
@@ -116,8 +112,7 @@ class OwncastClient:
         return await self._post("/api/integrations/chat/send", {"body": body})
 
     async def send_system_message(self, body: str) -> str:
-        """
-        Send a system message visible to all viewers.
+        """Send a system message visible to all viewers.
 
         System messages are styled differently from regular chat (typically
         italicized or dimmed) and are used for announcements or notifications.
@@ -129,8 +124,7 @@ class OwncastClient:
         return await self._post("/api/integrations/chat/system", {"body": body})
 
     async def send_action(self, body: str) -> str:
-        """
-        Send an action message (like IRC /me).
+        """Send an action message (like IRC /me).
 
         Action messages display as "*BotName does something*" and are used
         for describing actions rather than speech.
@@ -142,8 +136,7 @@ class OwncastClient:
         return await self._post("/api/integrations/chat/action", {"body": body})
 
     async def send_system_message_to_client(self, client_id: int, body: str) -> str:
-        """
-        Send a private system message to a specific viewer.
+        """Send a private system message to a specific viewer.
 
         The message is only visible to the targeted client, useful for
         welcome messages or private notifications.
@@ -160,8 +153,7 @@ class OwncastClient:
     async def set_message_visibility(
         self, message_ids: list[str], visible: bool
     ) -> str:
-        """
-        Hide or show chat messages (moderation).
+        """Hide or show chat messages (moderation).
 
         Hidden messages are removed from the chat display for all viewers.
         This is typically used for moderation purposes.
@@ -179,8 +171,7 @@ class OwncastClient:
         )
 
     async def get_chat_history(self) -> list[dict[str, Any]]:
-        """
-        Fetch recent chat messages.
+        """Fetch recent chat messages.
 
         :return: List of recent chat message objects with user info and content.
         """
@@ -188,8 +179,7 @@ class OwncastClient:
         return list(await self._get("/api/integrations/chat"))
 
     async def get_connected_clients(self) -> list[dict[str, Any]]:
-        """
-        Get list of currently connected viewers.
+        """Get list of currently connected viewers.
 
         :return: List of connected client objects with user info and connection details.
         """
@@ -197,8 +187,7 @@ class OwncastClient:
         return list(await self._get("/api/integrations/clients"))
 
     async def set_stream_title(self, title: str) -> str:
-        """
-        Update the stream title.
+        """Update the stream title.
 
         :param title: The new stream title.
         :return: Success message from the server.
@@ -207,8 +196,7 @@ class OwncastClient:
         return await self._post("/api/integrations/streamtitle", {"value": title})
 
     async def _post(self, endpoint: str, data: dict[str, Any] | None = None) -> str:
-        """
-        Send a POST request to the Owncast API.
+        """Send a POST request to the Owncast API.
 
         Owncast POST endpoints return ``{"success": true, "message": "..."}``.
         This method validates the response and returns just the message string.
@@ -270,8 +258,7 @@ class OwncastClient:
             raise OwncastError(0, str(e)) from e
 
     async def _get(self, endpoint: str, params: dict[str, Any] | None = None) -> Any:
-        """
-        Send a GET request to the Owncast API.
+        """Send a GET request to the Owncast API.
 
         :param endpoint: The API endpoint path.
         :param params: Optional query parameters.

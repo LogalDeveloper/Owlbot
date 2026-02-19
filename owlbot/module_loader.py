@@ -54,8 +54,7 @@ class ModuleLoader:
         config: Config,
         http_client: HttpClient,
     ):
-        """
-        Initialize the module loader.
+        """Initialize the module loader.
 
         :param modules_dir: Path to the user modules directory.
         :param config: Configuration object for checking module enable/disable state.
@@ -105,8 +104,7 @@ class ModuleLoader:
         )
 
     def get_module_context(self, module_name: str) -> ModuleContext | None:
-        """
-        Look up a module's context by name.
+        """Look up a module's context by name.
 
         :param module_name: The module name.
         :return: The ModuleContext if the module is loaded, None otherwise.
@@ -128,8 +126,7 @@ class ModuleLoader:
         return ctx
 
     def discover_module_names(self) -> list[str]:
-        """
-        Discover all loadable modules from both built-in and user directories.
+        """Discover all loadable modules from both built-in and user directories.
 
         Built-in modules ship with the package. User modules are discovered
         from the configured modules directory. If a user module has the same
@@ -160,8 +157,7 @@ class ModuleLoader:
         return modules
 
     def _discover_user_module_names(self) -> set[str]:
-        """
-        Scan the user modules directory for loadable modules.
+        """Scan the user modules directory for loadable modules.
 
         Supports both single-file modules (``name.py``) and package modules
         (``name/__init__.py``).  Files and directories starting with underscore
@@ -197,8 +193,7 @@ class ModuleLoader:
         return found
 
     async def load_all_modules(self) -> list[str]:
-        """
-        Discover and load all enabled modules using two-phase loading.
+        """Discover and load all enabled modules using two-phase loading.
 
         **Phase 1:** Import every module, create contexts, and register all
         decorated handlers (``@on_event``, ``@on_command``, ``@on_route``).
@@ -255,8 +250,7 @@ class ModuleLoader:
         return loaded
 
     async def load_module(self, module_name: str, *, _run_setup: bool = True) -> None:
-        """
-        Load a single module by name.
+        """Load a single module by name.
 
         If both a package and single-file form exist for the same name,
         the package form is used. Checks if the module is enabled in
@@ -354,8 +348,7 @@ class ModuleLoader:
             raise ModuleLoadError(f"Failed to load module '{module_name}': {e}") from e
 
     async def unload_module(self, module_name: str) -> bool:
-        """
-        Unload a module, calling its teardown and cleaning up all state.
+        """Unload a module, calling its teardown and cleaning up all state.
 
         :param module_name: The module to unload.
         :return: True if module was unloaded, False if not found.
@@ -397,8 +390,7 @@ class ModuleLoader:
         return True
 
     async def unload_all_modules(self) -> None:
-        """
-        Unload all modules, calling teardown and cleaning up all state.
+        """Unload all modules, calling teardown and cleaning up all state.
 
         Called during bot shutdown to allow modules to clean up resources.
         """
@@ -411,8 +403,7 @@ class ModuleLoader:
         logger.info("All module unload complete.")
 
     async def _run_module_setup(self, module_name: str) -> None:
-        """
-        Run a module's ``@on_setup`` hooks if any are defined.
+        """Run a module's ``@on_setup`` hooks if any are defined.
 
         All setup handlers run inside a single storage transaction that is
         committed on success.  If any handler fails, the transaction is
@@ -449,8 +440,7 @@ class ModuleLoader:
             ) from e
 
     def _resolve_module_path(self, module_name: str) -> Path:
-        """
-        Resolve the filesystem path for a module by name.
+        """Resolve the filesystem path for a module by name.
 
         User modules are checked first (package form, then single-file).
         If no user module is found and the name is a built-in, the built-in
@@ -478,8 +468,7 @@ class ModuleLoader:
 
     @staticmethod
     def _resolve_builtin_module_path(module_name: str) -> Path:
-        """
-        Locate a built-in module's ``__init__.py`` inside the package.
+        """Locate a built-in module's ``__init__.py`` inside the package.
 
         :param module_name: Name of the built-in module.
         :return: Path to the module's ``__init__.py``.
@@ -493,8 +482,7 @@ class ModuleLoader:
         )
 
     def _register_module_handlers(self, module: ModuleType, module_name: str) -> None:
-        """
-        Scan a module for decorated handlers and register them.
+        """Scan a module for decorated handlers and register them.
 
         Delegates to each registry's ``register_from_module()`` method,
         which knows how to find its own decorator markers.
@@ -510,8 +498,7 @@ class ModuleLoader:
     def _collect_lifecycle_handlers(
         module: ModuleType, marker: str
     ) -> list[LifecycleHandler]:
-        """
-        Collect callables from a module that have a given marker attribute.
+        """Collect callables from a module that have a given marker attribute.
 
         Scans ``vars(module)`` for callable objects where ``getattr(obj, marker)``
         is truthy.  Used to find ``@on_setup`` (marker ``"_owlbot_setup"``) and
@@ -528,8 +515,7 @@ class ModuleLoader:
         ]
 
     def _cleanup_module(self, module_name: str) -> None:
-        """
-        Remove all state associated with a module.
+        """Remove all state associated with a module.
 
         Removes the top-level module entry and any submodule entries
         (for package-style modules) from ``sys.modules``.

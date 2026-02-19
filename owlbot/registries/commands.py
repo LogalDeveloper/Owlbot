@@ -41,16 +41,14 @@ logger = logging.getLogger("owlbot.commands")
 
 
 class CommandRegistry:
-    """
-    Holds all registered commands for a bot instance.
+    """Holds all registered commands for a bot instance.
 
     Instance-scoped to enable proper dependency injection and allow multiple
     bot instances to coexist without sharing state.
     """
 
     def __init__(self, prefix: str = "!") -> None:
-        """
-        Initialize the command registry.
+        """Initialize the command registry.
 
         :param prefix: Command prefix character (e.g., "!" for "!ping").
         """
@@ -76,8 +74,7 @@ class CommandRegistry:
         cooldown: int | float = 0,
         module_name: str,
     ) -> None:
-        """
-        Register a command handler.
+        """Register a command handler.
 
         :param name: Primary command name (case-insensitive).
         :param handler: Async function to handle the command.
@@ -123,8 +120,7 @@ class CommandRegistry:
         )
 
     def unregister(self, name: str) -> bool:
-        """
-        Unregister a command and all its aliases.
+        """Unregister a command and all its aliases.
 
         :param name: The primary command name or any alias.
         :return: True if command was found and removed, False otherwise.
@@ -149,8 +145,7 @@ class CommandRegistry:
         return True
 
     def get(self, trigger: str) -> CommandInfo | None:
-        """
-        Look up a command by name or alias.
+        """Look up a command by name or alias.
 
         :param trigger: Command name or alias (case-insensitive).
         :return: CommandInfo if found, None otherwise.
@@ -162,8 +157,7 @@ class CommandRegistry:
         return self._commands.get(primary)
 
     def exists(self, trigger: str) -> bool:
-        """
-        Check if a command is registered.
+        """Check if a command is registered.
 
         :param trigger: Command name or alias (case-insensitive).
         :return: True if the command exists, False otherwise.
@@ -171,16 +165,14 @@ class CommandRegistry:
         return trigger.lower() in self._aliases
 
     def get_all(self) -> dict[str, CommandInfo]:
-        """
-        Get all registered commands.
+        """Get all registered commands.
 
         :return: Dict mapping primary command names to CommandInfo.
         """
         return self._commands.copy()
 
     def unregister_by_module(self, module_name: str) -> int:
-        """
-        Remove all commands registered by a specific module.
+        """Remove all commands registered by a specific module.
 
         :param module_name: The module whose commands should be removed.
         :return: Number of commands removed.
@@ -197,8 +189,7 @@ class CommandRegistry:
         return len(to_remove)
 
     def register_from_module(self, module: ModuleType, module_name: str) -> None:
-        """
-        Scan a Python module for @on_command-decorated functions and register them.
+        """Scan a Python module for @on_command-decorated functions and register them.
 
         Looks for functions with the ``_owlbot_command`` attribute set by
         the ``@on_command`` decorator and registers each one.
@@ -222,8 +213,7 @@ class CommandRegistry:
                     )
 
     def parse(self, message: str) -> tuple[str, str] | None:
-        """
-        Parse a message to extract command and arguments.
+        """Parse a message to extract command and arguments.
 
         :param message: The chat message body.
         :return: Tuple of (command_name, args_string), or None if not a command.
@@ -245,8 +235,7 @@ class CommandRegistry:
 
 
 class CommandDispatcher:
-    """
-    Dispatches chat events to registered command handlers.
+    """Dispatches chat events to registered command handlers.
 
     Parses messages, checks authentication/moderator requirements,
     and calls the appropriate command handler.
@@ -260,8 +249,7 @@ class CommandDispatcher:
         loaded_modules: set[str],
         command_prefix: str = "!",
     ) -> None:
-        """
-        Initialize the command dispatcher.
+        """Initialize the command dispatcher.
 
         Creates and owns a :class:`CommandRegistry` internally.
 
@@ -296,8 +284,7 @@ class CommandDispatcher:
         *,
         aliases: list[str] | tuple[str, ...] | None = None,
     ) -> None:
-        """
-        Register a built-in command handler.
+        """Register a built-in command handler.
 
         Built-in commands use a simpler handler signature (event, owncast_client)
         and don't require module infrastructure.
@@ -328,8 +315,7 @@ class CommandDispatcher:
         cooldown: int | float = 0,
         module_name: str,
     ) -> None:
-        """
-        Register a command handler.
+        """Register a command handler.
 
         Delegates to the internal CommandRegistry.
 
@@ -355,8 +341,7 @@ class CommandDispatcher:
         self._cooldown_tracker.pop(name.lower(), None)
 
     def unregister(self, name: str) -> bool:
-        """
-        Unregister a command and all its aliases.
+        """Unregister a command and all its aliases.
 
         Delegates to the internal CommandRegistry.
 
@@ -371,8 +356,7 @@ class CommandDispatcher:
         return result
 
     def get(self, trigger: str) -> CommandInfo | None:
-        """
-        Look up a command by name or alias.
+        """Look up a command by name or alias.
 
         Delegates to the internal CommandRegistry.
 
@@ -382,8 +366,7 @@ class CommandDispatcher:
         return self._command_registry.get(trigger)
 
     def exists(self, trigger: str) -> bool:
-        """
-        Check if a command is registered.
+        """Check if a command is registered.
 
         Delegates to the internal CommandRegistry.
 
@@ -393,8 +376,7 @@ class CommandDispatcher:
         return self._command_registry.exists(trigger)
 
     def get_by_module(self, module_name: str) -> dict[str, CommandInfo]:
-        """
-        Get all commands registered by a specific module.
+        """Get all commands registered by a specific module.
 
         :param module_name: The module whose commands to return.
         :return: Dict mapping primary command names to CommandInfo for that module.
@@ -406,8 +388,7 @@ class CommandDispatcher:
         }
 
     def register_from_module(self, module: ModuleType, module_name: str) -> None:
-        """
-        Scan a Python module for @on_command-decorated functions and register them.
+        """Scan a Python module for @on_command-decorated functions and register them.
 
         Delegates to the internal CommandRegistry.
 
@@ -417,8 +398,7 @@ class CommandDispatcher:
         self._command_registry.register_from_module(module, module_name)
 
     def unregister_by_module(self, module_name: str) -> int:
-        """
-        Remove all commands registered by a specific module.
+        """Remove all commands registered by a specific module.
 
         Delegates to the internal CommandRegistry.
 
@@ -432,8 +412,7 @@ class CommandDispatcher:
         return self._command_registry.unregister_by_module(module_name)
 
     async def dispatch(self, event: ChatEvent) -> None:
-        """
-        Dispatch a chat event to the appropriate command handler if it's a command.
+        """Dispatch a chat event to the appropriate command handler if it's a command.
 
         :param event: The chat event to check for commands.
         """
@@ -605,8 +584,7 @@ class CommandDispatcher:
 
 
 class ModuleCommands:
-    """
-    Module-scoped wrapper around CommandDispatcher.
+    """Module-scoped wrapper around CommandDispatcher.
 
     This wrapper auto-supplies the module name for registration operations,
     so modules don't need to pass their own name back into the API.
@@ -614,8 +592,7 @@ class ModuleCommands:
     """
 
     def __init__(self, dispatcher: CommandDispatcher, module_name: str) -> None:
-        """
-        Initialize the module-scoped command wrapper.
+        """Initialize the module-scoped command wrapper.
 
         :param dispatcher: The CommandDispatcher that owns the command registry.
         :param module_name: The name of the module using this wrapper.
@@ -643,8 +620,7 @@ class ModuleCommands:
         requires_moderator: bool = False,
         cooldown: int | float = 0,
     ) -> None:
-        """
-        Register a command handler for this module.
+        """Register a command handler for this module.
 
         The module name is automatically supplied.
 
@@ -667,8 +643,7 @@ class ModuleCommands:
         )
 
     def unregister(self, name: str) -> bool:
-        """
-        Unregister a command and all its aliases.
+        """Unregister a command and all its aliases.
 
         Only commands registered by this module can be unregistered.
 
@@ -682,8 +657,7 @@ class ModuleCommands:
         return self._dispatcher.unregister(name)
 
     def get(self, trigger: str) -> CommandInfo | None:
-        """
-        Look up a command by name or alias within this module's registrations.
+        """Look up a command by name or alias within this module's registrations.
 
         :param trigger: Command name or alias (case-insensitive).
         :return: CommandInfo if found and owned by this module, None otherwise.
@@ -694,8 +668,7 @@ class ModuleCommands:
         return info
 
     def exists(self, trigger: str) -> bool:
-        """
-        Check if a command is registered across all modules.
+        """Check if a command is registered across all modules.
 
         :param trigger: Command name or alias (case-insensitive).
         :return: True if the command exists, False otherwise.

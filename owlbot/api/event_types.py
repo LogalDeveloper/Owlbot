@@ -43,8 +43,7 @@ class EventType(StrEnum):
 
 
 def _parse_timestamp(ts: str | None) -> datetime | None:
-    """
-    Parse an ISO 8601 timestamp string into a datetime.
+    """Parse an ISO 8601 timestamp string into a datetime.
 
     Handles timezone suffixes and the Go zero-value timestamp that Owncast
     sends for missing/unset timestamps.
@@ -91,8 +90,7 @@ class User:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> User:
-        """
-        Create a User from webhook JSON data.
+        """Create a User from webhook JSON data.
 
         :param data: The user data from the webhook payload.
         :return: A populated User instance.
@@ -111,8 +109,7 @@ class User:
 
     @property
     def is_moderator(self) -> bool:
-        """
-        Check if the user has moderator privileges.
+        """Check if the user has moderator privileges.
 
         :return: True if the user has the MODERATOR scope.
         """
@@ -133,8 +130,7 @@ class ChatEvent:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ChatEvent:
-        """
-        Create a ChatEvent from webhook JSON data.
+        """Create a ChatEvent from webhook JSON data.
 
         :param data: The event data from the webhook payload.
         :return: A populated ChatEvent instance.
@@ -168,8 +164,7 @@ class UserJoinedEvent:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> UserJoinedEvent:
-        """
-        Create a UserJoinedEvent from webhook JSON data.
+        """Create a UserJoinedEvent from webhook JSON data.
 
         :param data: The event data from the webhook payload.
         :return: A populated UserJoinedEvent instance.
@@ -193,8 +188,7 @@ class UserPartedEvent:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> UserPartedEvent:
-        """
-        Create a UserPartedEvent from webhook JSON data.
+        """Create a UserPartedEvent from webhook JSON data.
 
         :param data: The event data from the webhook payload.
         :return: A populated UserPartedEvent instance.
@@ -219,8 +213,7 @@ class NameChangedEvent:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> NameChangedEvent:
-        """
-        Create a NameChangedEvent from webhook JSON data.
+        """Create a NameChangedEvent from webhook JSON data.
 
         Note: The user object contains the OLD display name in user.display_name.
 
@@ -248,8 +241,7 @@ class StreamStartedEvent:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> StreamStartedEvent:
-        """
-        Create a StreamStartedEvent from webhook JSON data.
+        """Create a StreamStartedEvent from webhook JSON data.
 
         :param data: The event data from the webhook payload.
         :return: A populated StreamStartedEvent instance.
@@ -275,8 +267,7 @@ class StreamStoppedEvent:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> StreamStoppedEvent:
-        """
-        Create a StreamStoppedEvent from webhook JSON data.
+        """Create a StreamStoppedEvent from webhook JSON data.
 
         :param data: The event data from the webhook payload.
         :return: A populated StreamStoppedEvent instance.
@@ -305,8 +296,7 @@ class StreamStatus:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> StreamStatus:
-        """
-        Create a StreamStatus from webhook JSON data.
+        """Create a StreamStatus from webhook JSON data.
 
         :param data: The status data from the webhook payload.
         :return: A populated StreamStatus instance.
@@ -336,8 +326,7 @@ class StreamTitleUpdatedEvent:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> StreamTitleUpdatedEvent:
-        """
-        Create a StreamTitleUpdatedEvent from webhook JSON data.
+        """Create a StreamTitleUpdatedEvent from webhook JSON data.
 
         :param data: The event data from the webhook payload.
         :return: A populated StreamTitleUpdatedEvent instance.
@@ -364,8 +353,7 @@ class VisibilityUpdateEvent:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> VisibilityUpdateEvent:
-        """
-        Create a VisibilityUpdateEvent from webhook JSON data.
+        """Create a VisibilityUpdateEvent from webhook JSON data.
 
         :param data: The event data from the webhook payload.
         :return: A populated VisibilityUpdateEvent instance.
@@ -407,8 +395,7 @@ _EVENT_TYPE_MAP: dict[EventType, type[Event]] = {
 
 
 def parse_event(data: dict[str, Any]) -> _ParsedEvent | None:
-    """
-    Parse a raw webhook payload into a typed event.
+    """Parse a raw webhook payload into a typed event.
 
     :param data: The JSON payload from Owncast's webhook.
     :return: Tuple of (event_type, event_instance), or None if the event type
@@ -431,8 +418,7 @@ def parse_event(data: dict[str, Any]) -> _ParsedEvent | None:
 
 
 def log_event(event_type: EventType, event: Event) -> None:
-    """
-    Log event details for debugging and monitoring.
+    """Log event details for debugging and monitoring.
 
     :param event_type: The type of event being logged.
     :param event: The parsed event instance.

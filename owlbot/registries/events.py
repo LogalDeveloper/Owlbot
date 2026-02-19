@@ -49,8 +49,7 @@ logger = logging.getLogger("owlbot.events")
 
 
 class EventRegistry:
-    """
-    Holds all registered event handlers for a bot instance.
+    """Holds all registered event handlers for a bot instance.
 
     Instance-scoped to enable proper dependency injection and allow multiple
     bot instances to coexist without sharing state.
@@ -69,8 +68,7 @@ class EventRegistry:
         module_name: str,
         priority: int = Priority.NORMAL,
     ) -> None:
-        """
-        Register a handler for the given event types.
+        """Register a handler for the given event types.
 
         Called by the module loader after scanning for decorated functions.
 
@@ -97,8 +95,7 @@ class EventRegistry:
             )
 
     def unregister(self, handler: EventHandler) -> bool:
-        """
-        Unregister a handler from all event types it is registered for.
+        """Unregister a handler from all event types it is registered for.
 
         :param handler: The handler function to unregister.
         :return: True if handler was found and removed, False otherwise.
@@ -126,8 +123,7 @@ class EventRegistry:
         return False
 
     def get(self, event_type: EventType) -> list[HandlerEntry]:
-        """
-        Get all handlers registered for a specific event type.
+        """Get all handlers registered for a specific event type.
 
         :param event_type: The event type to look up.
         :return: List of (handler, module_name, priority) tuples.
@@ -135,8 +131,7 @@ class EventRegistry:
         return self._handlers.get(event_type.value, [])
 
     def get_all(self) -> EventHandlerMap:
-        """
-        Get a copy of the entire handler registry.
+        """Get a copy of the entire handler registry.
 
         :return: Dict mapping event type values to handler lists.
         """
@@ -145,8 +140,7 @@ class EventRegistry:
         }
 
     def get_handler_module(self, handler: EventHandler) -> str | None:
-        """
-        Look up which module registered a given handler.
+        """Look up which module registered a given handler.
 
         :param handler: The handler function to look up.
         :return: The module name if found, None otherwise.
@@ -158,8 +152,7 @@ class EventRegistry:
         return None
 
     def unregister_by_module(self, module_name: str) -> int:
-        """
-        Remove all handlers registered by a specific module.
+        """Remove all handlers registered by a specific module.
 
         :param module_name: The module whose handlers should be removed.
         :return: Number of handlers removed.
@@ -181,8 +174,7 @@ class EventRegistry:
         return len(seen)
 
     def register_from_module(self, module: ModuleType, module_name: str) -> None:
-        """
-        Scan a Python module for @on_event-decorated functions and register them.
+        """Scan a Python module for @on_event-decorated functions and register them.
 
         Looks for functions with the ``_owlbot_event`` attribute set by
         the ``@on_event`` decorator and registers each one.
@@ -201,8 +193,7 @@ class EventRegistry:
 
 
 class EventDispatcher:
-    """
-    Dispatches events to registered handlers sequentially by priority.
+    """Dispatches events to registered handlers sequentially by priority.
 
     After all event handlers complete, command dispatch is triggered for
     CHAT events (via the injected command_dispatch callback).
@@ -214,8 +205,7 @@ class EventDispatcher:
         get_module_context: Callable[[str], ModuleContext],
         handler_timeout: float,
     ) -> None:
-        """
-        Initialize the event dispatcher.
+        """Initialize the event dispatcher.
 
         Creates and owns a :class:`EventRegistry` internally.
 
@@ -237,8 +227,7 @@ class EventDispatcher:
         module_name: str,
         priority: int = Priority.NORMAL,
     ) -> None:
-        """
-        Register a handler for the given event types.
+        """Register a handler for the given event types.
 
         A single handler can respond to multiple event types; the registry
         stores a separate entry per event type. This is the shared entry
@@ -255,8 +244,7 @@ class EventDispatcher:
         self._handler_registry.register(handler, event_types, module_name, priority)
 
     def unregister(self, handler: EventHandler) -> bool:
-        """
-        Unregister a handler from all event types it is registered for.
+        """Unregister a handler from all event types it is registered for.
 
         Unlike commands (looked up by name string), event handlers are
         identified by object identity. A handler registered for multiple
@@ -268,8 +256,7 @@ class EventDispatcher:
         return self._handler_registry.unregister(handler)
 
     def get_by_module(self, module_name: str) -> EventHandlerMap:
-        """
-        Get all handlers registered by a specific module, grouped by event type.
+        """Get all handlers registered by a specific module, grouped by event type.
 
         The registry stores handlers grouped by event type, not by module,
         so this filters across all event types to collect a single module's
@@ -288,8 +275,7 @@ class EventDispatcher:
         return result
 
     def get_handler_module(self, handler: EventHandler) -> str | None:
-        """
-        Reverse-lookup which module registered a given handler.
+        """Reverse-lookup which module registered a given handler.
 
         Scans all event types since handlers are stored by event type,
         not by module.
@@ -300,8 +286,7 @@ class EventDispatcher:
         return self._handler_registry.get_handler_module(handler)
 
     def register_from_module(self, module: ModuleType, module_name: str) -> None:
-        """
-        Scan a Python module for ``@on_event``-decorated functions and register them.
+        """Scan a Python module for ``@on_event``-decorated functions and register them.
 
         This is the import-phase entry point: the module loader calls it once
         per module. Decorator attributes are read here and passed as explicit
@@ -314,8 +299,7 @@ class EventDispatcher:
         self._handler_registry.register_from_module(module, module_name)
 
     def unregister_by_module(self, module_name: str) -> int:
-        """
-        Remove all handlers registered by a specific module.
+        """Remove all handlers registered by a specific module.
 
         Used during module teardown to clean up all of a module's handlers
         in one call, regardless of which event types they were registered for.
@@ -326,8 +310,7 @@ class EventDispatcher:
         return self._handler_registry.unregister_by_module(module_name)
 
     async def dispatch(self, event_type: EventType, event: Event) -> None:
-        """
-        Dispatch an event to handlers sequentially by priority, then to commands.
+        """Dispatch an event to handlers sequentially by priority, then to commands.
 
         :param event_type: The type of event to dispatch.
         :param event: The parsed event instance.
@@ -391,8 +374,7 @@ class EventDispatcher:
         module_name: str,
         propagation: PropagationState,
     ) -> None:
-        """
-        Call a single handler with timeout enforcement and transaction management.
+        """Call a single handler with timeout enforcement and transaction management.
 
         :param handler: The handler function to call.
         :param event: The event to pass to the handler.
@@ -444,8 +426,7 @@ class EventDispatcher:
 
 
 class ModuleEvents:
-    """
-    Module-scoped wrapper around EventDispatcher.
+    """Module-scoped wrapper around EventDispatcher.
 
     This wrapper auto-supplies the module name for registration operations,
     so modules don't need to pass their own name back into the API.
@@ -453,8 +434,7 @@ class ModuleEvents:
     """
 
     def __init__(self, dispatcher: EventDispatcher, module_name: str) -> None:
-        """
-        Initialize the module-scoped handler wrapper.
+        """Initialize the module-scoped handler wrapper.
 
         :param dispatcher: The EventDispatcher that owns the handler registry.
         :param module_name: The name of the module using this wrapper.
@@ -473,8 +453,7 @@ class ModuleEvents:
         event_types: tuple[EventType, ...],
         priority: int = Priority.NORMAL,
     ) -> None:
-        """
-        Register an event handler for this module.
+        """Register an event handler for this module.
 
         The module name is automatically supplied.
 
@@ -491,8 +470,7 @@ class ModuleEvents:
         )
 
     def unregister(self, handler: EventHandler) -> bool:
-        """
-        Unregister a handler from all event types it is registered for.
+        """Unregister a handler from all event types it is registered for.
 
         Only handlers registered by this module can be unregistered.
 
@@ -505,8 +483,7 @@ class ModuleEvents:
         return self._dispatcher.unregister(handler)
 
     def get(self, event_type: EventType) -> list[HandlerEntry]:
-        """
-        Get handlers registered by this module for a specific event type.
+        """Get handlers registered by this module for a specific event type.
 
         :param event_type: The event type to look up.
         :return: List of (handler, module_name, priority) tuples for this module only.

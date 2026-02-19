@@ -67,8 +67,7 @@ async def _resolve_or_error(ctx: CommandContext, raw_name: str) -> aiosqlite.Row
 
 @on_command("addcommand", aliases=["addcmd"], requires_moderator=True)
 async def addcommand(ctx: CommandContext) -> None:
-    """
-    Create a new custom command.
+    """Create a new custom command.
 
     Usage: !addcommand !name response text
 
@@ -134,8 +133,7 @@ async def addcommand(ctx: CommandContext) -> None:
 
 @on_command("editcommand", aliases=["editcmd"], requires_moderator=True)
 async def editcommand(ctx: CommandContext) -> None:
-    """
-    Edit an existing custom command's response.
+    """Edit an existing custom command's response.
 
     Usage: !editcommand !name new response
 
@@ -175,8 +173,7 @@ async def editcommand(ctx: CommandContext) -> None:
 
 @on_command("deletecommand", aliases=["delcmd"], requires_moderator=True)
 async def deletecommand(ctx: CommandContext) -> None:
-    """
-    Delete a custom command.
+    """Delete a custom command.
 
     Usage: !deletecommand !name
 
@@ -215,8 +212,7 @@ async def deletecommand(ctx: CommandContext) -> None:
 
 @on_command("commandmodonly", aliases=["cmdmodonly"], requires_moderator=True)
 async def commandmodonly(ctx: CommandContext) -> None:
-    """
-    Toggle moderator-only access for a custom command.
+    """Toggle moderator-only access for a custom command.
 
     Usage: !commandmodonly !name <on|off>
 
@@ -255,8 +251,7 @@ async def commandmodonly(ctx: CommandContext) -> None:
 
 @on_command("resetcommand", aliases=["resetcmd"], requires_moderator=True)
 async def resetcommand(ctx: CommandContext) -> None:
-    """
-    Reset a custom command's use counter to 0.
+    """Reset a custom command's use counter to 0.
 
     Usage: !resetcommand !name
 
@@ -288,8 +283,7 @@ async def resetcommand(ctx: CommandContext) -> None:
 
 @on_command("editcounter", aliases=["editcount"], requires_moderator=True)
 async def editcounter(ctx: CommandContext) -> None:
-    """
-    Set, increment, or decrement a named counter.
+    """Set, increment, or decrement a named counter.
 
     Usage: !editcounter <name> <value>
 
@@ -351,8 +345,7 @@ async def editcounter(ctx: CommandContext) -> None:
 
 @on_command("commandcooldown", aliases=["cmdcooldown"], requires_moderator=True)
 async def commandcooldown(ctx: CommandContext) -> None:
-    """
-    Set or disable a custom command's cooldown.
+    """Set or disable a custom command's cooldown.
 
     Usage: !commandcooldown !name <seconds>
 
@@ -404,8 +397,7 @@ async def commandcooldown(ctx: CommandContext) -> None:
 
 @on_command("addalias", requires_moderator=True)
 async def addalias(ctx: CommandContext) -> None:
-    """
-    Add an alias to an existing custom command.
+    """Add an alias to an existing custom command.
 
     Usage: !addalias !command !alias
 
@@ -485,8 +477,7 @@ async def addalias(ctx: CommandContext) -> None:
 
 @on_command("removealias", requires_moderator=True)
 async def removealias(ctx: CommandContext) -> None:
-    """
-    Remove an alias from a custom command.
+    """Remove an alias from a custom command.
 
     Usage: !removealias !alias
 
@@ -535,8 +526,7 @@ async def removealias(ctx: CommandContext) -> None:
 
 @on_command("listcommands", aliases=["listcmds"], cooldown=15)
 async def listcommands(ctx: CommandContext) -> None:
-    """
-    List all custom commands.
+    """List all custom commands.
 
     Sends a URL to the command list web page.
     Has a 15-second cooldown to prevent spam.

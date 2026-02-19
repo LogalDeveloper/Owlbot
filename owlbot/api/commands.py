@@ -83,8 +83,7 @@ def on_command(
     requires_moderator: bool = False,
     cooldown: int | float = 0,
 ) -> Callable[[CommandHandler], CommandHandler]:
-    """
-    Decorator to register a command handler.
+    """Register a command handler.
 
     :param name: Primary command name (case-insensitive).
     :param aliases: Optional list of alternative names.

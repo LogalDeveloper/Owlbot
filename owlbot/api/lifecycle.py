@@ -31,8 +31,7 @@ type LifecycleHandler = "Callable[[ModuleContext], Awaitable[None]]"
 
 
 def on_setup(func: LifecycleHandler) -> LifecycleHandler:
-    """
-    Decorator to mark a function as a module setup hook.
+    """Mark a function as a module setup hook.
 
     The decorated function will be called during module loading with a
     ``ModuleContext``. Setup hooks run inside a storage transaction that
@@ -52,8 +51,7 @@ def on_setup(func: LifecycleHandler) -> LifecycleHandler:
 
 
 def on_teardown(func: LifecycleHandler) -> LifecycleHandler:
-    """
-    Decorator to mark a function as a module teardown hook.
+    """Mark a function as a module teardown hook.
 
     The decorated function will be called during module unload or bot
     shutdown with the same ``ModuleContext`` from setup.

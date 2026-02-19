@@ -39,8 +39,7 @@ logger = logging.getLogger("owlbot.web")
 
 
 class RouteRegistry:
-    """
-    Holds all registered routes for a bot instance.
+    """Holds all registered routes for a bot instance.
 
     Routes are namespaced by module to prevent conflicts. Supports path
     patterns using aiohttp's ``{name}`` and ``{name:regex}`` syntax via
@@ -64,8 +63,7 @@ class RouteRegistry:
         methods: list[str] | None = None,
         module_name: str,
     ) -> RouteInfo:
-        """
-        Register a route handler.
+        """Register a route handler.
 
         :param path: URL path relative to module namespace. Supports
             ``{name}`` and ``{name:regex}`` patterns.
@@ -108,8 +106,7 @@ class RouteRegistry:
         return info
 
     def unregister(self, full_path: str) -> bool:
-        """
-        Unregister a route by its full path.
+        """Unregister a route by its full path.
 
         :param full_path: The full route path including namespace.
         :return: True if route was found and removed, False otherwise.
@@ -134,8 +131,7 @@ class RouteRegistry:
         return False
 
     def get(self, full_path: str) -> RouteInfo | None:
-        """
-        Look up a route by its full path (exact match on registered pattern).
+        """Look up a route by its full path (exact match on registered pattern).
 
         :param full_path: The full route path including namespace.
         :return: RouteInfo if found, None otherwise.
@@ -146,8 +142,7 @@ class RouteRegistry:
         return None
 
     def match(self, full_path: str) -> tuple[RouteInfo, dict[str, str]] | None:
-        """
-        Match a request path against registered routes.
+        """Match a request path against registered routes.
 
         Scans routes in registration order (first match wins). Uses
         ``DynamicResource._match()`` for both plain and parameterized paths.
@@ -162,16 +157,14 @@ class RouteRegistry:
         return None
 
     def get_all(self) -> dict[str, RouteInfo]:
-        """
-        Get all registered routes.
+        """Get all registered routes.
 
         :return: Dict mapping full paths to RouteInfo.
         """
         return {info.full_path: info for _, info in self._routes}
 
     def get_by_module(self, module_name: str) -> list[RouteInfo]:
-        """
-        Get all routes registered by a specific module.
+        """Get all routes registered by a specific module.
 
         :param module_name: The module name.
         :return: List of RouteInfo for that module.
@@ -180,8 +173,7 @@ class RouteRegistry:
         return [info for _, info in self._routes if info.full_path in paths]
 
     def unregister_by_module(self, module_name: str) -> int:
-        """
-        Remove all routes registered by a specific module.
+        """Remove all routes registered by a specific module.
 
         :param module_name: The module whose routes should be removed.
         :return: Number of routes removed.
@@ -202,8 +194,7 @@ class RouteRegistry:
         return count
 
     def register_from_module(self, module: ModuleType, module_name: str) -> None:
-        """
-        Scan a Python module for @on_route-decorated functions and register them.
+        """Scan a Python module for @on_route-decorated functions and register them.
 
         Looks for functions with the ``_owlbot_route`` attribute set by
         the ``@on_route`` decorator and registers each one.
@@ -225,8 +216,7 @@ class RouteRegistry:
 
 
 class RouteDispatcher:
-    """
-    Dispatches HTTP requests to registered module route handlers.
+    """Dispatches HTTP requests to registered module route handlers.
 
     Looks up routes in the RouteRegistry, validates methods, creates
     RouteContext, and calls the handler with timeout and transaction management.
@@ -237,8 +227,7 @@ class RouteDispatcher:
         get_module_context: Callable[[str], ModuleContext],
         handler_timeout: float,
     ) -> None:
-        """
-        Initialize the route dispatcher.
+        """Initialize the route dispatcher.
 
         Creates and owns a :class:`RouteRegistry` internally.
 
@@ -258,8 +247,7 @@ class RouteDispatcher:
         methods: list[str] | None = None,
         module_name: str,
     ) -> RouteInfo:
-        """
-        Register a route handler.
+        """Register a route handler.
 
         Delegates to the internal RouteRegistry.
 
@@ -278,8 +266,7 @@ class RouteDispatcher:
         )
 
     def unregister(self, full_path: str) -> bool:
-        """
-        Unregister a route by its full path.
+        """Unregister a route by its full path.
 
         Delegates to the internal RouteRegistry.
 
@@ -289,8 +276,7 @@ class RouteDispatcher:
         return self._route_registry.unregister(full_path)
 
     def get(self, full_path: str) -> RouteInfo | None:
-        """
-        Look up a route by its full path.
+        """Look up a route by its full path.
 
         Delegates to the internal RouteRegistry.
 
@@ -300,8 +286,7 @@ class RouteDispatcher:
         return self._route_registry.get(full_path)
 
     def get_by_module(self, module_name: str) -> list[RouteInfo]:
-        """
-        Get all routes registered by a specific module.
+        """Get all routes registered by a specific module.
 
         Delegates to the internal RouteRegistry.
 
@@ -311,8 +296,7 @@ class RouteDispatcher:
         return self._route_registry.get_by_module(module_name)
 
     def register_from_module(self, module: ModuleType, module_name: str) -> None:
-        """
-        Scan a Python module for @on_route-decorated functions and register them.
+        """Scan a Python module for @on_route-decorated functions and register them.
 
         Delegates to the internal RouteRegistry.
 
@@ -322,8 +306,7 @@ class RouteDispatcher:
         self._route_registry.register_from_module(module, module_name)
 
     def unregister_by_module(self, module_name: str) -> int:
-        """
-        Remove all routes registered by a specific module.
+        """Remove all routes registered by a specific module.
 
         Delegates to the internal RouteRegistry.
 
@@ -333,8 +316,7 @@ class RouteDispatcher:
         return self._route_registry.unregister_by_module(module_name)
 
     async def dispatch(self, request: web.Request) -> web.StreamResponse:
-        """
-        Dispatch an HTTP request to the appropriate module route handler.
+        """Dispatch an HTTP request to the appropriate module route handler.
 
         Extracts module_name and path from the URL, matches it against
         registered routes (supporting path patterns), validates the HTTP
@@ -374,8 +356,7 @@ class RouteDispatcher:
         route_info: RouteInfo,
         match_info: dict[str, str] | None = None,
     ) -> web.StreamResponse:
-        """
-        Handle an HTTP request to a module-registered route.
+        """Handle an HTTP request to a module-registered route.
 
         :param request: The aiohttp request object.
         :param route_info: Information about the registered route.
@@ -447,8 +428,7 @@ class RouteDispatcher:
 
 
 class ModuleRoutes:
-    """
-    Module-scoped wrapper around RouteDispatcher.
+    """Module-scoped wrapper around RouteDispatcher.
 
     This wrapper auto-supplies the module name for route operations,
     so modules don't need to know the internal routing namespace.
@@ -458,8 +438,7 @@ class ModuleRoutes:
     def __init__(
         self, dispatcher: RouteDispatcher, module_name: str, public_base_url: str
     ) -> None:
-        """
-        Initialize the module-scoped routes wrapper.
+        """Initialize the module-scoped routes wrapper.
 
         :param dispatcher: The RouteDispatcher that owns the route registry.
         :param module_name: The name of the module using this wrapper.
@@ -475,8 +454,7 @@ class ModuleRoutes:
         return self._dispatcher.get_by_module(self._module_name)
 
     def url_for(self, path: str) -> str:
-        """
-        Build a public URL for a route registered by this module.
+        """Build a public URL for a route registered by this module.
 
         :param path: The route path (e.g., "/list").
         :return: Full public URL (e.g., "http://host/owlbot/quotes/list").
@@ -490,8 +468,7 @@ class ModuleRoutes:
         *,
         methods: list[str] | None = None,
     ) -> RouteInfo:
-        """
-        Register a route handler for this module.
+        """Register a route handler for this module.
 
         The module name is automatically supplied.
 
@@ -509,8 +486,7 @@ class ModuleRoutes:
         )
 
     def unregister(self, path: str) -> bool:
-        """
-        Unregister a route by its relative path.
+        """Unregister a route by its relative path.
 
         :param path: Relative route path (e.g., "/stats").
         :return: True if route was found and removed, False otherwise.
@@ -518,8 +494,7 @@ class ModuleRoutes:
         return self._dispatcher.unregister(self._full_path(path))
 
     def get(self, path: str) -> RouteInfo | None:
-        """
-        Look up a route by its relative path.
+        """Look up a route by its relative path.
 
         :param path: Relative route path (e.g., "/stats").
         :return: RouteInfo if found, None otherwise.
@@ -527,8 +502,7 @@ class ModuleRoutes:
         return self._dispatcher.get(self._full_path(path))
 
     def exists(self, path: str) -> bool:
-        """
-        Check if a route is registered at the given relative path.
+        """Check if a route is registered at the given relative path.
 
         :param path: Relative route path (e.g., "/stats").
         :return: True if the route exists, False otherwise.
@@ -536,8 +510,7 @@ class ModuleRoutes:
         return self.get(path) is not None
 
     def _full_path(self, path: str) -> str:
-        """
-        Normalize a relative path into the full namespaced path.
+        """Normalize a relative path into the full namespaced path.
 
         :param path: Relative route path (e.g., "/list" or "list").
         :return: Full path (e.g., "/owlbot/quotes/list").

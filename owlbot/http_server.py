@@ -48,8 +48,7 @@ type WebhookCallback = Callable[[EventType, Event], Coroutine[Any, Any, None]]
 
 
 class HttpServer:
-    """
-    HTTP server for Owlbot.
+    """HTTP server for Owlbot.
 
     Manages the aiohttp Application, built-in routes (webhook),
     and module-registered routes via the RouteDispatcher.
@@ -61,8 +60,7 @@ class HttpServer:
         event_dispatch: WebhookCallback,
         route_dispatcher: RouteDispatcher,
     ):
-        """
-        Initialize the web server.
+        """Initialize the web server.
 
         :param config: Bot configuration.
         :param event_dispatch: Async callback to dispatch webhook events.
@@ -94,8 +92,7 @@ class HttpServer:
         logger.debug("HttpServer initialized.")
 
     async def start(self, host: str, port: int) -> None:
-        """
-        Start the HTTP server.
+        """Start the HTTP server.
 
         :param host: Address to bind to.
         :param port: Port to bind to.

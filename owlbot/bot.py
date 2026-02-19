@@ -47,8 +47,7 @@ class Owlbot:
         overrides: dict[str, Any] | None = None,
         skip_api_check: bool = False,
     ):
-        """
-        Initialize Owlbot.
+        """Initialize Owlbot.
 
         :param config_path: Path to the YAML config file.
         :param overrides: CLI overrides passed to the config manager.
@@ -161,8 +160,7 @@ class Owlbot:
         logger.info("Owlbot shutdown complete.")
 
     async def _check_api_accessibility(self) -> None:
-        """
-        Verify that the Owncast APIs are reachable before proceeding with startup.
+        """Verify that the Owncast APIs are reachable before proceeding with startup.
 
         Calls a non-transformative endpoint on each configured client to confirm
         the server is accessible and credentials are valid. Raises

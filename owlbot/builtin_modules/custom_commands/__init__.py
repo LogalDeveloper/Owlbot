@@ -56,8 +56,7 @@ __all__ = [
 
 @on_setup
 async def setup(ctx: ModuleContext) -> None:
-    """
-    Initialize the custom_commands module.
+    """Initialize the custom_commands module.
 
     Creates the database schema and loads existing commands from the database.
 

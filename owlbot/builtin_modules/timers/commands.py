@@ -33,8 +33,7 @@ _NAME_PATTERN = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,31}$")
 
 
 async def _resolve_timer(ctx: CommandContext, identifier: str) -> aiosqlite.Row | None:
-    """
-    Resolve a timer by numeric ID or name.
+    """Resolve a timer by numeric ID or name.
 
     Tries parsing as an integer first, then falls back to a name lookup.
 
@@ -66,8 +65,7 @@ async def _resolve_timer(ctx: CommandContext, identifier: str) -> aiosqlite.Row 
 
 
 def _timer_display(row: aiosqlite.Row) -> str:
-    """
-    Format a timer's display identifier.
+    """Format a timer's display identifier.
 
     :param row: Timer database row.
     :return: Display string like "timer_name (#3)" or "timer #3".
@@ -79,8 +77,7 @@ def _timer_display(row: aiosqlite.Row) -> str:
 
 @on_command("addtimer", requires_moderator=True)
 async def addtimer(ctx: CommandContext) -> None:
-    """
-    Create a new empty timer with an optional name.
+    """Create a new empty timer with an optional name.
 
     Usage: !addtimer [name]
 
@@ -123,8 +120,7 @@ async def addtimer(ctx: CommandContext) -> None:
 
 @on_command("settimermessage", requires_moderator=True)
 async def settimermessage(ctx: CommandContext) -> None:
-    """
-    Set the message text for a timer.
+    """Set the message text for a timer.
 
     Usage: !settimermessage <id|name> <message>
 
@@ -164,8 +160,7 @@ async def settimermessage(ctx: CommandContext) -> None:
 
 @on_command("settimerinterval", requires_moderator=True)
 async def settimerinterval(ctx: CommandContext) -> None:
-    """
-    Set the interval for a timer.
+    """Set the interval for a timer.
 
     Accepts simple durations (15m, 1h30m) or cron expressions (*/15 * * * *).
 
@@ -212,8 +207,7 @@ async def settimerinterval(ctx: CommandContext) -> None:
 
 @on_command("settimerlines", requires_moderator=True)
 async def settimerlines(ctx: CommandContext) -> None:
-    """
-    Set the minimum chat lines between timer firings.
+    """Set the minimum chat lines between timer firings.
 
     Usage: !settimerlines <id|name> <count>
 
@@ -260,8 +254,7 @@ async def settimerlines(ctx: CommandContext) -> None:
 
 @on_command("enabletimer", requires_moderator=True)
 async def enabletimer(ctx: CommandContext) -> None:
-    """
-    Enable a timer.
+    """Enable a timer.
 
     Won't enable a timer that has no message set.
 
@@ -310,8 +303,7 @@ async def enabletimer(ctx: CommandContext) -> None:
 
 @on_command("disabletimer", requires_moderator=True)
 async def disabletimer(ctx: CommandContext) -> None:
-    """
-    Disable a timer.
+    """Disable a timer.
 
     Usage: !disabletimer <id|name>
 
@@ -351,8 +343,7 @@ async def disabletimer(ctx: CommandContext) -> None:
 
 @on_command("deletetimer", requires_moderator=True)
 async def deletetimer(ctx: CommandContext) -> None:
-    """
-    Permanently delete a timer.
+    """Permanently delete a timer.
 
     Usage: !deletetimer <id|name>
 
@@ -382,8 +373,7 @@ async def deletetimer(ctx: CommandContext) -> None:
 
 @on_command("listtimers", requires_moderator=True, cooldown=15)
 async def listtimers(ctx: CommandContext) -> None:
-    """
-    Send the URL to the timer list web page.
+    """Send the URL to the timer list web page.
 
     Usage: !listtimers
 

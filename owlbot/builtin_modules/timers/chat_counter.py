@@ -32,8 +32,7 @@ from .scheduler import get_scheduler
 
 @on_event(EventType.CHAT, priority=Priority.LOWEST)
 async def count_chat_message(ctx: EventContext[ChatEvent]) -> None:
-    """
-    Count a chat message for all tracked timers.
+    """Count a chat message for all tracked timers.
 
     Runs at lowest priority so all other CHAT handlers (moderation, etc.)
     execute first. Skips bot messages and hidden messages.
@@ -60,8 +59,7 @@ async def count_chat_message(ctx: EventContext[ChatEvent]) -> None:
 
 @on_event(EventType.VISIBILITY_UPDATE, priority=Priority.LOWEST)
 async def handle_visibility_update(ctx: EventContext[VisibilityUpdateEvent]) -> None:
-    """
-    Remove hidden messages from chat counts.
+    """Remove hidden messages from chat counts.
 
     Only handles the hide case. Un-hiding does not re-add messages because
     we cannot distinguish previously counted user messages from bot messages

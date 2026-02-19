@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Shared test fixtures for the Owlbot test suite."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -27,5 +29,6 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 async def storage(tmp_path: Path) -> AsyncIterator[ModuleStorage]:
+    """Yield an open ModuleStorage backed by a temporary directory."""
     async with ModuleStorage(tmp_path, "test_module") as s:
         yield s

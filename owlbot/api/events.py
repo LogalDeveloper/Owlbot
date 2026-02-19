@@ -43,8 +43,7 @@ type EventHandler = "Callable[[EventContext[Any]], Awaitable[None]]"
 
 
 class Priority(IntEnum):
-    """
-    Standard priority levels for event handlers.
+    """Standard priority levels for event handlers.
 
     Higher values run first. Handlers at the same priority level run in
     registration order. Custom numeric values can be used for fine-grained control.
@@ -61,8 +60,7 @@ def on_event(
     *event_types: EventType,
     priority: int = Priority.NORMAL,
 ) -> Callable[[EventHandler], EventHandler]:
-    """
-    Decorator to register a function as a handler for one or more event types.
+    """Register a function as a handler for one or more event types.
 
     The decorated function will be called whenever an event of the specified
     type(s) is received. Handlers are executed sequentially in priority order

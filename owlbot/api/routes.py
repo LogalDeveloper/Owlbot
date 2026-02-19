@@ -62,8 +62,7 @@ def on_route(
     *,
     methods: list[str] | None = None,
 ) -> Callable[[RouteHandler], RouteHandler]:
-    """
-    Decorator to register an HTTP route handler.
+    """Register an HTTP route handler.
 
     Routes are namespaced under /owlbot/<module_name>/<path>.
 

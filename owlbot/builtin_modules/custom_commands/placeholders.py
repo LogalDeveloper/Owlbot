@@ -105,10 +105,10 @@ class PlaceholderContext:
 
 
 def _find_matching_close(template: str, pos: int) -> int:
-    """Find the position of the ``)`` that closes an escaped ``\\$(...)`` group.
+    r"""Find the position of the ``)`` that closes an escaped ``\$(...)`` group.
 
     Tracks nested ``$(`` / ``)`` pairs so that escaped groups containing inner
-    placeholders (e.g. ``\\$(rand $(1) $(2))``) are consumed in their entirety.
+    placeholders (e.g. ``\$(rand $(1) $(2))``) are consumed in their entirety.
 
     :param template: The full template string.
     :param pos: The position immediately after the opening ``$(`` of the

@@ -30,8 +30,7 @@ _jinja_env = jinja2.Environment(
 
 @on_route("/list", methods=["GET"])
 async def command_list_page(ctx: RouteContext) -> web.Response:
-    """
-    Serve an HTML page listing all custom commands in a table.
+    """Serve an HTML page listing all custom commands in a table.
 
     Columns: Command, Aliases, Response, Cooldown, Permissions.
     Accessible at /owlbot/custom_commands/list.

@@ -34,8 +34,7 @@ class StorageError(Exception):
 
 
 class ModuleStorage:
-    """
-    Module-scoped async SQLite storage backed by a lazy connection pool.
+    """Module-scoped async SQLite storage backed by a lazy connection pool.
 
     Each module gets its own isolated database file. Connections are created
     lazily and pooled up to ``pool_size``. WAL mode is enabled so that
@@ -54,8 +53,7 @@ class ModuleStorage:
     """
 
     def __init__(self, storage_dir: Path, module_name: str, pool_size: int = 4):
-        """
-        Initialize the storage API.
+        """Initialize the storage API.
 
         :param storage_dir: Directory where module databases are stored.
         :param module_name: Name of the module this storage belongs to.
@@ -92,8 +90,7 @@ class ModuleStorage:
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[ModuleStorage]:
-        """
-        Context manager for explicit transaction control within a handler.
+        """Context manager for explicit transaction control within a handler.
 
         Use this when you need multiple operations to succeed or fail together
         within a single handler. Commits on success, rolls back on exception.
@@ -105,6 +102,7 @@ class ModuleStorage:
                 # Both committed together, or both rolled back on error
 
         :return: This ModuleStorage instance.
+
         """
         self._logger.debug("Explicit transaction started.")
         try:
@@ -119,8 +117,7 @@ class ModuleStorage:
         sql: str,
         parameters: tuple[Any, ...] | dict[str, Any] = (),
     ) -> aiosqlite.Cursor:
-        """
-        Execute a SQL statement.
+        """Execute a SQL statement.
 
         :param sql: SQL statement (use ? or :name for parameters).
         :param parameters: Query parameters (tuple for ?, dict for :name).
@@ -140,8 +137,7 @@ class ModuleStorage:
         sql: str,
         parameters: list[tuple[Any, ...]] | list[dict[str, Any]],
     ) -> aiosqlite.Cursor:
-        """
-        Execute a SQL statement with multiple parameter sets.
+        """Execute a SQL statement with multiple parameter sets.
 
         Useful for batch inserts/updates.
 
@@ -166,8 +162,7 @@ class ModuleStorage:
         sql: str,
         parameters: tuple[Any, ...] | dict[str, Any] = (),
     ) -> aiosqlite.Row | None:
-        """
-        Execute a query and fetch one row.
+        """Execute a query and fetch one row.
 
         :param sql: SELECT statement.
         :param parameters: Query parameters.
@@ -189,8 +184,7 @@ class ModuleStorage:
         sql: str,
         parameters: tuple[Any, ...] | dict[str, Any] = (),
     ) -> list[aiosqlite.Row]:
-        """
-        Execute a query and fetch all rows.
+        """Execute a query and fetch all rows.
 
         :param sql: SELECT statement.
         :param parameters: Query parameters.
@@ -212,8 +206,7 @@ class ModuleStorage:
         sql: str,
         parameters: tuple[Any, ...] | dict[str, Any] = (),
     ) -> Any | None:
-        """
-        Execute a query and fetch a single value.
+        """Execute a query and fetch a single value.
 
         :param sql: SELECT statement returning one column.
         :param parameters: Query parameters.
@@ -260,8 +253,7 @@ class ModuleStorage:
 
     @asynccontextmanager
     async def _connection(self) -> AsyncIterator[aiosqlite.Connection]:
-        """
-        Async context manager that provides a connection.
+        """Async context manager that provides a connection.
 
         If already inside a ``_checkout``, yields the checked-out connection
         without releasing it. Otherwise acquires a standalone connection from
@@ -285,8 +277,7 @@ class ModuleStorage:
 
     @asynccontextmanager
     async def _checkout(self) -> AsyncIterator[None]:
-        """
-        Check out a connection from the pool for the duration of a handler.
+        """Check out a connection from the pool for the duration of a handler.
 
         Sets a ContextVar so that all storage operations within the handler
         reuse the same connection.
@@ -300,8 +291,7 @@ class ModuleStorage:
             self._release(conn)
 
     async def _commit(self) -> None:
-        """
-        Commit the current transaction (internal use by bot).
+        """Commit the current transaction (internal use by bot).
 
         Called automatically after each handler completes successfully.
         """
@@ -311,8 +301,7 @@ class ModuleStorage:
             self._logger.debug("Transaction committed.")
 
     async def _rollback(self) -> None:
-        """
-        Rollback the current transaction (internal use by bot).
+        """Rollback the current transaction (internal use by bot).
 
         Called automatically if a handler throws an exception.
         """

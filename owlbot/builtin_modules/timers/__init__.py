@@ -56,8 +56,7 @@ __all__ = [
 
 @on_setup
 async def setup(ctx: ModuleContext) -> None:
-    """
-    Initialize the timers module.
+    """Initialize the timers module.
 
     Creates the database schema, initializes chat counters for enabled timers,
     and starts the background scheduler.
@@ -97,8 +96,7 @@ async def setup(ctx: ModuleContext) -> None:
 
 @on_teardown
 async def teardown(ctx: ModuleContext) -> None:
-    """
-    Clean up the timers module.
+    """Clean up the timers module.
 
     Stops the background scheduler task.
 

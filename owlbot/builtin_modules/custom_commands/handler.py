@@ -30,8 +30,7 @@ from .placeholders import DEFAULT_MAX_DEPTH, process_placeholders
 async def get_aliases_for_command(
     storage: ModuleStorage, command_name: str
 ) -> list[str]:
-    """
-    Fetch all aliases for a command from the database.
+    """Fetch all aliases for a command from the database.
 
     :param storage: The module storage instance.
     :param command_name: The canonical command name.
@@ -47,8 +46,7 @@ async def get_aliases_for_command(
 async def resolve_command_name(
     storage: ModuleStorage, name: str
 ) -> aiosqlite.Row | None:
-    """
-    Resolve a command name or alias to the full command row.
+    """Resolve a command name or alias to the full command row.
 
     Checks the commands table first, then falls back to the aliases table.
     Returns the command's name, requires_moderator, and cooldown columns.
@@ -70,8 +68,7 @@ async def resolve_command_name(
 
 
 async def custom_command_handler(ctx: CommandContext) -> None:
-    """
-    Shared handler for all custom commands.
+    """Shared handler for all custom commands.
 
     Looks up the command in the database, increments use count,
     processes placeholders, and sends the response.
@@ -112,8 +109,7 @@ def reregister_command(
     requires_moderator: bool,
     cooldown: int,
 ) -> None:
-    """
-    Unregister and re-register a custom command with updated settings.
+    """Unregister and re-register a custom command with updated settings.
 
     Both registry operations are synchronous, so no other coroutine can observe
     the intermediate unregistered state.

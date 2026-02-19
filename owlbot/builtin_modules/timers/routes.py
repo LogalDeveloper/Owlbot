@@ -31,8 +31,7 @@ _jinja_env = jinja2.Environment(
 
 @on_route("/list", methods=["GET"])
 async def timer_list_page(ctx: RouteContext) -> web.Response:
-    """
-    Serve an HTML page listing all timers in a table.
+    """Serve an HTML page listing all timers in a table.
 
     Columns: #, Name, Message, Interval, Min Lines, Status, Last Fired.
     Accessible at /owlbot/timers/list.

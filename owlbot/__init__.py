@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Owlbot - A modular chat bot for Owncast.
+"""Owlbot - A modular chat bot for Owncast.
 
 The public API for building modules is in the `owlbot.api` subpackage:
 
