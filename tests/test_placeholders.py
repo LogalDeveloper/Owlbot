@@ -70,7 +70,7 @@ class TestSimpleSubstitution:
     """Basic happy-path usage of placeholders and plain text."""
 
     @pytest.mark.parametrize(
-        "template,kwargs,expected",
+        ("template", "kwargs", "expected"),
         [
             pytest.param(
                 "Just a plain message.", {}, "Just a plain message.", id="plain-text"
@@ -154,7 +154,7 @@ class TestArgPlaceholders:
     """Positional arguments $(1) through $(9)."""
 
     @pytest.mark.parametrize(
-        "template,args,expected",
+        ("template", "args", "expected"),
         [
             pytest.param(
                 "$(1)$(2)$(3)$(4)$(5)$(6)$(7)$(8)$(9)",
@@ -186,7 +186,7 @@ class TestArgPlaceholders:
         assert await process(template, placeholder_storage, args=args) == expected
 
     @pytest.mark.parametrize(
-        "template,args,expected",
+        ("template", "args", "expected"),
         [
             pytest.param("$(0)", ["first"], "$(0)", id="index-zero"),
             pytest.param("$(10)", ["a"] * 10, "$(10)", id="index-ten"),
@@ -205,7 +205,7 @@ class TestArgPlaceholders:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "template,args,expected",
+        ("template", "args", "expected"),
         [
             pytest.param(
                 "$(1 extra)",
@@ -269,7 +269,7 @@ class TestNamedCounters:
         assert row["value"] == 5
 
     @pytest.mark.parametrize(
-        "counter_values,template,expected,db_name,db_value",
+        ("counter_values", "template", "expected", "db_name", "db_value"),
         [
             pytest.param(
                 {"deaths": 10},
@@ -310,7 +310,7 @@ class TestNamedCounters:
         assert row["value"] == db_value
 
     @pytest.mark.parametrize(
-        "counter_values,template,expected",
+        ("counter_values", "template", "expected"),
         [
             pytest.param({}, "$(count deaths +5)", "5", id="plus-five"),
             pytest.param(
@@ -425,7 +425,7 @@ class TestCounterNameValidation:
     """Counter names are lowercased and must match ^[a-z0-9_]+$."""
 
     @pytest.mark.parametrize(
-        "template,expected,db_name,db_value",
+        ("template", "expected", "db_name", "db_value"),
         [
             pytest.param("$(count Deaths)", "1", "deaths", 1, id="uppercase-name"),
             pytest.param("$(count 123)", "1", "123", 1, id="numeric-name"),
@@ -509,7 +509,7 @@ class TestRand:
         assert result == f"Alice rolled a {expected_roll}!"
 
     @pytest.mark.parametrize(
-        "template,expected",
+        ("template", "expected"),
         [
             pytest.param("$(rand 5 5)", "5", id="equal-bounds"),
             pytest.param("$(rand 0 0)", "0", id="zero-bounds"),
@@ -606,7 +606,7 @@ class TestCountdownCountup:
         assert await process(template, placeholder_storage) == "0 seconds"
 
     @pytest.mark.parametrize(
-        "placeholder,bad_date",
+        ("placeholder", "bad_date"),
         [
             pytest.param("countdown", "not a real date", id="gibberish"),
             pytest.param("countdown", "monday", id="weekday-only"),
@@ -640,7 +640,7 @@ class TestCountdownCountup:
             assert result == expected
 
     @pytest.mark.parametrize(
-        "seconds,expected",
+        ("seconds", "expected"),
         [
             pytest.param(0, "0 seconds", id="zero"),
             pytest.param(1, "1 second", id="one-second"),
@@ -775,7 +775,7 @@ class TestNesting:
         assert result == "$(test)"
 
     @pytest.mark.parametrize(
-        "template,args",
+        ("template", "args"),
         [
             pytest.param("$(rand $(1) $(2))", [], id="no-args"),
             pytest.param("$(rand $(1) $(2))", ["5"], id="one-arg"),
@@ -805,7 +805,7 @@ class TestEscaping:
     """Escape sequences and backslash boundary conditions."""
 
     @pytest.mark.parametrize(
-        "template,kwargs,expected",
+        ("template", "kwargs", "expected"),
         [
             pytest.param(
                 r"Use \$(user) to insert your name.",
@@ -856,7 +856,7 @@ class TestCaseInsensitivity:
     """Placeholder names are lowercased before handler lookup."""
 
     @pytest.mark.parametrize(
-        "template,kwargs,expected",
+        ("template", "kwargs", "expected"),
         [
             pytest.param("$(USER)", {}, "Alice", id="all-upper-user"),
             pytest.param("$(User)", {}, "Alice", id="title-case-user"),
@@ -986,7 +986,7 @@ class TestParserBoundaries:
     """Parser edge cases around incomplete or unusual $( sequences."""
 
     @pytest.mark.parametrize(
-        "template,expected",
+        ("template", "expected"),
         [
             pytest.param("$(rand 1", "$(rand 1", id="unclosed-rand"),
             pytest.param(
@@ -1017,7 +1017,7 @@ class TestUnknownPlaceholders:
     """Unknown placeholder names pass through unchanged."""
 
     @pytest.mark.parametrize(
-        "template,expected",
+        ("template", "expected"),
         [
             pytest.param("$(madeup stuff)", "$(madeup stuff)", id="with-args"),
             pytest.param("$(banana)", "$(banana)", id="bare-name"),
@@ -1043,7 +1043,7 @@ class TestEvaluationSafety:
     """Verify that resolved text is never re-parsed as placeholders."""
 
     @pytest.mark.parametrize(
-        "template,kwargs,expected",
+        ("template", "kwargs", "expected"),
         [
             pytest.param(
                 "$(1)", {"args": ["$(user)"]}, "$(user)", id="arg-contains-user"
@@ -1093,7 +1093,7 @@ class TestRuntimeErrors:
     """A PlaceholderError cancels the entire render and returns the message."""
 
     @pytest.mark.parametrize(
-        "template,expected_error",
+        ("template", "expected_error"),
         [
             pytest.param(
                 "$(rand 1)",

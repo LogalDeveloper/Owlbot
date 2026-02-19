@@ -119,7 +119,7 @@ class TestFetchOne:
     """fetch_one() returns a Row or None."""
 
     @pytest.mark.parametrize(
-        "accessor, expected",
+        ("accessor", "expected"),
         [
             pytest.param(lambda row: row["name"], "a", id="key-access"),
             pytest.param(lambda row: row[1], "a", id="index-access"),
@@ -288,7 +288,7 @@ class TestTransaction:
         self, storage_with_table: ModuleStorage
     ) -> None:
         """Writes inside transaction() are discarded if an exception is raised."""
-        with pytest.raises(RuntimeError, match="boom"):
+        with pytest.raises(RuntimeError, match="boom"):  # noqa: PT012
             async with storage_with_table._checkout(), storage_with_table.transaction():
                 await storage_with_table.execute(
                     "INSERT INTO items (name, value) VALUES (?, ?)",
@@ -335,7 +335,7 @@ class TestStorageError:
     """Invalid SQL raises StorageError wrapping the underlying error."""
 
     @pytest.mark.parametrize(
-        "method, args",
+        ("method", "args"),
         [
             pytest.param(
                 "execute",
@@ -372,7 +372,7 @@ class TestStorageError:
             await getattr(storage, method)(*args)
 
     @pytest.mark.parametrize(
-        "method, args",
+        ("method", "args"),
         [
             pytest.param("execute", ("SELECT 1",), id="execute"),
             pytest.param("fetch_one", ("SELECT 1",), id="fetch-one"),

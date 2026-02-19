@@ -186,10 +186,9 @@ def _parse_placeholder(
         )
         if found_close:
             return PlaceholderNode(name, child_nodes), new_pos
-        else:
-            # Unclosed placeholder, degrade to literal.  Return None so
-            # the caller emits "$(" as literal and re-scans the rest.
-            return None
+        # Unclosed placeholder, degrade to literal.  Return None so
+        # the caller emits "$(" as literal and re-scans the rest.
+        return None
 
     # The character after the name is something unexpected (e.g. another $).
     # Treat as unclosed/invalid -- degrade.

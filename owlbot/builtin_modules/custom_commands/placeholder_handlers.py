@@ -273,7 +273,9 @@ def _parse_placeholder_date(date_str: str) -> datetime | None:
         return None
 
     try:
-        dt = datetime.strptime(date_part, "%b %d %Y %I:%M:%S %p")
+        # Intentionally naive: tz abbreviation is resolved separately via
+        # TIMEZONE_OFFSETS since strptime's %z only handles numeric offsets.
+        dt = datetime.strptime(date_part, "%b %d %Y %I:%M:%S %p")  # noqa: DTZ007
     except ValueError:
         return None
 
@@ -369,19 +371,17 @@ async def _evaluate_count(
             (counter_name, delta, delta),
         )
         return str(result)
-    else:
-        try:
-            value = int(modifier_str)
-        except ValueError as e:
-            raise PlaceholderError(
-                "Invalid $(count): modifier must be an integer (e.g., +5, -1, 0)"
-            ) from e
-        result = await ctx.storage.fetch_value(
-            "INSERT OR REPLACE INTO counters (name, value) VALUES (?, ?) "
-            "RETURNING value",
-            (counter_name, value),
-        )
-        return str(result)
+    try:
+        value = int(modifier_str)
+    except ValueError as e:
+        raise PlaceholderError(
+            "Invalid $(count): modifier must be an integer (e.g., +5, -1, 0)"
+        ) from e
+    result = await ctx.storage.fetch_value(
+        "INSERT OR REPLACE INTO counters (name, value) VALUES (?, ?) RETURNING value",
+        (counter_name, value),
+    )
+    return str(result)
 
 
 async def _evaluate_getcount(
@@ -429,7 +429,7 @@ async def _evaluate_rand(
         raise PlaceholderError(
             "Invalid $(rand): arguments must be integers, e.g., $(rand 1 100)"
         ) from e
-    return str(random.randint(min(start, stop), max(start, stop)))
+    return str(random.randint(min(start, stop), max(start, stop)))  # noqa: S311
 
 
 async def _evaluate_countdown(
@@ -455,8 +455,7 @@ async def _evaluate_countdown(
     seconds = int(delta.total_seconds())
     if seconds > 0:
         return _format_duration(seconds)
-    else:
-        return "0 seconds"
+    return "0 seconds"
 
 
 type PlaceholderHandler = Callable[

@@ -117,7 +117,7 @@ class TestOnCommandDecorator:
     """Tests the @on_command decorator from owlbot.api.commands."""
 
     @pytest.mark.parametrize(
-        "name,aliases,auth,mod,cooldown",
+        ("name", "aliases", "auth", "mod", "cooldown"),
         [
             pytest.param("ping", None, False, False, 0, id="defaults"),
             pytest.param("cmd", ["c", "cm"], False, False, 0, id="with-aliases"),
@@ -284,12 +284,11 @@ class TestCommandRegistry:
             pass
 
         registry.register("ping", handler, module_name="mod_a")
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError,
+            match=r"Command trigger 'ping' conflicts with existing command 'ping'",
+        ):
             registry.register("ping", handler, module_name="mod_b")
-        assert (
-            str(exc_info.value)
-            == "Command trigger 'ping' conflicts with existing command 'ping'"
-        )
 
     def test_register_conflict_alias_with_name(self) -> None:
         """Alias that conflicts with an existing command name raises ValueError."""
@@ -299,12 +298,11 @@ class TestCommandRegistry:
             pass
 
         registry.register("ping", handler, module_name="mod_a")
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError,
+            match=r"Command trigger 'ping' conflicts with existing command 'ping'",
+        ):
             registry.register("other", handler, aliases=["ping"], module_name="mod_b")
-        assert (
-            str(exc_info.value)
-            == "Command trigger 'ping' conflicts with existing command 'ping'"
-        )
 
     def test_register_conflict_alias_with_alias(self) -> None:
         """Alias that conflicts with an existing alias raises ValueError."""
@@ -314,12 +312,11 @@ class TestCommandRegistry:
             pass
 
         registry.register("cmd1", handler, aliases=["c"], module_name="mod_a")
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError,
+            match=r"Command trigger 'c' conflicts with existing command 'cmd1'",
+        ):
             registry.register("cmd2", handler, aliases=["c"], module_name="mod_b")
-        assert (
-            str(exc_info.value)
-            == "Command trigger 'c' conflicts with existing command 'cmd1'"
-        )
 
     def test_exists_true(self) -> None:
         """Registered command returns True."""
@@ -447,7 +444,7 @@ class TestCommandRegistry:
         assert registry.unregister_by_module("no_such") == 0
 
     @pytest.mark.parametrize(
-        "message,prefix,expected",
+        ("message", "prefix", "expected"),
         [
             pytest.param("!ping", "!", ("ping", ""), id="simple-command"),
             pytest.param(
@@ -921,7 +918,7 @@ class TestModuleCommands:
         assert mod_cmds["mod_a"].module_commands == {}
 
     @pytest.mark.parametrize(
-        "owner,other_setup,call_module,trigger,expected",
+        ("owner", "other_setup", "call_module", "trigger", "expected"),
         [
             pytest.param("mod_a", None, "mod_a", "ping", True, id="own-command"),
             pytest.param(
@@ -1020,7 +1017,7 @@ class TestCommandContext:
         return cmd_ctx, module_ctx, cmd_event, event_ctx
 
     @pytest.mark.parametrize(
-        "prop,use_is",
+        ("prop", "use_is"),
         [
             pytest.param("module_name", False, id="module-name"),
             pytest.param("storage", True, id="storage"),

@@ -110,7 +110,7 @@ class TestOnEventDecorator:
     """Tests the @on_event decorator from owlbot.api.events."""
 
     @pytest.mark.parametrize(
-        "event_types,priority,expected_types,expected_priority",
+        ("event_types", "priority", "expected_types", "expected_priority"),
         [
             pytest.param(
                 (EventType.CHAT,),
@@ -173,7 +173,7 @@ class TestPriority:
     """Tests the Priority IntEnum from owlbot.api.events."""
 
     @pytest.mark.parametrize(
-        "member,value",
+        ("member", "value"),
         [
             pytest.param(Priority.HIGHEST, 100, id="highest"),
             pytest.param(Priority.HIGH, 75, id="high"),
@@ -294,7 +294,7 @@ class TestEventRegistry:
         assert registry.get_handler_module(handler) is None
 
     @pytest.mark.parametrize(
-        "setup_types,expected_return,expected_remaining",
+        ("setup_types", "expected_return", "expected_remaining"),
         [
             pytest.param(
                 (EventType.CHAT,),
@@ -795,7 +795,7 @@ class TestCommandDispatchPhase:
     """Tests Phase 2 (command dispatch) in EventDispatcher.dispatch()."""
 
     @pytest.mark.parametrize(
-        "event_type,event_factory,expected_calls",
+        ("event_type", "event_factory", "expected_calls"),
         [
             pytest.param(
                 EventType.CHAT,
@@ -945,7 +945,7 @@ class TestModuleEvents:
         assert mod_events.module_events == {}
 
     @pytest.mark.parametrize(
-        "register_on,unregister_from,expected",
+        ("register_on", "unregister_from", "expected"),
         [
             pytest.param("mod_a", "mod_a", True, id="own-handler"),
             pytest.param("mod_b", "mod_a", False, id="other-modules-handler"),
@@ -1028,7 +1028,7 @@ class TestEventContext:
     """Tests EventContext from owlbot.api.context."""
 
     @pytest.mark.parametrize(
-        "prop,use_is",
+        ("prop", "use_is"),
         [
             pytest.param("module_name", False, id="module-name"),
             pytest.param("storage", True, id="storage"),

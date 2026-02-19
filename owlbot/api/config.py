@@ -324,7 +324,7 @@ class Config:
         logger.debug(f"Loading configuration from: {self.config_path.absolute()}")
         if self.config_path.exists():
             try:
-                with open(self.config_path) as f:
+                with self.config_path.open() as f:
                     self._data = yaml.safe_load(f) or {}
             except yaml.YAMLError as e:
                 logger.error(f"Failed to parse config file: {e}")
@@ -385,7 +385,7 @@ class Config:
         """Write current configuration to the YAML file."""
         logger.debug(f"Saving configuration to: {self.config_path.absolute()}")
         try:
-            with open(self.config_path, "w") as f:
+            with self.config_path.open("w") as f:
                 yaml.safe_dump(
                     self._ordered_data(), f, default_flow_style=False, sort_keys=False
                 )

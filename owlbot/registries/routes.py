@@ -401,16 +401,16 @@ class RouteDispatcher:
 
                 if result is None:
                     return web.Response(status=204)  # No Content.
-                elif isinstance(result, web.StreamResponse):
+                if isinstance(result, web.StreamResponse):
                     return result
-                elif isinstance(result, dict):
+                if isinstance(result, dict):
                     return web.json_response(result)
-                else:  # pragma: no branch — defensive against untyped handlers
-                    mod_logger.error(  # type: ignore[unreachable]
-                        f"Route handler '{route_info.full_path}' returned "
-                        f"unsupported type: {type(result).__name__}"
-                    )
-                    return web.Response(status=500)
+                # pragma: no branch — defensive against untyped handlers
+                mod_logger.error(  # type: ignore[unreachable]
+                    f"Route handler '{route_info.full_path}' returned "
+                    f"unsupported type: {type(result).__name__}"
+                )
+                return web.Response(status=500)
 
             except TimeoutError:
                 await module_ctx.storage._rollback()

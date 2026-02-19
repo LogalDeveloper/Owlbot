@@ -137,7 +137,7 @@ class TestParseTimestamp:
     """Exercises _parse_timestamp() with various input formats."""
 
     @pytest.mark.parametrize(
-        "ts,expected",
+        ("ts", "expected"),
         [
             pytest.param(None, None, id="none-input"),
             pytest.param("", None, id="empty-string"),
@@ -221,7 +221,7 @@ class TestUser:
         assert user.scopes == []
 
     @pytest.mark.parametrize(
-        "scopes,expected",
+        ("scopes", "expected"),
         [
             pytest.param(["MODERATOR"], True, id="has-moderator"),
             pytest.param(["OTHER"], False, id="other-scope"),
@@ -255,7 +255,7 @@ class TestChatEvent:
         assert event.timestamp == datetime(2026, 1, 15, 12, 0, tzinfo=UTC)
 
     @pytest.mark.parametrize(
-        "raw,expected",
+        ("raw", "expected"),
         [
             pytest.param("<p>hello</p>", "hello", id="strips-p-tags"),
             pytest.param("hello", "hello", id="no-tags"),
@@ -518,7 +518,7 @@ class TestParseEvent:
     """Exercises the top-level parse_event() dispatcher."""
 
     @pytest.mark.parametrize(
-        "type_str,expected_type,expected_class",
+        ("type_str", "expected_type", "expected_class"),
         [
             pytest.param("CHAT", EventType.CHAT, ChatEvent, id="chat"),
             pytest.param(
@@ -592,7 +592,7 @@ class TestLogEvent:
     """Exercises log_event() output via caplog."""
 
     @pytest.mark.parametrize(
-        "event_type,event,expected_message",
+        ("event_type", "event", "expected_message"),
         [
             pytest.param(
                 EventType.CHAT,
