@@ -46,6 +46,7 @@ Owlbot is a modular, event-driven chat bot for Owncast.
 - `uv run ruff check .`: run lint checks.
 - `uv run mypy .`: run strict type checking.
 - `uv run pip-audit --skip-editable`: audit dependencies for known vulnerabilities.
+- `uv run codespell`: check spelling across the project.
 
 ## Creating Modules
 - Read `docs/Modules.md` first, then focused references:
@@ -60,6 +61,7 @@ Before committing any changes, always run the following checks and make sure the
 2. `uv run ruff check .` -- catch lint violations. Fix any issues before proceeding.
 3. `uv run mypy .` -- confirm type safety. The project uses strict mode, so all type errors must be resolved.
 4. `uv run pytest -v --cov --cov-report=` -- run the full test suite and confirm nothing is broken.
+5. `uv run codespell` -- catch spelling mistakes in code, comments, and documentation.
 
 Do not commit if any of these fail.
 

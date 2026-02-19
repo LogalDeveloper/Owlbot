@@ -618,7 +618,7 @@ class TestCountdownCountup:
     async def test_invalid_date(
         self, placeholder_storage: ModuleStorage, placeholder: str, bad_date: str
     ) -> None:
-        """Placeholders with an unparseable date report an error."""
+        """Placeholders with an unparsable date report an error."""
         result = await process(f"$({placeholder} {bad_date})", placeholder_storage)
         assert result == (
             f"Invalid $({placeholder}): unrecognized date format, "
@@ -628,14 +628,15 @@ class TestCountdownCountup:
     async def test_fractional_timezone_offset(
         self, placeholder_storage: ModuleStorage
     ) -> None:
-        """A fractional timezone offset like IST (UTC+5:30) is applied correctly."""
+        """Fractional offset like IST (+5:30) is applied."""  # codespell:ignore ist
         with freeze_time("2026-06-15 12:00:00", tz_offset=0):
             now = datetime.now(UTC)
-            # Jan 1 2020 12:00:00 AM IST = Dec 31 2019 18:30:00 UTC
+            # IST = Dec 31 2019 18:30:00 UTC  # codespell:ignore ist
             target = datetime(2019, 12, 31, 18, 30, 0, tzinfo=UTC)
             expected = _format_duration(int((now - target).total_seconds()))
             result = await process(
-                "$(countup Jan 1 2020 12:00:00 AM IST)", placeholder_storage
+                "$(countup Jan 1 2020 12:00:00 AM IST)",  # codespell:ignore ist
+                placeholder_storage,
             )
             assert result == expected
 

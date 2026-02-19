@@ -104,3 +104,24 @@ jobs:
 
       - name: Check types with Mypy
         run: uv run mypy .
+
+  spelling:
+    name: Spelling
+    runs-on: logaldeveloper-archlinux
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Cache uv packages
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ hashFiles('uv.lock') }}
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Check spelling with codespell
+        run: uv run codespell

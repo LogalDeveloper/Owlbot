@@ -31,6 +31,7 @@ dev = [
     "types-PyYAML>=6.0.12.20250915",
     "ruff>=0.15.1",
     "pip-audit>=2.10.0",
+    "codespell>=2.4.1",
 ]
 
 [tool.uv]
@@ -121,6 +122,9 @@ ignore = [
 "owlbot/__init__.py" = ["E402"]     # constants defined before imports intentionally
 "owlbot/__main__.py" = ["T201"]     # CLI entry point uses print() for user output
 "tests/**" = ["S101", "S311"]       # assert is standard for pytest; random is fine in tests
+
+[tool.codespell]
+skip = "owlbot/_version.py,uv.lock"
 
 [tool.coverage.run]
 source = ["owlbot"]

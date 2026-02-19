@@ -49,9 +49,9 @@ class PlaceholderError(Exception):
 #   BST = British Summer Time (+1), not Bangladesh/Bougainville
 #   CDT = Central Daylight Time (-5), not Cuba Daylight Time (-4)
 #   CST = Central Standard Time (-6), not China (+8) or Cuba (-5)
-#   ECT = Ecuador Time (-5), not Eastern Caribbean Time (-4)
+#   ECT = Ecuador Time (-5), not Eastern Caribbean Time (-4)  # codespell:ignore ect
 #   GST = Gulf Standard Time (+4), not South Georgia Time (-2)
-#   IST = India Standard Time (+5:30), not Irish (+1) or Israel (+2)
+#   IST = India Standard Time (+5:30), not Irish or Israel  # codespell:ignore ist
 #   LHST = Lord Howe Standard Time (+10:30), not summer (+11)
 #   MST = Mountain Standard Time (-7), not Malaysia Standard Time (+8)
 #   PST = Pacific Standard Time (-8), not Philippine Standard Time (+8)
@@ -112,7 +112,7 @@ TIMEZONE_OFFSETS: dict[str, float] = {
     "EASST": -5,
     "EAST": -6,
     "EAT": 3,
-    "ECT": -5,
+    "ECT": -5,  # codespell:ignore ect
     "EDT": -4,
     "EEST": 3,
     "EET": 2,
@@ -147,7 +147,7 @@ TIMEZONE_OFFSETS: dict[str, float] = {
     "IRDT": 4.5,
     "IRKT": 8,
     "IRST": 3.5,
-    "IST": 5.5,
+    "IST": 5.5,  # codespell:ignore ist
     "JST": 9,
     "KALT": 2,
     "KGT": 6,
@@ -194,7 +194,7 @@ TIMEZONE_OFFSETS: dict[str, float] = {
     "PKT": 5,
     "PMDT": -2,
     "PMST": -3,
-    "PONT": 11,
+    "PONT": 11,  # codespell:ignore pont
     "PST": -8,
     "PWT": 9,
     "PYST": -3,
@@ -213,9 +213,9 @@ TIMEZONE_OFFSETS: dict[str, float] = {
     "SRT": -3,
     "SST": -11,
     "SYOT": 3,
-    "TAHT": -10,
+    "TAHT": -10,  # codespell:ignore taht
     "TFT": 5,
-    "THA": 7,
+    "THA": 7,  # codespell:ignore tha
     "TJT": 5,
     "TKT": 13,
     "TLT": 9,
@@ -236,14 +236,14 @@ TIMEZONE_OFFSETS: dict[str, float] = {
     "VOST": 6,
     "VUT": 11,
     "WAKT": 12,
-    "WAST": 2,
+    "WAST": 2,  # codespell:ignore wast
     "WAT": 1,
     "WEST": 1,
     "WET": 0,
     "WGST": -2,
     "WGT": -3,
     "WIB": 7,
-    "WIT": 9,
+    "WIT": 9,  # codespell:ignore wit
     "WITA": 8,
     "WST": 8,
     "YAKT": 9,
