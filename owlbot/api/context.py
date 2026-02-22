@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from aiohttp import web
@@ -76,6 +76,13 @@ class ModuleContext:
 
     # Optional admin client for the Owncast Admin API (None if admin is not enabled).
     admin_client: OwncastAdminClient | None = None
+
+    # Per-instance state storage for modules.
+    # Modules can store runtime objects (managers, schedulers, etc.) here
+    # instead of using module-level globals, ensuring multiple bot instances
+    # in the same process don't share mutable state. Access values through
+    # typed helper functions that narrow with isinstance checks.
+    state: dict[str, Any] = field(default_factory=dict)
 
     # Module-scoped logger (named "owlbot.modules.<module_name>").
     # Derived from module_name in __post_init__; not a constructor parameter.
