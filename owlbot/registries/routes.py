@@ -22,7 +22,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING, cast
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast, overload
 
 from aiohttp import web
 from aiohttp.web import DynamicResource
@@ -38,22 +39,49 @@ if TYPE_CHECKING:
 logger = logging.getLogger("owlbot.web")
 
 
+@dataclass
+class _RouteGroup:
+    """Groups route handlers that share the same path pattern.
+
+    Each group holds a single ``DynamicResource`` for path matching
+    and a list of ``RouteInfo`` entries whose method sets must not overlap.
+    """
+
+    resource: DynamicResource
+    full_path: str
+    handlers: list[RouteInfo]
+
+
 class RouteRegistry:
     """Holds all registered routes for a bot instance.
 
     Routes are namespaced by module to prevent conflicts. Supports path
     patterns using aiohttp's ``{name}`` and ``{name:regex}`` syntax via
     ``DynamicResource`` for pattern compilation and matching.
+
+    Multiple handlers may be registered on the same path as long as their
+    HTTP method sets do not overlap.
     """
 
     def __init__(self) -> None:
         """Initialize an empty route registry."""
-        # Ordered list of (DynamicResource, RouteInfo) for pattern matching.
-        # DynamicResource handles both plain and parameterized paths uniformly.
-        self._routes: list[tuple[DynamicResource, RouteInfo]] = []
+        # Ordered list of route groups for pattern matching.
+        # Each group represents a unique path pattern with one or more handlers.
+        self._groups: list[_RouteGroup] = []
         # Maps module_name -> list of full_paths (for cleanup).
         self._module_routes: dict[str, list[str]] = {}
         logger.debug("RouteRegistry initialized.")
+
+    def _find_group(self, full_path: str) -> _RouteGroup | None:
+        """Find a route group by its exact full path.
+
+        :param full_path: The full route path including namespace.
+        :return: The route group if found, None otherwise.
+        """
+        for group in self._groups:
+            if group.full_path == full_path:
+                return group
+        return None
 
     def register(
         self,
@@ -71,7 +99,8 @@ class RouteRegistry:
         :param methods: List of HTTP methods. Default: ["GET"].
         :param module_name: Name of the module registering this route.
         :return: RouteInfo for the registered route.
-        :raises ValueError: If route conflicts with existing route.
+        :raises ValueError: If any method overlaps with an existing handler
+            on the same path.
         """
         if methods is None:
             methods = ["GET"]
@@ -80,88 +109,178 @@ class RouteRegistry:
             path = "/" + path
 
         full_path = f"/owlbot/{module_name}{path}"
+        new_methods = frozenset(m.upper() for m in methods)
 
-        if any(info.full_path == full_path for _, info in self._routes):
-            raise ValueError(f"Route '{full_path}' is already registered")
+        group = self._find_group(full_path)
+        if group is not None:
+            for existing in group.handlers:
+                overlap = existing.methods & new_methods
+                if overlap:
+                    raise ValueError(
+                        f"Route '{full_path}' already has a handler for "
+                        f"method(s): {', '.join(sorted(overlap))}"
+                    )
 
         info = RouteInfo(
             path=path,
             full_path=full_path,
-            methods=frozenset(m.upper() for m in methods),
+            methods=new_methods,
             handler=handler,
             module_name=module_name,
         )
 
-        resource = DynamicResource(full_path)
-        self._routes.append((resource, info))
+        if group is None:
+            group = _RouteGroup(
+                resource=DynamicResource(full_path),
+                full_path=full_path,
+                handlers=[info],
+            )
+            self._groups.append(group)
+        else:
+            group.handlers.append(info)
 
         if module_name not in self._module_routes:
             self._module_routes[module_name] = []
-        self._module_routes[module_name].append(full_path)
+        if full_path not in self._module_routes[module_name]:
+            self._module_routes[module_name].append(full_path)
 
         module_logger = logging.getLogger(f"owlbot.modules.{module_name}.routes")
         module_logger.debug(
-            f"Registered route '{full_path}' [{', '.join(info.methods)}]."
+            f"Registered route '{full_path}' [{', '.join(sorted(info.methods))}]."
         )
         return info
 
-    def unregister(self, full_path: str) -> bool:
-        """Unregister a route by its full path.
+    def unregister(self, full_path: str, *, method: str | None = None) -> bool:
+        """Unregister route handler(s) by full path.
+
+        When ``method`` is ``None``, removes all handlers for the path
+        (and the route group itself). When ``method`` is given, removes
+        only the handler covering that method; the group is removed if
+        no handlers remain.
 
         :param full_path: The full route path including namespace.
-        :return: True if route was found and removed, False otherwise.
+        :param method: Optional HTTP method to target a specific handler.
+        :return: True if anything was removed, False otherwise.
         """
-        for i, (_, info) in enumerate(self._routes):
-            if info.full_path == full_path:
-                self._routes.pop(i)
+        for i, group in enumerate(self._groups):
+            if group.full_path != full_path:
+                continue
 
-                if info.module_name in self._module_routes:
-                    self._module_routes[info.module_name] = [
-                        p
-                        for p in self._module_routes[info.module_name]
-                        if p != full_path
-                    ]
-
-                module_logger = logging.getLogger(
-                    f"owlbot.modules.{info.module_name}.routes"
-                )
-                module_logger.debug(f"Unregistered route '{full_path}'.")
+            if method is None:
+                # Remove entire group.
+                self._groups.pop(i)
+                for handler in group.handlers:
+                    if handler.module_name in self._module_routes:
+                        self._module_routes[handler.module_name] = [
+                            p
+                            for p in self._module_routes[handler.module_name]
+                            if p != full_path
+                        ]
+                module_names = {h.module_name for h in group.handlers}
+                for name in module_names:
+                    module_logger = logging.getLogger(f"owlbot.modules.{name}.routes")
+                    module_logger.debug(f"Unregistered route '{full_path}'.")
                 return True
+
+            # Remove only the handler for the specified method.
+            method_upper = method.upper()
+            for j, handler in enumerate(group.handlers):
+                if method_upper in handler.methods:
+                    group.handlers.pop(j)
+                    # Only remove from _module_routes if the module has no
+                    # remaining handlers at this path.
+                    module_name = handler.module_name
+                    still_owns_path = any(
+                        h.module_name == module_name for h in group.handlers
+                    )
+                    if not still_owns_path and module_name in self._module_routes:
+                        self._module_routes[module_name] = [
+                            p
+                            for p in self._module_routes[module_name]
+                            if p != full_path
+                        ]
+                    # Remove the group if no handlers remain.
+                    if not group.handlers:
+                        self._groups.pop(i)
+                    module_logger = logging.getLogger(
+                        f"owlbot.modules.{module_name}.routes"
+                    )
+                    module_logger.debug(
+                        f"Unregistered route '{full_path}' [{method_upper}]."
+                    )
+                    return True
+
+            return False
 
         return False
 
-    def get(self, full_path: str) -> RouteInfo | None:
-        """Look up a route by its full path (exact match on registered pattern).
+    @overload
+    def get(self, full_path: str) -> list[RouteInfo]: ...
+
+    @overload
+    def get(self, full_path: str, *, method: str) -> RouteInfo | None: ...
+
+    def get(
+        self, full_path: str, *, method: str | None = None
+    ) -> list[RouteInfo] | RouteInfo | None:
+        """Look up routes by full path.
+
+        When ``method`` is ``None``, returns all handlers registered at
+        the path. When ``method`` is given, returns the single handler
+        covering that method, or ``None``.
 
         :param full_path: The full route path including namespace.
-        :return: RouteInfo if found, None otherwise.
+        :param method: Optional HTTP method to look up a specific handler.
+        :return: List of RouteInfo (no method), RouteInfo or None (with method).
         """
-        for _, info in self._routes:
-            if info.full_path == full_path:
-                return info
+        group = self._find_group(full_path)
+        if group is None:
+            return [] if method is None else None
+
+        if method is None:
+            return list(group.handlers)
+
+        method_upper = method.upper()
+        for handler in group.handlers:
+            if method_upper in handler.methods:
+                return handler
         return None
 
-    def match(self, full_path: str) -> tuple[RouteInfo, dict[str, str]] | None:
-        """Match a request path against registered routes.
+    def match(
+        self, full_path: str, method: str
+    ) -> tuple[RouteInfo, dict[str, str]] | tuple[None, frozenset[str], dict[str, str]]:
+        """Match a request path and method against registered routes.
 
-        Scans routes in registration order (first match wins). Uses
+        Scans route groups in registration order. Uses
         ``DynamicResource._match()`` for both plain and parameterized paths.
 
         :param full_path: The request path to match.
-        :return: Tuple of (RouteInfo, match_info dict) if matched, None otherwise.
+        :param method: The HTTP method of the request.
+        :return: ``(RouteInfo, match_dict)`` on success, or
+            ``(None, allowed_methods, match_dict)`` if the path matches
+            but the method is not allowed.
+        :raises LookupError: If no route group matches the path (404).
         """
-        for resource, info in self._routes:
-            match_dict = resource._match(full_path)  # no public API alternative
+        method = method.upper()
+        for group in self._groups:
+            match_dict = group.resource._match(full_path)  # no public API alternative
             if match_dict is not None:
-                return info, match_dict
-        return None
+                for handler in group.handlers:
+                    if method in handler.methods:
+                        return handler, match_dict
+                # Path matched but method not allowed.
+                all_methods: frozenset[str] = frozenset().union(
+                    *(h.methods for h in group.handlers)
+                )
+                return None, all_methods, match_dict
+        raise LookupError(full_path)
 
-    def get_all(self) -> dict[str, RouteInfo]:
-        """Get all registered routes.
+    def get_all(self) -> list[RouteInfo]:
+        """Get all registered route handlers.
 
-        :return: Dict mapping full paths to RouteInfo.
+        :return: List of all RouteInfo across all groups.
         """
-        return {info.full_path: info for _, info in self._routes}
+        return [handler for group in self._groups for handler in group.handlers]
 
     def get_by_module(self, module_name: str) -> list[RouteInfo]:
         """Get all routes registered by a specific module.
@@ -170,25 +289,43 @@ class RouteRegistry:
         :return: List of RouteInfo for that module.
         """
         paths = set(self._module_routes.get(module_name, []))
-        return [info for _, info in self._routes if info.full_path in paths]
+        return [
+            handler
+            for group in self._groups
+            if group.full_path in paths
+            for handler in group.handlers
+            if handler.module_name == module_name
+        ]
 
     def unregister_by_module(self, module_name: str) -> int:
         """Remove all routes registered by a specific module.
 
         :param module_name: The module whose routes should be removed.
-        :return: Number of routes removed.
+        :return: Number of route handlers removed.
         """
         module_logger = logging.getLogger(f"owlbot.modules.{module_name}.routes")
-        paths = list(self._module_routes.get(module_name, []))
+        paths = set(self._module_routes.get(module_name, []))
 
         if not paths:
             return 0
 
-        module_logger.debug(f"Unregistering all routes ({len(paths)} total).")
         count = 0
-        for path in paths:
-            if self.unregister(path):
-                count += 1
+        # Iterate in reverse to allow safe removal.
+        for i in range(len(self._groups) - 1, -1, -1):
+            group = self._groups[i]
+            if group.full_path not in paths:
+                continue
+
+            before = len(group.handlers)
+            group.handlers = [h for h in group.handlers if h.module_name != module_name]
+            removed = before - len(group.handlers)
+            count += removed
+
+            if not group.handlers:
+                self._groups.pop(i)
+
+        if count > 0:
+            module_logger.debug(f"Unregistered all routes ({count} handler(s) total).")
 
         self._module_routes.pop(module_name, None)
         return count
@@ -265,25 +402,37 @@ class RouteDispatcher:
             module_name=module_name,
         )
 
-    def unregister(self, full_path: str) -> bool:
-        """Unregister a route by its full path.
+    def unregister(self, full_path: str, *, method: str | None = None) -> bool:
+        """Unregister route handler(s) by full path.
 
         Delegates to the internal RouteRegistry.
 
         :param full_path: The full route path including namespace.
-        :return: True if route was found and removed, False otherwise.
+        :param method: Optional HTTP method to target a specific handler.
+        :return: True if anything was removed, False otherwise.
         """
-        return self._route_registry.unregister(full_path)
+        return self._route_registry.unregister(full_path, method=method)
 
-    def get(self, full_path: str) -> RouteInfo | None:
-        """Look up a route by its full path.
+    @overload
+    def get(self, full_path: str) -> list[RouteInfo]: ...
+
+    @overload
+    def get(self, full_path: str, *, method: str) -> RouteInfo | None: ...
+
+    def get(
+        self, full_path: str, *, method: str | None = None
+    ) -> list[RouteInfo] | RouteInfo | None:
+        """Look up routes by full path.
 
         Delegates to the internal RouteRegistry.
 
         :param full_path: The full route path including namespace.
-        :return: RouteInfo if found, None otherwise.
+        :param method: Optional HTTP method to look up a specific handler.
+        :return: List of RouteInfo (no method), RouteInfo or None (with method).
         """
-        return self._route_registry.get(full_path)
+        if method is None:
+            return self._route_registry.get(full_path)
+        return self._route_registry.get(full_path, method=method)
 
     def get_by_module(self, module_name: str) -> list[RouteInfo]:
         """Get all routes registered by a specific module.
@@ -332,22 +481,24 @@ class RouteDispatcher:
 
         full_path = f"/owlbot/{module_name}{relative_path}"
 
-        result = self._route_registry.match(full_path)
         mod_logger = logging.getLogger(f"owlbot.modules.{module_name}.routes")
-        if result is None:
+        try:
+            result = self._route_registry.match(full_path, request.method)
+        except LookupError:
             mod_logger.debug(f"No route registered for '{full_path}'.")
             return web.Response(status=404)
 
-        route_info, match_info = result
-
-        if request.method not in route_info.methods:
-            allowed = ", ".join(sorted(route_info.methods))
+        if result[0] is None:
+            # Path matched, method not allowed.
+            _, allowed_methods, _ = result
+            allowed = ", ".join(sorted(allowed_methods))
             mod_logger.debug(
                 f"Method {request.method} not allowed for '{full_path}' "
                 f"(allowed: {allowed})"
             )
             return web.Response(status=405, headers={"Allow": allowed})
 
+        route_info, match_info = result
         return await self._handle_module_route(request, route_info, match_info)
 
     async def _handle_module_route(
@@ -485,29 +636,46 @@ class ModuleRoutes:
             module_name=self._module_name,
         )
 
-    def unregister(self, path: str) -> bool:
-        """Unregister a route by its relative path.
+    def unregister(self, path: str, *, method: str | None = None) -> bool:
+        """Unregister route handler(s) by relative path.
 
         :param path: Relative route path (e.g., "/stats").
-        :return: True if route was found and removed, False otherwise.
+        :param method: Optional HTTP method to target a specific handler.
+            When ``None``, removes all handlers for the path.
+        :return: True if anything was removed, False otherwise.
         """
-        return self._dispatcher.unregister(self._full_path(path))
+        return self._dispatcher.unregister(self._full_path(path), method=method)
 
-    def get(self, path: str) -> RouteInfo | None:
-        """Look up a route by its relative path.
+    @overload
+    def get(self, path: str) -> list[RouteInfo]: ...
+
+    @overload
+    def get(self, path: str, *, method: str) -> RouteInfo | None: ...
+
+    def get(
+        self, path: str, *, method: str | None = None
+    ) -> list[RouteInfo] | RouteInfo | None:
+        """Look up routes by relative path.
 
         :param path: Relative route path (e.g., "/stats").
-        :return: RouteInfo if found, None otherwise.
+        :param method: Optional HTTP method to look up a specific handler.
+        :return: List of RouteInfo when ``method`` is ``None``,
+            or ``RouteInfo | None`` when ``method`` is given.
         """
-        return self._dispatcher.get(self._full_path(path))
+        if method is None:
+            return self._dispatcher.get(self._full_path(path))
+        return self._dispatcher.get(self._full_path(path), method=method)
 
-    def exists(self, path: str) -> bool:
+    def exists(self, path: str, *, method: str | None = None) -> bool:
         """Check if a route is registered at the given relative path.
 
         :param path: Relative route path (e.g., "/stats").
-        :return: True if the route exists, False otherwise.
+        :param method: Optional HTTP method to check for a specific handler.
+        :return: True if a matching route exists, False otherwise.
         """
-        return self.get(path) is not None
+        if method is None:
+            return len(self.get(path)) > 0
+        return self.get(path, method=method) is not None
 
     def _full_path(self, path: str) -> str:
         """Normalize a relative path into the full namespaced path.
