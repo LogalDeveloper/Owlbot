@@ -46,7 +46,7 @@ async def count_chat_message(ctx: EventContext[ChatEvent]) -> None:
         ctx.logger.debug("Skipping chat count for %s: %s.", event.message_id, reason)
         return
 
-    counted_ids = get_scheduler().counted_ids
+    counted_ids = get_scheduler(ctx.module).counted_ids
     ctx.logger.debug(
         "Counting message %s from %s for %d timer(s).",
         event.message_id,
@@ -73,7 +73,7 @@ async def handle_visibility_update(ctx: EventContext[VisibilityUpdateEvent]) -> 
         return
 
     affected = set(event.message_ids)
-    counted_ids = get_scheduler().counted_ids
+    counted_ids = get_scheduler(ctx.module).counted_ids
 
     ctx.logger.debug(
         "Removing %d hidden message(s) from chat counts.",

@@ -155,7 +155,7 @@ async def settimermessage(ctx: CommandContext) -> None:
     ctx.logger.info(f"Timer {display} message updated by {ctx.user.display_name}.")
     await ctx.owncast_client.send_message(f"Message set for {display}.")
     if row["enabled"]:
-        get_scheduler().reschedule()
+        get_scheduler(ctx.module).reschedule()
 
 
 @on_command("settimerinterval", requires_moderator=True)
@@ -202,7 +202,7 @@ async def settimerinterval(ctx: CommandContext) -> None:
         f"Interval for {display} set to {normalized} ({interval_type})."
     )
     if row["enabled"]:
-        get_scheduler().reschedule()
+        get_scheduler(ctx.module).reschedule()
 
 
 @on_command("settimerlines", requires_moderator=True)
@@ -249,7 +249,7 @@ async def settimerlines(ctx: CommandContext) -> None:
         f"Minimum chat lines for {display} set to {label}."
     )
     if row["enabled"]:
-        get_scheduler().reschedule()
+        get_scheduler(ctx.module).reschedule()
 
 
 @on_command("enabletimer", requires_moderator=True)
@@ -293,12 +293,12 @@ async def enabletimer(ctx: CommandContext) -> None:
     )
 
     # Start tracking chat lines for this timer.
-    get_scheduler().counted_ids[row["id"]] = set()
+    get_scheduler(ctx.module).counted_ids[row["id"]] = set()
     ctx.logger.debug("Started chat line tracking for timer %s.", display)
 
     ctx.logger.info(f"Timer {display} enabled by {ctx.user.display_name}.")
     await ctx.owncast_client.send_message(f"Timer {display} enabled.")
-    get_scheduler().reschedule()
+    get_scheduler(ctx.module).reschedule()
 
 
 @on_command("disabletimer", requires_moderator=True)
@@ -333,12 +333,12 @@ async def disabletimer(ctx: CommandContext) -> None:
     )
 
     # Stop tracking chat lines for this timer.
-    get_scheduler().counted_ids.pop(row["id"], None)
+    get_scheduler(ctx.module).counted_ids.pop(row["id"], None)
     ctx.logger.debug("Stopped chat line tracking for timer %s.", display)
 
     ctx.logger.info(f"Timer {display} disabled by {ctx.user.display_name}.")
     await ctx.owncast_client.send_message(f"Timer {display} disabled.")
-    get_scheduler().reschedule()
+    get_scheduler(ctx.module).reschedule()
 
 
 @on_command("deletetimer", requires_moderator=True)
@@ -364,11 +364,11 @@ async def deletetimer(ctx: CommandContext) -> None:
     await ctx.storage.execute("DELETE FROM timers WHERE id = ?", (row["id"],))
 
     # Stop tracking chat lines.
-    get_scheduler().counted_ids.pop(row["id"], None)
+    get_scheduler(ctx.module).counted_ids.pop(row["id"], None)
 
     ctx.logger.info(f"Timer {display} deleted by {ctx.user.display_name}.")
     await ctx.owncast_client.send_message(f"Timer {display} deleted.")
-    get_scheduler().reschedule()
+    get_scheduler(ctx.module).reschedule()
 
 
 @on_command("listtimers", requires_moderator=True, cooldown=15)

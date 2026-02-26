@@ -146,17 +146,19 @@ def _next_fire_time(row: aiosqlite.Row, now: datetime) -> datetime | None:
     last_fired = row["last_fired_at"]
     last_fired_dt = datetime.fromisoformat(last_fired) if last_fired else None
 
+    # Never fired before: immediately due.
+    if last_fired_dt is None:
+        return now
+
     if row["interval_type"] == IntervalType.SIMPLE:
         interval_secs = _duration_to_seconds(row["interval_value"])
         if interval_secs <= 0:
             return None
-        anchor = last_fired_dt if last_fired_dt is not None else now
-        return anchor + timedelta(seconds=interval_secs)
+        return last_fired_dt + timedelta(seconds=interval_secs)
 
     # Cron timer: wait for the next scheduled tick.
     try:
-        anchor = last_fired_dt if last_fired_dt is not None else now
-        return next(CronSim(row["interval_value"], anchor))
+        return next(CronSim(row["interval_value"], last_fired_dt))
     except (ValueError, KeyError, CronSimError):
         return None
 
@@ -377,31 +379,14 @@ async def _compute_next_delay(ctx: ModuleContext) -> tuple[float | None, str | N
     return soonest_delay, soonest_display
 
 
-# Module-level singleton for the scheduler instance.
-_scheduler: TimerScheduler | None = None
+def get_scheduler(ctx: ModuleContext) -> TimerScheduler:
+    """Return the scheduler stored in the module context's state.
 
-
-def get_scheduler() -> TimerScheduler:
-    """Return the active scheduler instance.
-
+    :param ctx: The module context.
     :return: The active TimerScheduler.
     :raises RuntimeError: If the scheduler has not been initialized.
     """
-    if _scheduler is None:
+    scheduler = ctx.state.get("scheduler")
+    if not isinstance(scheduler, TimerScheduler):
         raise RuntimeError("TimerScheduler is not initialized.")
-    return _scheduler
-
-
-def set_scheduler(scheduler: TimerScheduler) -> None:
-    """Set the active scheduler instance.
-
-    :param scheduler: The TimerScheduler to install.
-    """
-    global _scheduler
-    _scheduler = scheduler
-
-
-def clear_scheduler() -> None:
-    """Clear the active scheduler instance."""
-    global _scheduler
-    _scheduler = None
+    return scheduler

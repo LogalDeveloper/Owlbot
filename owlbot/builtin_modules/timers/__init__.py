@@ -35,7 +35,7 @@ from .commands import (
     settimermessage,
 )
 from .routes import timer_list_page
-from .scheduler import TimerScheduler, clear_scheduler, get_scheduler, set_scheduler
+from .scheduler import TimerScheduler
 
 __all__ = [
     "addtimer",
@@ -91,7 +91,7 @@ async def setup(ctx: ModuleContext) -> None:
     ctx.logger.info(f"Loaded {count} timer(s) from database.")
 
     sched.start(ctx)
-    set_scheduler(sched)
+    ctx.state["scheduler"] = sched
 
 
 @on_teardown
@@ -102,5 +102,7 @@ async def teardown(ctx: ModuleContext) -> None:
 
     :param ctx: Module context.
     """
-    await get_scheduler().stop(ctx)
-    clear_scheduler()
+    scheduler: TimerScheduler | None = ctx.state.get("scheduler")
+    if scheduler is not None:
+        await scheduler.stop(ctx)
+        ctx.state["scheduler"] = None
