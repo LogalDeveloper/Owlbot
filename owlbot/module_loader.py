@@ -27,6 +27,7 @@ from .api.context import ModuleContext
 from .api.owncast_admin_client import OwncastAdminClient
 from .api.owncast_client import OwncastClient
 from .api.storage import ModuleStorage
+from .api.templates import ModuleTemplates
 from .builtin_modules import BUILTIN_MODULE_NAMES
 from .registries.commands import CommandDispatcher, ModuleCommands
 from .registries.events import EventDispatcher, ModuleEvents
@@ -39,6 +40,8 @@ if TYPE_CHECKING:
     from .api.lifecycle import LifecycleHandler
 
 logger = logging.getLogger("owlbot.modules")
+
+RESERVED_MODULE_NAMES: frozenset[str] = frozenset({"static"})
 
 
 class ModuleLoadError(Exception):
@@ -99,6 +102,8 @@ class ModuleLoader:
             handler_timeout=config.handler_timeout,
         )
 
+        self._core_template_dir = Path(__file__).resolve().parent / "templates"
+
         logger.debug(
             f"ModuleLoader initialized (user modules directory: {self.modules_dir})"
         )
@@ -137,6 +142,13 @@ class ModuleLoader:
         """
         logger.debug("Discovering modules...")
         user_names = self._discover_user_module_names()
+
+        reserved = user_names & RESERVED_MODULE_NAMES
+        for name in sorted(reserved):
+            logger.warning(
+                f"User module '{name}' uses a reserved name and will be skipped."
+            )
+        user_names -= reserved
 
         overrides = user_names & BUILTIN_MODULE_NAMES
         for name in sorted(overrides):
@@ -273,6 +285,11 @@ class ModuleLoader:
         if module_name in self.loaded_modules:
             raise ValueError(f"Module '{module_name}' is already loaded")
 
+        if module_name in RESERVED_MODULE_NAMES:
+            raise ModuleLoadError(
+                f"Module name '{module_name}' is reserved and cannot be used"
+            )
+
         logger.debug(f"Attempting to load module: {module_name}")
 
         if not self.config.is_module_enabled(module_name):
@@ -299,6 +316,9 @@ class ModuleLoader:
             logger.debug(f"Executing module: {module_name}")
             spec.loader.exec_module(module)
 
+            module_dir = module_path.parent
+            module_templates = ModuleTemplates(module_dir, self._core_template_dir)
+
             scoped_config = ModuleConfig(self.config, module_name)
             storage = ModuleStorage(
                 self.config.storage_dir, module_name, self.config.pool_size
@@ -317,6 +337,7 @@ class ModuleLoader:
                 events=module_events,
                 routes=module_routes,
                 http=self.http_client,
+                templates=module_templates,
                 admin_client=self.admin_client,
             )
             self._module_contexts[module_name] = module_ctx

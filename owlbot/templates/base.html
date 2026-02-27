@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/owlbot/static/bootstrap.min.css">
+    <title>{% block title %}Owlbot{% endblock %}</title>
+    {% block head %}{% endblock %}
+</head>
+<body class="container d-flex flex-column gap-3 min-vh-100 pt-4">
+    <main class="flex-grow-1">
+        {% block content %}{% endblock %}
+    </main>
+    <footer class="py-3 border-top">
+        <small class="text-body-secondary">Powered by Owlbot v{{ owlbot_version }}</small>
+    </footer>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Coroutine
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
@@ -40,6 +41,8 @@ async def _server_header_middleware(
 ) -> web.StreamResponse:
     response = await handler(request)
     response.headers["Server"] = f"Owlbot/{__version__}"
+    if request.path.startswith("/owlbot/static/"):
+        response.headers["Cache-Control"] = "max-age=86400"
     return response
 
 
@@ -78,6 +81,11 @@ class HttpServer:
 
         self.app = web.Application(middlewares=[_server_header_middleware])
         self.app.router.add_post(self.config.webhook_path, self._handle_webhook)
+
+        # Static assets served from the owlbot package.
+        static_dir = Path(__file__).resolve().parent / "static"
+        if static_dir.is_dir():
+            self.app.router.add_static("/owlbot/static", static_dir)
 
         # Catch-all routes for dynamic module route dispatch.
         # These single aiohttp routes handle all requests under /owlbot/ and

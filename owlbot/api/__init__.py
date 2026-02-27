@@ -109,6 +109,9 @@ from .routes import (
 # Storage API.
 from .storage import ModuleStorage, StorageError
 
+# Template rendering.
+from .templates import ModuleTemplates
+
 __all__ = [
     "ChatEvent",
     "CommandContext",
@@ -128,6 +131,7 @@ __all__ = [
     "ModuleEvents",
     "ModuleRoutes",
     "ModuleStorage",
+    "ModuleTemplates",
     "NameChangedEvent",
     "OwncastAdminClient",
     "OwncastClient",

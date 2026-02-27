@@ -14,18 +14,9 @@
 
 """Web routes for the custom commands module."""
 
-from pathlib import Path
-
-import jinja2
 from aiohttp import web
 
 from owlbot.api import RouteContext, on_route
-
-_template_dir = Path(__file__).resolve().parent / "templates"
-_jinja_env = jinja2.Environment(
-    loader=jinja2.FileSystemLoader(_template_dir),
-    autoescape=True,
-)
 
 
 @on_route("/list", methods=["GET"])
@@ -63,7 +54,5 @@ async def command_list_page(ctx: RouteContext) -> web.Response:
         for row in rows
     ]
 
-    template = _jinja_env.get_template("list.html")
-    page = template.render(commands=commands, prefix=ctx.commands.prefix)
-
+    page = ctx.templates.render("list.html", commands=commands, prefix=prefix)
     return web.Response(text=page, content_type="text/html")

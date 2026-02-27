@@ -18,9 +18,7 @@ Allows moderators to store quotes and anyone to recall random quotes.
 """
 
 from datetime import UTC, datetime
-from pathlib import Path
 
-import jinja2
 from aiohttp import web
 
 from owlbot.api import (
@@ -30,12 +28,6 @@ from owlbot.api import (
     on_command,
     on_route,
     on_setup,
-)
-
-_template_dir = Path(__file__).resolve().parent / "templates"
-_jinja_env = jinja2.Environment(
-    loader=jinja2.FileSystemLoader(_template_dir),
-    autoescape=True,
 )
 
 
@@ -84,9 +76,7 @@ async def quotes_list_page(ctx: RouteContext) -> web.Response:
         for row in rows
     ]
 
-    template = _jinja_env.get_template("list.html")
-    page = template.render(quotes=quotes)
-
+    page = ctx.templates.render("list.html", quotes=quotes)
     return web.Response(text=page, content_type="text/html")
 
 

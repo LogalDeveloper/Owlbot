@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from .owncast_admin_client import OwncastAdminClient
     from .owncast_client import OwncastClient
     from .storage import ModuleStorage
+    from .templates import ModuleTemplates
 
 
 @dataclass
@@ -73,6 +74,9 @@ class ModuleContext:
 
     # Shared HTTP client for making web requests.
     http: HttpClient
+
+    # Module-scoped Jinja2 template rendering.
+    templates: ModuleTemplates
 
     # Optional admin client for the Owncast Admin API (None if admin is not enabled).
     admin_client: OwncastAdminClient | None = None
@@ -163,6 +167,11 @@ class EventContext[E]:
     def http(self) -> HttpClient:
         """Shared HTTP client for making web requests."""
         return self.module.http
+
+    @property
+    def templates(self) -> ModuleTemplates:
+        """Module-scoped Jinja2 template rendering."""
+        return self.module.templates
 
     @property
     def admin_client(self) -> OwncastAdminClient | None:
@@ -285,6 +294,11 @@ class CommandContext:
         return self.module.http
 
     @property
+    def templates(self) -> ModuleTemplates:
+        """Module-scoped Jinja2 template rendering."""
+        return self.module.templates
+
+    @property
     def admin_client(self) -> OwncastAdminClient | None:
         """Optional client for the Owncast Admin API (None if admin is not enabled)."""
         return self.module.admin_client
@@ -352,6 +366,11 @@ class RouteContext:
     def http(self) -> HttpClient:
         """Shared HTTP client for making web requests."""
         return self.module.http
+
+    @property
+    def templates(self) -> ModuleTemplates:
+        """Module-scoped Jinja2 template rendering."""
+        return self.module.templates
 
     @property
     def admin_client(self) -> OwncastAdminClient | None:

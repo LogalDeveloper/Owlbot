@@ -15,18 +15,10 @@
 """Web routes for the timers module."""
 
 from datetime import datetime
-from pathlib import Path
 
-import jinja2
 from aiohttp import web
 
 from owlbot.api import RouteContext, on_route
-
-_template_dir = Path(__file__).resolve().parent / "templates"
-_jinja_env = jinja2.Environment(
-    loader=jinja2.FileSystemLoader(_template_dir),
-    autoescape=True,
-)
 
 
 @on_route("/list", methods=["GET"])
@@ -67,7 +59,5 @@ async def timer_list_page(ctx: RouteContext) -> web.Response:
             }
         )
 
-    template = _jinja_env.get_template("list.html")
-    page = template.render(timers=timers)
-
+    page = ctx.templates.render("list.html", timers=timers)
     return web.Response(text=page, content_type="text/html")
