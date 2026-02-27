@@ -109,6 +109,7 @@ def _make_module_context(
         events=None,  # type: ignore[arg-type]
         routes=None,  # type: ignore[arg-type]
         http=None,  # type: ignore[arg-type]
+        templates=None,  # type: ignore[arg-type]
         admin_client=None,
     )
 
