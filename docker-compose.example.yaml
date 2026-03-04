@@ -1,0 +1,16 @@
+services:
+  owlbot:
+    image: git.logal.dev/logaldeveloper/owlbot:latest
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    volumes:
+      # Copy config.example.yaml to config.yaml and fill in your values.
+      - ./config.yaml:/app/config.yaml:ro
+      # Place custom module files in this directory.
+      - ./modules:/app/modules
+      # Persistent storage for module data.
+      - data:/app/data
+
+volumes:
+  data:

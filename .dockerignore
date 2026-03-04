@@ -1,0 +1,38 @@
+# CI / repo metadata
+.gitea/
+.gitmodules
+docs/
+
+# Development / IDE
+.venv/
+venv/
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Runtime data (bind-mounted, not baked in)
+data/
+logs/
+modules/
+config.yaml
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+__pycache__/
+*.py[cod]
+
+# Tests and quality tooling
+tests/
+.coverage
+.pytest_cache/
+
+# AI assistant files
+CLAUDE.md
+AGENTS.md
+
+# Docker build files
+Dockerfile
+.dockerignore
