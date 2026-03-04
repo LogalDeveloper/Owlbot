@@ -1,4 +1,4 @@
-name: Dependency Audit
+name: Audit
 
 on:
   schedule:
@@ -11,7 +11,7 @@ on:
 
 jobs:
   audit:
-    name: Dependency Audit
+    name: Dependencies
     runs-on: logaldeveloper-archlinux
     steps:
       - name: Checkout repository
