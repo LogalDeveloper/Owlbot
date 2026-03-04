@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ title or "Clip #" ~ clip_id }}{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ list_url }}">Clips</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ title or "Clip #" ~ clip_id }}</li>
+    </ol>
+</nav>
+<h1 class="mb-3">{{ title or "Clip #" ~ clip_id }}</h1>
+<div class="text-body-secondary mb-3">
+    <p>Created by <strong>{{ creator }}</strong> on <time datetime="{{ created_at }}">{{ created_at }}</time></p>
+</div>
+<video class="w-100 rounded" controls preload="metadata">
+    <source src="{{ video_url }}" type="video/mp4">
+    Your browser does not support the video tag.
+</video>
+{% endblock %}
+{% block scripts %}
+<script>
+    document.querySelectorAll("time[datetime]").forEach(function(el) {
+        var d = new Date(el.getAttribute("datetime"));
+        var month = d.toLocaleString(undefined, { month: "long" });
+        var day = d.getDate();
+        var year = d.getFullYear();
+        var time = d.toLocaleString(undefined, { hour: "2-digit", minute: "2-digit" });
+        el.textContent = month + " " + day + ", " + year + " at " + time;
+    });
+</script>
+{% endblock %}

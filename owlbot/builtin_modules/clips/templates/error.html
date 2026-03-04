@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Error{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ list_url }}">Clips</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Error</li>
+    </ol>
+</nav>
+<h1 class="mb-3">Error</h1>
+<div class="alert alert-danger" role="alert">{{ message }}</div>
+<a href="{{ list_url }}">Return to clips list</a>
+{% endblock %}

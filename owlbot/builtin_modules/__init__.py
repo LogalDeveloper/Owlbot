@@ -16,6 +16,7 @@
 
 BUILTIN_MODULE_NAMES: frozenset[str] = frozenset(
     {
+        "clips",
         "custom_commands",
         "quotes",
         "timers",

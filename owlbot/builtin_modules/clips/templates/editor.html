@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Clip Editor{% endblock %}
+{% block head %}
+<style>
+    .slider-container {
+        position: relative;
+        height: 40px;
+        background: var(--bs-tertiary-bg);
+        border-radius: 8px;
+        box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+        user-select: none;
+        touch-action: none;
+    }
+    .slider-track {
+        position: absolute;
+        top: 0; bottom: 0;
+        background: rgba(var(--bs-primary-rgb), 0.15);
+        border-top: 2px solid rgba(var(--bs-primary-rgb), 0.5);
+        border-bottom: 2px solid rgba(var(--bs-primary-rgb), 0.5);
+        cursor: grab;
+    }
+    .slider-handle {
+        position: absolute;
+        top: -4px; bottom: -4px;
+        width: 12px;
+        background: var(--bs-primary);
+        border-radius: 4px;
+        cursor: ew-resize;
+        z-index: 2;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+        transform: translateX(-50%);
+        transition: transform 0.1s ease, box-shadow 0.1s ease;
+    }
+    .slider-handle:hover {
+        transform: translateX(-50%) scaleY(1.05);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    }
+    .slider-handle::after {
+        content: '';
+        position: absolute;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        width: 4px; height: 16px;
+        border-left: 1px solid rgba(255, 255, 255, 0.3);
+        border-right: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    .slider-playhead {
+        position: absolute;
+        top: -2px; bottom: -2px;
+        width: 2px;
+        background: var(--bs-danger);
+        border-radius: 1px;
+        z-index: 3;
+        pointer-events: none;
+        transform: translateX(-50%);
+    }
+</style>
+{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ list_url }}">Clips</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Clip Editor</li>
+    </ol>
+</nav>
+<h1 class="mb-3">Clip Editor</h1>
+
+<div class="text-center py-5" id="loading">
+    <div class="spinner-border mb-3" role="status">
+        <span class="visually-hidden">Loading...</span>
+    </div>
+    <p>Loading preview...<br><span id="loading-pct"></span></p>
+</div>
+
+<div id="processing" class="text-center py-5 d-none">
+    <div class="spinner-border mb-3" role="status">
+        <span class="visually-hidden">Creating clip...</span>
+    </div>
+    <p>Your clip is being created...<br>You will be redirected automatically when it is ready.</p>
+</div>
+
+<div id="editor-controls" class="d-none">
+<video class="w-100 rounded mb-3" id="video"></video>
+
+<div class="slider-container mb-3" id="slider">
+    <div class="slider-track" id="track"></div>
+    <div class="slider-handle start" id="handle-start"></div>
+    <div class="slider-handle end" id="handle-end"></div>
+    <div class="slider-playhead" id="playhead"></div>
+</div>
+
+<div class="d-flex justify-content-between font-monospace small mb-3">
+    <span>Start: <strong id="start-time">0:00</strong></span>
+    <span>Length: <strong id="clip-length">0:00</strong></span>
+    <span>End: <strong id="end-time">0:00</strong></span>
+</div>
+
+<div class="text-center mb-3">
+    <button type="button" class="btn btn-primary" id="btn-preview">Preview Clip</button>
+</div>
+
+<div class="mb-3">
+    <label for="title" class="form-label">Title (optional)</label>
+    <input type="text" class="form-control" id="title" name="title" placeholder="Enter a title for your clip" maxlength="200">
+</div>
+
+<div class="mb-3">
+    <button type="button" class="btn btn-success" id="btn-create">Create Clip</button>
+</div>
+
+<form id="submit-form" method="POST" action="{{ submit_url }}" class="d-none">
+    <input type="hidden" name="start" id="form-start">
+    <input type="hidden" name="end" id="form-end">
+    <input type="hidden" name="title" id="form-title">
+</form>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+window.EDITOR_CONFIG = {
+    previewUrl: {{ preview_url | tojson }},
+    submitUrl: {{ submit_url | tojson }},
+    listUrl: {{ list_url | tojson }},
+    duration: {{ duration | tojson }},
+    minLength: {{ min_length | tojson }},
+    maxLength: {{ max_length | tojson }}
+};
+</script>
+<script src="{{ editor_js_url }}"></script>
+{% endblock %}

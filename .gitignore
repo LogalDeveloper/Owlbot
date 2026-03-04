@@ -24,9 +24,13 @@ env/
 *.swo
 
 # Runtime data
-data/*.db
+data/
 logs/
 modules/
+
+# Test / coverage artifacts
+.coverage
+.pytest_cache/
 
 # Local configuration (keep config.yaml.example in repo)
 config.yaml

@@ -72,6 +72,26 @@ owncast:
 # Modules can define their own config keys via ctx.config.register_defaults()
 # in their setup() function.
 modules:
+  # clips:
+  #   # Seconds of recent stream footage to keep available for clipping.
+  #   # Default: 300
+  #   cache_duration: 300
+  #   # Minimum clip length in seconds.
+  #   # Default: 5
+  #   min_clip_length: 5
+  #   # Maximum clip length in seconds.
+  #   # Default: 120
+  #   max_clip_length: 120
+  #   # Directory where saved clip files are stored.
+  #   # Default: "data/clips"
+  #   clips_dir: "data/clips"
+  #   # Seconds before an unused clip editor session expires.
+  #   # Default: 900
+  #   session_expiry: 900
+  #   # Seconds to keep stream footage available after the stream stops.
+  #   # Default: 120
+  #   grace_period: 120
+
   # custom_commands:
   #   # Default cooldown in seconds for newly created custom commands.
   #   # Default: 5
