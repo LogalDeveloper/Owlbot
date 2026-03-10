@@ -306,7 +306,13 @@ async def editor_submit(ctx: RouteContext) -> web.Response:
             thumbnail_path.unlink(missing_ok=True)
 
         ctx.logger.info(f"Clip {clip_id} ready ({actual_duration:.1f}s).")
-        return web.HTTPFound(ctx.routes.url_for(f"/clip/{clip_id}"))
+
+        clip_url = ctx.routes.url_for(f"/clip/{clip_id}")
+        await ctx.owncast_client.send_message(
+            f"{session.creator} created a clip: {clip_url}"
+        )
+
+        return web.HTTPFound(clip_url)
 
     except Exception:
         ctx.logger.error("Failed to create clip.", exc_info=True)
