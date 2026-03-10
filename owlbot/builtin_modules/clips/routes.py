@@ -307,7 +307,7 @@ async def editor_submit(ctx: RouteContext) -> web.Response:
 
         ctx.logger.info(f"Clip {clip_id} ready ({actual_duration:.1f}s).")
 
-        clip_url = ctx.routes.url_for(f"/clip/{clip_id}")
+        clip_url = ctx.routes.url_for(f"/view/{clip_id}")
         await ctx.owncast_client.send_message(
             f"{session.creator} created a clip: {clip_url}"
         )
@@ -334,7 +334,7 @@ async def editor_submit(ctx: RouteContext) -> web.Response:
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
-@on_route("/clip/{clip_id}", methods=["GET"])
+@on_route("/view/{clip_id}", methods=["GET"])
 async def clip_page(ctx: RouteContext) -> web.Response:
     """Serve an individual clip page.
 
@@ -353,7 +353,7 @@ async def clip_page(ctx: RouteContext) -> web.Response:
     if row is None:
         return _error_page(ctx, 404, "Clip not found.")
 
-    video_url = ctx.routes.url_for(f"/clip/{clip_id}/video")
+    video_url = ctx.routes.url_for(f"/view/{clip_id}/video")
 
     page = ctx.templates.render(
         "clip.html",
@@ -368,7 +368,7 @@ async def clip_page(ctx: RouteContext) -> web.Response:
     return web.Response(text=page, content_type="text/html")
 
 
-@on_route("/clip/{clip_id}/video", methods=["GET"])
+@on_route("/view/{clip_id}/video", methods=["GET"])
 async def clip_video(ctx: RouteContext) -> web.StreamResponse:
     """Serve a clip video file.
 
@@ -395,7 +395,7 @@ async def clip_video(ctx: RouteContext) -> web.StreamResponse:
     return web.FileResponse(clip_path)
 
 
-@on_route("/clip/{clip_id}/thumbnail", methods=["GET"])
+@on_route("/view/{clip_id}/thumbnail", methods=["GET"])
 async def clip_thumbnail(ctx: RouteContext) -> web.StreamResponse:
     """Serve a clip thumbnail image.
 
@@ -440,8 +440,8 @@ async def clips_list_page(ctx: RouteContext) -> web.Response:
             "created_at": datetime.fromisoformat(row["created_at"]).strftime(
                 "%B %-d, %Y"
             ),
-            "url": ctx.routes.url_for(f"/clip/{row['id']}"),
-            "thumbnail_url": ctx.routes.url_for(f"/clip/{row['id']}/thumbnail"),
+            "url": ctx.routes.url_for(f"/view/{row['id']}"),
+            "thumbnail_url": ctx.routes.url_for(f"/view/{row['id']}/thumbnail"),
         }
         for row in rows
     ]
