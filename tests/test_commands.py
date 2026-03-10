@@ -17,7 +17,7 @@
 Tests cover the @on_command decorator, CommandEvent/CommandInfo dataclasses,
 CommandRegistry (trigger mapping, alias resolution, conflict detection, module
 scanning), CommandDispatcher (parsing, permission checks, cooldowns,
-transaction commit/rollback, built-in commands), ModuleCommands
+timeout handling, built-in commands), ModuleCommands
 (ownership-scoped wrapper), and CommandContext.
 """
 
@@ -755,10 +755,10 @@ class TestCommandDispatcherDispatch:
         assert row is not None
         assert row["name"] == "apple"
 
-    async def test_exception_rolls_back(
+    async def test_exception_does_not_roll_back_committed_writes(
         self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """A handler that raises has its database changes rolled back."""
+        """A handler that raises does not undo already-committed writes."""
         await storage.execute(
             "CREATE TABLE IF NOT EXISTS items (id INTEGER, name TEXT)"
         )
@@ -775,10 +775,11 @@ class TestCommandDispatcherDispatch:
             await dispatcher.dispatch(_make_chat_event(body="!add"))
 
         row = await storage.fetch_one("SELECT * FROM items WHERE id = ?", (1,))
-        assert row is None
+        assert row is not None
+        assert row["name"] == "apple"
         assert "raised exception: boom" in caplog.text
 
-    async def test_timeout_rolls_back(
+    async def test_timeout_is_logged(
         self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
     ) -> None:
         """A timed-out handler is cancelled and logged."""
@@ -795,6 +796,50 @@ class TestCommandDispatcherDispatch:
             "cancelled after" in r.message and "timeout" in r.message
             for r in caplog.records
         )
+
+    async def test_timeout_does_not_roll_back_committed_writes(
+        self, storage: ModuleStorage
+    ) -> None:
+        """A timed-out handler's already-committed writes persist."""
+        await storage.execute(
+            "CREATE TABLE IF NOT EXISTS items (id INTEGER, name TEXT)"
+        )
+
+        async def handler(ctx: CommandContext) -> None:
+            await ctx.storage.execute(
+                "INSERT INTO items (id, name) VALUES (?, ?)", (1, "apple")
+            )
+            await asyncio.sleep(10)
+
+        dispatcher, _, _ = self._make_dispatcher(storage, handler_timeout=0.05)
+        dispatcher.register("slow", handler, module_name="mod_a")
+        await dispatcher.dispatch(_make_chat_event(body="!slow"))
+
+        row = await storage.fetch_one("SELECT * FROM items WHERE id = ?", (1,))
+        assert row is not None
+        assert row["name"] == "apple"
+
+    async def test_timeout_rolls_back_explicit_transaction(
+        self, storage: ModuleStorage
+    ) -> None:
+        """A timed-out handler's uncommitted transaction is rolled back."""
+        await storage.execute(
+            "CREATE TABLE IF NOT EXISTS items (id INTEGER, name TEXT)"
+        )
+
+        async def handler(ctx: CommandContext) -> None:
+            async with ctx.storage.transaction():
+                await ctx.storage.execute(
+                    "INSERT INTO items (id, name) VALUES (?, ?)", (1, "apple")
+                )
+                await asyncio.sleep(10)
+
+        dispatcher, _, _ = self._make_dispatcher(storage, handler_timeout=0.05)
+        dispatcher.register("slow", handler, module_name="mod_a")
+        await dispatcher.dispatch(_make_chat_event(body="!slow"))
+
+        row = await storage.fetch_one("SELECT * FROM items WHERE id = ?", (1,))
+        assert row is None
 
     async def test_builtin_command_dispatched(self, storage: ModuleStorage) -> None:
         """A built-in command receives (event, owncast_client)."""

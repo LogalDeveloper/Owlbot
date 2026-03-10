@@ -34,8 +34,8 @@ def on_setup(func: LifecycleHandler) -> LifecycleHandler:
     """Mark a function as a module setup hook.
 
     The decorated function will be called during module loading with a
-    ``ModuleContext``. Setup hooks run inside a storage transaction that
-    is committed on success and rolled back on failure.
+    ``ModuleContext``. Each storage operation within a setup hook
+    auto-commits independently.
 
     Applied without parentheses::
 

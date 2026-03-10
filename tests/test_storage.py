@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -190,7 +191,7 @@ class TestFetchValue:
 
 
 class TestAutoCommit:
-    """Outside _checkout(), each operation auto-commits or auto-rolls-back."""
+    """Each operation auto-commits on success or auto-rolls-back on failure."""
 
     async def test_auto_commits_on_success(
         self, storage_with_table: ModuleStorage
@@ -226,48 +227,6 @@ class TestAutoCommit:
         assert row["name"] == "a"
 
 
-class TestCheckout:
-    """_checkout() pins a single connection for all operations."""
-
-    async def test_commit_persists(self, storage_with_table: ModuleStorage) -> None:
-        """Writes inside _checkout() become visible after _commit()."""
-        async with storage_with_table._checkout():
-            await storage_with_table.execute(
-                "INSERT INTO items (name, value) VALUES (?, ?)", ("a", 1)
-            )
-            await storage_with_table._commit()
-
-        row = await storage_with_table.fetch_one("SELECT name FROM items WHERE id = 1")
-        assert row is not None
-        assert row["name"] == "a"
-
-    async def test_rollback_discards(self, storage_with_table: ModuleStorage) -> None:
-        """Writes inside _checkout() are discarded after _rollback()."""
-        async with storage_with_table._checkout():
-            await storage_with_table.execute(
-                "INSERT INTO items (name, value) VALUES (?, ?)", ("a", 1)
-            )
-            await storage_with_table._rollback()
-
-        row = await storage_with_table.fetch_one("SELECT name FROM items WHERE id = 1")
-        assert row is None
-
-    async def test_uncommitted_writes_invisible_from_other_connection(
-        self, storage_with_table: ModuleStorage
-    ) -> None:
-        """Uncommitted writes are not visible from a separate connection."""
-        async with (
-            ModuleStorage(storage_with_table._db_path.parent, "test_module") as s2,
-            storage_with_table._checkout(),
-        ):
-            await storage_with_table.execute(
-                "INSERT INTO items (name, value) VALUES (?, ?)", ("a", 1)
-            )
-            # Before commit, s2 should not see the row.
-            row = await s2.fetch_one("SELECT name FROM items WHERE id = 1")
-            assert row is None
-
-
 class TestTransaction:
     """transaction() context manager commits on clean exit, rolls back on exception."""
 
@@ -275,7 +234,7 @@ class TestTransaction:
         self, storage_with_table: ModuleStorage
     ) -> None:
         """Writes inside transaction() persist after clean exit."""
-        async with storage_with_table._checkout(), storage_with_table.transaction():
+        async with storage_with_table.transaction():
             await storage_with_table.execute(
                 "INSERT INTO items (name, value) VALUES (?, ?)", ("a", 1)
             )
@@ -289,12 +248,57 @@ class TestTransaction:
     ) -> None:
         """Writes inside transaction() are discarded if an exception is raised."""
         with pytest.raises(RuntimeError, match="boom"):  # noqa: PT012
-            async with storage_with_table._checkout(), storage_with_table.transaction():
+            async with storage_with_table.transaction():
                 await storage_with_table.execute(
                     "INSERT INTO items (name, value) VALUES (?, ?)",
                     ("a", 1),
                 )
                 raise RuntimeError("boom")
+
+        row = await storage_with_table.fetch_one("SELECT name FROM items WHERE id = 1")
+        assert row is None
+
+    async def test_nested_transaction_raises(
+        self, storage_with_table: ModuleStorage
+    ) -> None:
+        """Nesting transaction() calls raises RuntimeError."""
+        async with storage_with_table.transaction():
+            with pytest.raises(RuntimeError, match="cannot be nested"):
+                async with storage_with_table.transaction():
+                    pass  # pragma: no cover
+
+    async def test_uncommitted_transaction_invisible_from_other_connection(
+        self, storage_with_table: ModuleStorage
+    ) -> None:
+        """Uncommitted writes inside a transaction are not visible externally."""
+        async with (
+            ModuleStorage(storage_with_table._db_path.parent, "test_module") as s2,
+            storage_with_table.transaction(),
+        ):
+            await storage_with_table.execute(
+                "INSERT INTO items (name, value) VALUES (?, ?)", ("a", 1)
+            )
+            # Before commit, s2 should not see the row.
+            row = await s2.fetch_one("SELECT name FROM items WHERE id = 1")
+            assert row is None
+
+    async def test_rolls_back_on_cancellation(
+        self, storage_with_table: ModuleStorage
+    ) -> None:
+        """A cancelled transaction rolls back uncommitted writes."""
+
+        async def slow_txn() -> None:
+            async with storage_with_table.transaction():
+                await storage_with_table.execute(
+                    "INSERT INTO items (name, value) VALUES (?, ?)", ("a", 1)
+                )
+                await asyncio.sleep(10)
+
+        task = asyncio.create_task(slow_txn())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
         row = await storage_with_table.fetch_one("SELECT name FROM items WHERE id = 1")
         assert row is None
@@ -311,21 +315,32 @@ class TestConnectionPool:
         assert len(storage._all_connections) == 1
 
     async def test_pool_grows_up_to_pool_size(self, tmp_path: Path) -> None:
-        """Concurrent checkouts grow the pool up to pool_size."""
-        async with (
-            ModuleStorage(tmp_path, "pool_test", pool_size=2) as s,
-            s._checkout(),
-            s._checkout(),
-        ):
+        """Concurrent transactions grow the pool up to pool_size."""
+        gate = asyncio.Event()
+
+        async def hold_transaction(storage: ModuleStorage) -> None:
+            async with storage.transaction():
+                gate.set()
+                await asyncio.sleep(0.5)
+
+        async with ModuleStorage(tmp_path, "pool_test", pool_size=2) as s:
+            task = asyncio.create_task(hold_transaction(s))
+            await gate.wait()
+            # First task holds one connection; acquire a second directly.
+            conn = await asyncio.wait_for(s._acquire(), timeout=1.0)
             assert len(s._all_connections) == 2
+            s._release(conn)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
     async def test_pool_exhaustion_blocks(self, tmp_path: Path) -> None:
         """When the pool is exhausted, acquire blocks until a connection is released."""
         async with (
             ModuleStorage(tmp_path, "pool_block", pool_size=1) as s,
-            s._checkout(),
+            s.transaction(),
         ):
-            # Pool is exhausted (pool_size=1, one checked out).
+            # Pool is exhausted (pool_size=1, one held by transaction).
             # A second acquire should block, so wait_for should time out.
             with pytest.raises(TimeoutError):
                 await asyncio.wait_for(s._acquire(), timeout=0.1)

@@ -30,7 +30,7 @@ Owlbot is a modular, event-driven chat bot for Owncast.
   - Use decorators: `@on_command`, `@on_event`, `@on_route`, `@on_setup`, `@on_teardown`.
   - Dynamic runtime registration is also supported via context registries.
 - Storage:
-  - `api/storage.py` wraps `aiosqlite` with per-module DB files and handler-scoped transactions.
+  - `api/storage.py` wraps `aiosqlite` with per-module DB files, connection pooling, and auto-commit semantics.
 
 ## Build, Test, and Development Commands
 - `uv sync`: install runtime and dev dependencies from `uv.lock`.

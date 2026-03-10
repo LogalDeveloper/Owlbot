@@ -22,8 +22,7 @@ owlbot:
   #command_prefix: "!"
 
   # Maximum seconds to wait for an event or command handler to complete.
-  # If a handler exceeds this, it is cancelled and any storage changes
-  # are rolled back.
+  # If a handler exceeds this, it is cancelled.
   # Default: 30.0
   #handler_timeout: 30.0
 

@@ -426,9 +426,9 @@ class ModuleLoader:
     async def _run_module_setup(self, module_name: str) -> None:
         """Run a module's ``@on_setup`` hooks if any are defined.
 
-        All setup handlers run inside a single storage transaction that is
-        committed on success.  If any handler fails, the transaction is
-        rolled back, storage is closed, and the module is fully cleaned up.
+        Each storage operation within a setup handler auto-commits
+        independently.  If any handler fails, storage is closed and the
+        module is fully cleaned up.
 
         :param module_name: Name of the module whose setup to run.
         :raises ModuleLoadError: If any @on_setup handler raises an exception.
@@ -443,16 +443,10 @@ class ModuleLoader:
 
         module_ctx = self._module_contexts[module_name]
         try:
-            async with module_ctx.storage._checkout():
-                try:
-                    for setup_func in setup_funcs:
-                        logger.debug(f"Running @on_setup for module: {module_name}")
-                        await setup_func(module_ctx)
-                    await module_ctx.storage._commit()
-                    logger.debug(f"Setup completed for module: {module_name}")
-                except Exception:
-                    await module_ctx.storage._rollback()
-                    raise
+            for setup_func in setup_funcs:
+                logger.debug(f"Running @on_setup for module: {module_name}")
+                await setup_func(module_ctx)
+            logger.debug(f"Setup completed for module: {module_name}")
         except Exception as e:
             await module_ctx.storage._close()
             self._cleanup_module(module_name)

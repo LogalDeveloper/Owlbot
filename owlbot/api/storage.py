@@ -41,15 +41,13 @@ class ModuleStorage:
     concurrent readers and a single writer can operate without "database is
     locked" errors.
 
-    Transactions are managed at the handler level. The bot commits after each
-    handler succeeds, and rolls back if the handler throws an exception. Module
-    developers don't need to think about commits for normal usage.
+    Each storage operation (execute, fetch_one, etc.) independently acquires a
+    connection from the pool, auto-commits on success, rolls back on failure,
+    and releases the connection immediately. No connection is held between
+    calls.
 
-    For finer control within a handler, use the transaction() context manager
-    to group multiple operations that should succeed or fail together.
-
-    Concurrency: The _checkout() context manager acquires a dedicated
-    connection from the pool for the current handler invocation.
+    For operations that must succeed or fail together, use the transaction()
+    context manager to group them into a single atomic unit.
     """
 
     def __init__(self, storage_dir: Path, module_name: str, pool_size: int = 4):
@@ -90,10 +88,16 @@ class ModuleStorage:
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[ModuleStorage]:
-        """Context manager for explicit transaction control within a handler.
+        """Context manager for explicit transaction control.
 
-        Use this when you need multiple operations to succeed or fail together
-        within a single handler. Commits on success, rolls back on exception.
+        Use this when you need multiple operations to succeed or fail together.
+        Acquires a dedicated connection from the pool and shares it across all
+        operations within the block. Commits on success, rolls back on exception.
+
+        Nesting ``transaction()`` calls is not supported and raises
+        ``RuntimeError``.  SQLite only allows one writer at a time, so a
+        nested transaction would deadlock waiting for the outer connection's
+        write lock.
 
         Example:
             async with ctx.storage.transaction():
@@ -102,15 +106,27 @@ class ModuleStorage:
                 # Both committed together, or both rolled back on error
 
         :return: This ModuleStorage instance.
+        :raises RuntimeError: If called while already inside a transaction.
 
         """
+        if self._txn_conn.get() is not None:
+            raise RuntimeError(
+                "transaction() cannot be nested. Already inside an active transaction."
+            )
+        conn = await self._acquire()
+        token = self._txn_conn.set(conn)
         self._logger.debug("Explicit transaction started.")
         try:
             yield self
-            await self._commit()
+            await conn.commit()
+            self._logger.debug("Transaction committed.")
         except BaseException:
-            await self._rollback()
+            await conn.rollback()
+            self._logger.debug("Transaction rolled back.")
             raise
+        finally:
+            self._txn_conn.reset(token)
+            self._release(conn)
 
     async def execute(
         self,
@@ -255,10 +271,10 @@ class ModuleStorage:
     async def _connection(self) -> AsyncIterator[aiosqlite.Connection]:
         """Async context manager that provides a connection.
 
-        If already inside a ``_checkout``, yields the checked-out connection
-        without releasing it. Otherwise acquires a standalone connection from
-        the pool that auto-commits on success and rolls back on failure
-        before being released.
+        If already inside a ``transaction()``, yields the shared connection
+        without committing (the transaction block handles that). Otherwise
+        acquires a standalone connection from the pool that auto-commits on
+        success and rolls back on failure before being released.
         """
         existing = self._txn_conn.get()
         if existing is not None:
@@ -274,41 +290,6 @@ class ModuleStorage:
             raise
         finally:
             self._release(conn)
-
-    @asynccontextmanager
-    async def _checkout(self) -> AsyncIterator[None]:
-        """Check out a connection from the pool for the duration of a handler.
-
-        Sets a ContextVar so that all storage operations within the handler
-        reuse the same connection.
-        """
-        conn = await self._acquire()
-        token = self._txn_conn.set(conn)
-        try:
-            yield
-        finally:
-            self._txn_conn.reset(token)
-            self._release(conn)
-
-    async def _commit(self) -> None:
-        """Commit the current transaction (internal use by bot).
-
-        Called automatically after each handler completes successfully.
-        """
-        conn = self._txn_conn.get()
-        if conn is not None:
-            await conn.commit()
-            self._logger.debug("Transaction committed.")
-
-    async def _rollback(self) -> None:
-        """Rollback the current transaction (internal use by bot).
-
-        Called automatically if a handler throws an exception.
-        """
-        conn = self._txn_conn.get()
-        if conn is not None:
-            await conn.rollback()
-            self._logger.debug("Transaction rolled back.")
 
     async def _close(self) -> None:
         """Close all pool connections (internal use by bot)."""

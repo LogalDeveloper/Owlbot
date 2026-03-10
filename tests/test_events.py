@@ -15,7 +15,7 @@
 """Unit tests for event registration, dispatching, and context infrastructure.
 
 Tests cover the @on_event decorator, Priority enum, EventRegistry,
-EventDispatcher (priority sorting, propagation control, timeout/rollback,
+EventDispatcher (priority sorting, propagation control, timeout handling,
 command dispatch phase), ModuleEvents (ownership checks), and
 EventContext/PropagationState.
 """
@@ -653,8 +653,8 @@ class TestEventDispatcherDispatch:
         assert call_order == ["stopper", "follower"]
 
 
-class TestEventDispatcherTransactions:
-    """Tests _call_handler() commit/rollback behaviour in EventDispatcher."""
+class TestEventDispatcherStorage:
+    """Tests _call_handler() storage behaviour in EventDispatcher."""
 
     async def test_success_commits(self, storage: ModuleStorage) -> None:
         """A successful handler's database changes are committed."""
@@ -682,16 +682,16 @@ class TestEventDispatcherTransactions:
         assert row is not None
         assert row[0] == "committed"
 
-    async def test_exception_rolls_back(
+    async def test_exception_does_not_roll_back_committed_writes(
         self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """A handler that raises has its database changes rolled back."""
-        # Pre-create the table outside the handler's transaction.
+        """A handler that raises does not undo already-committed writes."""
+        # Pre-create the table outside the handler.
         await storage.execute("CREATE TABLE IF NOT EXISTS test_tbl (val TEXT)")
 
         async def handler(ctx: EventContext[Any]) -> None:
             await ctx.storage.execute(
-                "INSERT INTO test_tbl (val) VALUES (?)", ("rolled_back",)
+                "INSERT INTO test_tbl (val) VALUES (?)", ("persisted",)
             )
             raise RuntimeError("boom")
 
@@ -710,7 +710,8 @@ class TestEventDispatcherTransactions:
             await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
 
         row = await storage.fetch_one("SELECT val FROM test_tbl")
-        assert row is None
+        assert row is not None
+        assert row[0] == "persisted"
         assert any("raised exception: boom" in r.message for r in caplog.records)
 
     async def test_exception_does_not_stop_next_handler(
@@ -741,10 +742,10 @@ class TestEventDispatcherTransactions:
         await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
         assert call_order == ["failing", "second"]
 
-    async def test_timeout_rolls_back(
+    async def test_timeout_is_logged(
         self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """A handler that exceeds the timeout is cancelled and changes rolled back."""
+        """A handler that exceeds the timeout is cancelled and logged."""
 
         async def slow_handler(ctx: EventContext[Any]) -> None:
             await asyncio.sleep(10)
@@ -767,13 +768,47 @@ class TestEventDispatcherTransactions:
             for r in caplog.records
         )
 
-    async def test_timeout_rolls_back_db_changes(self, storage: ModuleStorage) -> None:
-        """A timed-out handler's database writes are rolled back."""
+    async def test_timeout_does_not_roll_back_committed_writes(
+        self, storage: ModuleStorage
+    ) -> None:
+        """A timed-out handler's already-committed writes persist."""
         await storage.execute("CREATE TABLE IF NOT EXISTS test_tbl (val TEXT)")
 
         async def slow_handler(ctx: EventContext[Any]) -> None:
-            await ctx.storage.execute("INSERT INTO test_tbl (val) VALUES (?)", ("tmp",))
+            await ctx.storage.execute(
+                "INSERT INTO test_tbl (val) VALUES (?)", ("persisted",)
+            )
             await asyncio.sleep(10)
+
+        module_ctx = _make_module_context(storage, "mod_a")
+
+        async def command_dispatch(event: ChatEvent) -> None:
+            pass
+
+        dispatcher = EventDispatcher(
+            command_dispatch=command_dispatch,
+            get_module_context=lambda name: module_ctx,
+            handler_timeout=0.05,
+        )
+        dispatcher.register(slow_handler, (EventType.CHAT,), "mod_a")
+        await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
+
+        row = await storage.fetch_one("SELECT val FROM test_tbl")
+        assert row is not None
+        assert row[0] == "persisted"
+
+    async def test_timeout_rolls_back_explicit_transaction(
+        self, storage: ModuleStorage
+    ) -> None:
+        """A timed-out handler's uncommitted transaction is rolled back."""
+        await storage.execute("CREATE TABLE IF NOT EXISTS test_tbl (val TEXT)")
+
+        async def slow_handler(ctx: EventContext[Any]) -> None:
+            async with ctx.storage.transaction():
+                await ctx.storage.execute(
+                    "INSERT INTO test_tbl (val) VALUES (?)", ("uncommitted",)
+                )
+                await asyncio.sleep(10)
 
         module_ctx = _make_module_context(storage, "mod_a")
 

@@ -374,7 +374,7 @@ class EventDispatcher:
         module_name: str,
         propagation: PropagationState,
     ) -> None:
-        """Call a single handler with timeout enforcement and transaction management.
+        """Call a single handler with timeout enforcement.
 
         :param handler: The handler function to call.
         :param event: The event to pass to the handler.
@@ -395,34 +395,22 @@ class EventDispatcher:
             _propagation=propagation,
         )
 
-        # Call the handler with timeout enforcement to prevent
-        # runaway handlers from blocking everything.
-        # The checkout acquires a pooled connection for the
-        # duration of this handler invocation.
-        async with module_ctx.storage._checkout():
-            try:
-                start = time.perf_counter()
-                await asyncio.wait_for(handler(ctx), timeout=self._handler_timeout)
-                elapsed = (time.perf_counter() - start) * 1000
+        try:
+            start = time.perf_counter()
+            await asyncio.wait_for(handler(ctx), timeout=self._handler_timeout)
+            elapsed = (time.perf_counter() - start) * 1000
 
-                # Handler succeeded, commit any database changes.
-                await module_ctx.storage._commit()
-
-                logger.debug(f"Handler '{handler_name}' completed in {elapsed:.1f}ms.")
-            except TimeoutError:
-                # Handler took too long. Rollback any partial changes.
-                await module_ctx.storage._rollback()
-                logger.warning(
-                    f"Handler '{handler_name}' from module '{module_name}' "
-                    f"cancelled after {self._handler_timeout}s timeout."
-                )
-            except Exception as e:
-                # Handler raised an exception. Rollback any partial changes.
-                await module_ctx.storage._rollback()
-                logger.exception(
-                    f"Handler '{handler_name}' from module "
-                    f"'{module_name}' raised exception: {e}"
-                )
+            logger.debug(f"Handler '{handler_name}' completed in {elapsed:.1f}ms.")
+        except TimeoutError:
+            logger.warning(
+                f"Handler '{handler_name}' from module '{module_name}' "
+                f"cancelled after {self._handler_timeout}s timeout."
+            )
+        except Exception as e:
+            logger.exception(
+                f"Handler '{handler_name}' from module "
+                f"'{module_name}' raised exception: {e}"
+            )
 
 
 class ModuleEvents:

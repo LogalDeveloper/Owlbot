@@ -356,7 +356,7 @@ class RouteDispatcher:
     """Dispatches HTTP requests to registered module route handlers.
 
     Looks up routes in the RouteRegistry, validates methods, creates
-    RouteContext, and calls the handler with timeout and transaction management.
+    RouteContext, and calls the handler with timeout enforcement.
     """
 
     def __init__(
@@ -532,50 +532,41 @@ class RouteDispatcher:
             f"Calling route handler: {route_info.full_path} from module: {module_name}"
         )
 
-        # The checkout acquires a pooled connection for the
-        # duration of this route invocation.
-        async with module_ctx.storage._checkout():
-            try:
-                start = time.perf_counter()
-                result = await asyncio.wait_for(
-                    route_info.handler(ctx), timeout=self._handler_timeout
-                )
-                elapsed = (time.perf_counter() - start) * 1000
+        try:
+            start = time.perf_counter()
+            result = await asyncio.wait_for(
+                route_info.handler(ctx), timeout=self._handler_timeout
+            )
+            elapsed = (time.perf_counter() - start) * 1000
 
-                # Handler succeeded, commit any database changes.
-                await module_ctx.storage._commit()
+            mod_logger.debug(
+                f"Route handler '{route_info.full_path}' completed in {elapsed:.1f}ms."
+            )
 
-                mod_logger.debug(
-                    f"Route handler '{route_info.full_path}' "
-                    f"completed in {elapsed:.1f}ms."
-                )
+            if result is None:
+                return web.Response(status=204)  # No Content.
+            if isinstance(result, web.StreamResponse):
+                return result
+            if isinstance(result, dict):
+                return web.json_response(result)
+            # pragma: no branch — defensive against untyped handlers
+            mod_logger.error(  # type: ignore[unreachable]
+                f"Route handler '{route_info.full_path}' returned "
+                f"unsupported type: {type(result).__name__}"
+            )
+            return web.Response(status=500)
 
-                if result is None:
-                    return web.Response(status=204)  # No Content.
-                if isinstance(result, web.StreamResponse):
-                    return result
-                if isinstance(result, dict):
-                    return web.json_response(result)
-                # pragma: no branch — defensive against untyped handlers
-                mod_logger.error(  # type: ignore[unreachable]
-                    f"Route handler '{route_info.full_path}' returned "
-                    f"unsupported type: {type(result).__name__}"
-                )
-                return web.Response(status=500)
-
-            except TimeoutError:
-                await module_ctx.storage._rollback()
-                mod_logger.warning(
-                    f"Route handler '{route_info.full_path}' timed out "
-                    f"after {self._handler_timeout}s."
-                )
-                return web.Response(status=500)
-            except Exception as e:
-                await module_ctx.storage._rollback()
-                mod_logger.exception(
-                    f"Route handler '{route_info.full_path}' raised exception: {e}"
-                )
-                return web.Response(status=500)
+        except TimeoutError:
+            mod_logger.warning(
+                f"Route handler '{route_info.full_path}' timed out "
+                f"after {self._handler_timeout}s."
+            )
+            return web.Response(status=500)
+        except Exception as e:
+            mod_logger.exception(
+                f"Route handler '{route_info.full_path}' raised exception: {e}"
+            )
+            return web.Response(status=500)
 
 
 class ModuleRoutes:

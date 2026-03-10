@@ -528,39 +528,27 @@ class CommandDispatcher:
             module=module_ctx,
         )
 
-        # The checkout acquires a pooled connection for the
-        # duration of this command invocation.
-        async with module_ctx.storage._checkout():
-            try:
-                start = time.perf_counter()
-                await asyncio.wait_for(
-                    command_info.handler(cmd_ctx), timeout=self._handler_timeout
-                )
-                elapsed = (time.perf_counter() - start) * 1000
+        try:
+            start = time.perf_counter()
+            await asyncio.wait_for(
+                command_info.handler(cmd_ctx), timeout=self._handler_timeout
+            )
+            elapsed = (time.perf_counter() - start) * 1000
 
-                # Command succeeded, commit any database changes.
-                await module_ctx.storage._commit()
-
-                logger.debug(
-                    f"Command '{command_info.name}' completed in {elapsed:.1f}ms."
-                )
-            except TimeoutError:
-                # Command timed out. Rollback any partial changes.
-                await module_ctx.storage._rollback()
-                logger.warning(
-                    f"Command handler '{command_info.name}' "
-                    f"from module '{command_info.module_name}' "
-                    f"cancelled after "
-                    f"{self._handler_timeout}s timeout."
-                )
-            except Exception as e:
-                # Command raised an exception. Rollback any partial changes.
-                await module_ctx.storage._rollback()
-                logger.exception(
-                    f"Command handler '{command_info.name}' "
-                    f"from module '{command_info.module_name}' "
-                    f"raised exception: {e}"
-                )
+            logger.debug(f"Command '{command_info.name}' completed in {elapsed:.1f}ms.")
+        except TimeoutError:
+            logger.warning(
+                f"Command handler '{command_info.name}' "
+                f"from module '{command_info.module_name}' "
+                f"cancelled after "
+                f"{self._handler_timeout}s timeout."
+            )
+        except Exception as e:
+            logger.exception(
+                f"Command handler '{command_info.name}' "
+                f"from module '{command_info.module_name}' "
+                f"raised exception: {e}"
+            )
 
     def _register_builtin_commands(self) -> None:
         """Register all built-in commands."""
