@@ -31,47 +31,36 @@ from .types import EditorSession, get_state
 async def clip_command(ctx: CommandContext) -> None:
     """Create a clip from the current stream.
 
-    Snapshots the HLS cache, generates a preview MP4, and sends the user
-    a link to the clip editor.
+    Uses the concat protocol to read directly from the HLS cache while
+    suppressing pruning, then sends the user a link to the clip editor.
 
     :param ctx: The command context.
     """
     module = ctx.module
     module_state = get_state(module)
 
-    # Check if stream is live / cache is available.
-    min_clip_length = int(ctx.module.config.get("min_clip_length"))
-    min_cache_duration = min_clip_length * 2
-    if (
-        module_state.cache is None
-        or module_state.cache.total_duration < min_cache_duration
-    ):
+    if module_state.cache is None:
+        ctx.logger.debug("Clip command rejected: cache is None.")
+        await ctx.owncast_client.send_message(
+            "Clipping is unavailable for this stream."
+        )
+        return
+
+    if not module_state.cache.enough_for_clipping:
         ctx.logger.debug("Clip command rejected: not enough cached data.")
         await ctx.owncast_client.send_message(
             "Not enough stream data is available yet. Please try again later."
         )
         return
 
-    # Snapshot chunks into a working directory.
+    cache = module_state.cache
+
     work_dir = Path(tempfile.mkdtemp(prefix="owlbot-clip-work-"))
-    snapshot_files, snapshot_duration = module_state.cache.snapshot(work_dir)
-
-    ctx.logger.debug(
-        f"Snapshot for {ctx.user.display_name}: {len(snapshot_files)} chunks, "
-        f"{snapshot_duration:.1f}s into {work_dir}."
-    )
-
-    if not snapshot_files:
-        shutil.rmtree(work_dir, ignore_errors=True)
-        await ctx.owncast_client.send_message("No stream data available for clipping.")
-        return
-
-    # Generate preview and send editor link.
-    manager = module_state.manager
     preview_path = work_dir / "preview.mp4"
 
     try:
-        duration = await manager.generate_preview(snapshot_files, preview_path)
+        manager = module_state.manager
+        duration = await manager.generate_preview_from_cache(preview_path, cache)
     except Exception:
         module.logger.error("Failed to generate clip preview.", exc_info=True)
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -80,12 +69,6 @@ async def clip_command(ctx: CommandContext) -> None:
         )
         return
 
-    # Clean up hardlinked chunks (preview is self-contained now).
-    for f in snapshot_files:
-        if f.exists():
-            f.unlink()
-
-    # Create editor session.
     token = secrets.token_urlsafe(32)
     session_expiry = int(module.config.get("session_expiry"))
     session = EditorSession(

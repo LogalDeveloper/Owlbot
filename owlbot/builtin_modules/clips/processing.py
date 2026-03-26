@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     import logging
     from pathlib import Path
 
+    from .cache import ChunkCache
+
 
 class ProcessingManager:
     """Manages ffmpeg/ffprobe subprocess execution with concurrency control.
@@ -44,55 +46,42 @@ class ProcessingManager:
         self._ffmpeg_semaphore = asyncio.Semaphore(1)
         self._ffprobe_semaphore = asyncio.Semaphore(1)
 
-    async def generate_preview(
+    async def generate_preview_from_cache(
         self,
-        chunk_files: list[Path],
         output_path: Path,
+        cache: ChunkCache,
     ) -> float:
-        """Generate a preview MP4 from a list of HLS chunk files.
+        """Generate a preview MP4 from the cached HLS segments.
 
-        Acquires the ffmpeg semaphore for the concat step, then the ffprobe
-        semaphore for the duration probe.
+        Suppresses cache pruning while building the concat string and running
+        ffmpeg, then probes the output duration via ffprobe.
 
-        :param chunk_files: Ordered list of .ts chunk file paths.
         :param output_path: Where to write the output MP4.
+        :param cache: The ChunkCache to read segments from.
         :return: Duration of the generated preview in seconds.
-        :raises RuntimeError: If ffmpeg fails or no chunks provided.
+        :raises RuntimeError: If no segments are cached.
         """
-        if not chunk_files:
-            msg = "ffmpeg: no chunk files provided for preview generation."
-            raise RuntimeError(msg)
+        async with cache.suppress_pruning():
+            concat_string = cache.concat_protocol_string()
+            if not concat_string:
+                msg = "ffmpeg: no cached segments available."
+                raise RuntimeError(msg)
 
-        concat_path = output_path.parent / "concat.txt"
-
-        async with self._ffmpeg_semaphore:
-            concat_path.write_text(
-                "\n".join(f"file '{f}'" for f in chunk_files),
-                encoding="utf-8",
-            )
-            try:
+            async with self._ffmpeg_semaphore:
                 self._logger.debug(
-                    f"Generating preview from {len(chunk_files)} chunks "
-                    f"-> {output_path}."
+                    f"Generating preview via concat protocol -> {output_path}."
                 )
                 await self._run_ffprocess(
                     "ffmpeg",
                     "-y",
-                    "-f",
-                    "concat",
-                    "-safe",
-                    "0",
                     "-i",
-                    str(concat_path),
+                    f"concat:{concat_string}",
                     "-c",
                     "copy",
                     "-movflags",
                     "+faststart",
                     str(output_path),
                 )
-            finally:
-                if concat_path.exists():
-                    concat_path.unlink()
 
         async with self._ffprobe_semaphore:
             duration = await self._probe_duration(output_path)
