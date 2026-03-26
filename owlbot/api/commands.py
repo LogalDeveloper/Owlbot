@@ -68,11 +68,11 @@ class CommandInfo:
     requires_authenticated: bool = False
     requires_moderator: bool = False
     cooldown: int | float = 0
+    all_triggers: frozenset[str] = field(init=False, repr=False)
 
-    @property
-    def all_triggers(self) -> frozenset[str]:
-        """All names that trigger this command (name + aliases)."""
-        return frozenset({self.name}) | self.aliases
+    def __post_init__(self) -> None:
+        """Compute derived fields."""
+        self.all_triggers = frozenset({self.name}) | self.aliases
 
 
 def on_command(

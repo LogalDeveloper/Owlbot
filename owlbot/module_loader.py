@@ -178,9 +178,9 @@ class ModuleLoader:
 
         :return: Set of user module names.
         """
-        logger.debug(f"Scanning user modules directory: {self.modules_dir}")
+        logger.debug("Scanning user modules directory: %s", self.modules_dir)
         if not self.modules_dir.exists():
-            logger.debug(f"User modules directory does not exist: {self.modules_dir}")
+            logger.debug("User modules directory does not exist: %s", self.modules_dir)
             return set()
 
         found: set[str] = set()
@@ -290,7 +290,7 @@ class ModuleLoader:
                 f"Module name '{module_name}' is reserved and cannot be used"
             )
 
-        logger.debug(f"Attempting to load module: {module_name}")
+        logger.debug("Attempting to load module: %s", module_name)
 
         if not self.config.is_module_enabled(module_name):
             raise ModuleLoadError(f"Module '{module_name}' is disabled in config")
@@ -313,7 +313,7 @@ class ModuleLoader:
             module = importlib.util.module_from_spec(spec)
             sys.modules[f"owlbot_modules.{module_name}"] = module
 
-            logger.debug(f"Executing module: {module_name}")
+            logger.debug("Executing module: %s", module_name)
             spec.loader.exec_module(module)
 
             module_dir = module_path.parent
@@ -350,7 +350,7 @@ class ModuleLoader:
                 await self._run_module_setup(module_name)
                 logger.info(f"Loaded module '{module_name}'.")
             else:
-                logger.debug(f"Imported module '{module_name}' (setup deferred).")
+                logger.debug("Imported module '%s' (setup deferred).", module_name)
 
         except ModuleLoadError:
             raise
@@ -374,7 +374,7 @@ class ModuleLoader:
         :param module_name: The module to unload.
         :return: True if module was unloaded, False if not found.
         """
-        logger.debug(f"Unloading module '{module_name}'")
+        logger.debug("Unloading module '%s'", module_name)
         if module_name not in self.loaded_modules:
             logger.warning(f"Cannot unload '{module_name}': not loaded")
             return False
@@ -390,13 +390,13 @@ class ModuleLoader:
         if teardown_funcs and module_ctx:
             for teardown_func in teardown_funcs:
                 try:
-                    logger.debug(f"Running @on_teardown for module: {module_name}")
+                    logger.debug("Running @on_teardown for module: %s", module_name)
                     await teardown_func(module_ctx)
-                    logger.debug(f"Teardown completed for module: {module_name}")
+                    logger.debug("Teardown completed for module: %s", module_name)
                 except Exception as e:
                     logger.exception(f"Teardown failed for module '{module_name}': {e}")
         else:
-            logger.debug(f"Module '{module_name}' has no @on_teardown handlers.")
+            logger.debug("Module '%s' has no @on_teardown handlers.", module_name)
 
         if module_ctx:
             try:
@@ -438,15 +438,15 @@ class ModuleLoader:
             self._collect_lifecycle_handlers(module, "_owlbot_setup") if module else []
         )
         if not setup_funcs:
-            logger.debug(f"Module '{module_name}' has no @on_setup handlers.")
+            logger.debug("Module '%s' has no @on_setup handlers.", module_name)
             return
 
         module_ctx = self._module_contexts[module_name]
         try:
             for setup_func in setup_funcs:
-                logger.debug(f"Running @on_setup for module: {module_name}")
+                logger.debug("Running @on_setup for module: %s", module_name)
                 await setup_func(module_ctx)
-            logger.debug(f"Setup completed for module: {module_name}")
+            logger.debug("Setup completed for module: %s", module_name)
         except Exception as e:
             await module_ctx.storage._close()
             self._cleanup_module(module_name)
@@ -548,4 +548,4 @@ class ModuleLoader:
         self.event_dispatcher.unregister_by_module(module_name)
         self.command_dispatcher.unregister_by_module(module_name)
         self.route_dispatcher.unregister_by_module(module_name)
-        logger.debug(f"Cleaned up module '{module_name}'.")
+        logger.debug("Cleaned up module '%s'.", module_name)

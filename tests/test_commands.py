@@ -48,7 +48,7 @@ def _make_user(
     user_id: str = "user-1",
     display_name: str = "Alice",
     is_authenticated: bool = False,
-    scopes: list[str] | None = None,
+    scopes: frozenset[str] | None = None,
 ) -> User:
     """Build a minimal User for test events."""
     return User(
@@ -60,7 +60,7 @@ def _make_user(
         name_changed_at=None,
         is_bot=False,
         is_authenticated=is_authenticated,
-        scopes=scopes or [],
+        scopes=scopes or frozenset(),
     )
 
 
@@ -657,7 +657,7 @@ class TestCommandDispatcherDispatch:
         dispatcher.register(
             "ban", handler, requires_moderator=True, module_name="mod_a"
         )
-        user = _make_user(scopes=["MODERATOR"])
+        user = _make_user(scopes=frozenset({"MODERATOR"}))
         await dispatcher.dispatch(_make_chat_event(body="!ban", user=user))
 
         assert called is True
@@ -676,7 +676,7 @@ class TestCommandDispatcherDispatch:
         dispatcher.register(
             "ping", handler, requires_moderator=True, module_name="mod_a"
         )
-        user = _make_user(scopes=[])
+        user = _make_user(scopes=frozenset())
         with caplog.at_level(logging.INFO, logger="owlbot.commands"):
             await dispatcher.dispatch(_make_chat_event(body="!ping", user=user))
 

@@ -127,7 +127,7 @@ async def delclip_command(ctx: CommandContext) -> None:
 
     row = await ctx.storage.fetch_one("SELECT id FROM clips WHERE id = ?", (clip_id,))
     if not row:
-        ctx.logger.debug(f"Clip {clip_id} not found for deletion.")
+        ctx.logger.debug("Clip %s not found for deletion.", clip_id)
         await ctx.owncast_client.send_message(f"Clip {clip_id} not found.")
         return
 

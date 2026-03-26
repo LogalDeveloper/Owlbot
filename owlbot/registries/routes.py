@@ -22,12 +22,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast, overload
 
 from aiohttp import web
 from aiohttp.web import DynamicResource
 
+from ..api.context import RouteContext
 from ..api.routes import RouteHandler, RouteInfo, RouteMark
 
 if TYPE_CHECKING:
@@ -69,7 +71,7 @@ class RouteRegistry:
         # Each group represents a unique path pattern with one or more handlers.
         self._groups: list[_RouteGroup] = []
         # Maps module_name -> list of full_paths (for cleanup).
-        self._module_routes: dict[str, list[str]] = {}
+        self._module_routes: dict[str, list[str]] = defaultdict(list)
         logger.debug("RouteRegistry initialized.")
 
     def _find_group(self, full_path: str) -> _RouteGroup | None:
@@ -139,14 +141,14 @@ class RouteRegistry:
         else:
             group.handlers.append(info)
 
-        if module_name not in self._module_routes:
-            self._module_routes[module_name] = []
         if full_path not in self._module_routes[module_name]:
             self._module_routes[module_name].append(full_path)
 
         module_logger = logging.getLogger(f"owlbot.modules.{module_name}.routes")
         module_logger.debug(
-            f"Registered route '{full_path}' [{', '.join(sorted(info.methods))}]."
+            "Registered route '%s' [%s].",
+            full_path,
+            ", ".join(sorted(info.methods)),
         )
         return info
 
@@ -179,7 +181,7 @@ class RouteRegistry:
                 module_names = {h.module_name for h in group.handlers}
                 for name in module_names:
                     module_logger = logging.getLogger(f"owlbot.modules.{name}.routes")
-                    module_logger.debug(f"Unregistered route '{full_path}'.")
+                    module_logger.debug("Unregistered route '%s'.", full_path)
                 return True
 
             # Remove only the handler for the specified method.
@@ -206,7 +208,7 @@ class RouteRegistry:
                         f"owlbot.modules.{module_name}.routes"
                     )
                     module_logger.debug(
-                        f"Unregistered route '{full_path}' [{method_upper}]."
+                        "Unregistered route '%s' [%s].", full_path, method_upper
                     )
                     return True
 
@@ -325,7 +327,7 @@ class RouteRegistry:
                 self._groups.pop(i)
 
         if count > 0:
-            module_logger.debug(f"Unregistered all routes ({count} handler(s) total).")
+            module_logger.debug("Unregistered all routes (%d handler(s) total).", count)
 
         self._module_routes.pop(module_name, None)
         return count
@@ -485,7 +487,7 @@ class RouteDispatcher:
         try:
             result = self._route_registry.match(full_path, request.method)
         except LookupError:
-            mod_logger.debug(f"No route registered for '{full_path}'.")
+            mod_logger.debug("No route registered for '%s'.", full_path)
             return web.Response(status=404)
 
         if result[0] is None:
@@ -493,8 +495,10 @@ class RouteDispatcher:
             _, allowed_methods, _ = result
             allowed = ", ".join(sorted(allowed_methods))
             mod_logger.debug(
-                f"Method {request.method} not allowed for '{full_path}' "
-                f"(allowed: {allowed})"
+                "Method %s not allowed for '%s' (allowed: %s)",
+                request.method,
+                full_path,
+                allowed,
             )
             return web.Response(status=405, headers={"Allow": allowed})
 
@@ -514,9 +518,6 @@ class RouteDispatcher:
         :param match_info: Captured path parameters from pattern matching.
         :return: HTTP response.
         """
-        # Import here to avoid circular imports at module load time.
-        from ..api.context import RouteContext
-
         module_name = route_info.module_name
         mod_logger = logging.getLogger(f"owlbot.modules.{module_name}.routes")
 
@@ -529,7 +530,9 @@ class RouteDispatcher:
         )
 
         logger.debug(
-            f"Calling route handler: {route_info.full_path} from module: {module_name}"
+            "Calling route handler: %s from module: %s",
+            route_info.full_path,
+            module_name,
         )
 
         try:
@@ -540,7 +543,9 @@ class RouteDispatcher:
             elapsed = (time.perf_counter() - start) * 1000
 
             mod_logger.debug(
-                f"Route handler '{route_info.full_path}' completed in {elapsed:.1f}ms."
+                "Route handler '%s' completed in %.1fms.",
+                route_info.full_path,
+                elapsed,
             )
 
             if result is None:

@@ -141,7 +141,9 @@ class ModuleStorage:
         :raises StorageError: If execution fails.
         """
         async with self._connection() as conn:
-            self._logger.debug(f"Execute: {sql[:80]}{'...' if len(sql) > 80 else ''}")
+            self._logger.debug(
+                "Execute: %s%s", sql[:80], "..." if len(sql) > 80 else ""
+            )
             try:
                 return await conn.execute(sql, parameters)
             except aiosqlite.Error as e:
@@ -164,8 +166,10 @@ class ModuleStorage:
         """
         async with self._connection() as conn:
             self._logger.debug(
-                f"Execute many ({len(parameters)} rows): "
-                f"{sql[:80]}{'...' if len(sql) > 80 else ''}"
+                "Execute many (%d rows): %s%s",
+                len(parameters),
+                sql[:80],
+                "..." if len(sql) > 80 else "",
             )
             try:
                 return await conn.executemany(sql, parameters)
@@ -187,7 +191,9 @@ class ModuleStorage:
         :raises StorageError: If execution fails.
         """
         async with self._connection() as conn:
-            self._logger.debug(f"Fetch one: {sql[:80]}{'...' if len(sql) > 80 else ''}")
+            self._logger.debug(
+                "Fetch one: %s%s", sql[:80], "..." if len(sql) > 80 else ""
+            )
             try:
                 cursor = await conn.execute(sql, parameters)
                 return await cursor.fetchone()
@@ -209,7 +215,9 @@ class ModuleStorage:
         :raises StorageError: If execution fails.
         """
         async with self._connection() as conn:
-            self._logger.debug(f"Fetch all: {sql[:80]}{'...' if len(sql) > 80 else ''}")
+            self._logger.debug(
+                "Fetch all: %s%s", sql[:80], "..." if len(sql) > 80 else ""
+            )
             try:
                 cursor = await conn.execute(sql, parameters)
                 return list(await cursor.fetchall())
@@ -243,7 +251,9 @@ class ModuleStorage:
         await conn.execute("PRAGMA foreign_keys = ON")
         self._all_connections.append(conn)
         self._logger.debug(
-            f"Pool connection created ({len(self._all_connections)}/{self._pool_size})."
+            "Pool connection created (%d/%d).",
+            len(self._all_connections),
+            self._pool_size,
         )
         return conn
 

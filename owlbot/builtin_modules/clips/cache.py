@@ -287,14 +287,14 @@ async def _download_segment(
                 return False
             data = await seg_resp.read()
     except Exception:
-        ctx.logger.debug(f"Network error downloading segment {seq}.", exc_info=True)
+        ctx.logger.debug("Network error downloading segment %d.", seq, exc_info=True)
         return False
 
     chunk_path = cache.segment_path(seq)
     await asyncio.to_thread(chunk_path.write_bytes, data)
 
     cache.add_chunk(seq)
-    ctx.logger.debug(f"Cached segment {seq} ({len(data)} bytes).")
+    ctx.logger.debug("Cached segment %d (%d bytes).", seq, len(data))
     return True
 
 
@@ -344,7 +344,7 @@ async def _polling_loop(
         else 2.0
     )
     cache.set_target_duration(poll_interval)
-    ctx.logger.debug(f"Initial poll interval set to {poll_interval:.1f}s.")
+    ctx.logger.debug("Initial poll interval set to %.1fs.", poll_interval)
 
     pending_retries: set[int] = set()
 

@@ -321,7 +321,7 @@ class Config:
 
     def load(self) -> None:
         """Load config from YAML, applying defaults for missing sections."""
-        logger.debug(f"Loading configuration from: {self.config_path.absolute()}")
+        logger.debug("Loading configuration from: %s", self.config_path.absolute())
         if self.config_path.exists():
             try:
                 with self.config_path.open() as f:
@@ -360,30 +360,32 @@ class Config:
             logger.info("Generated webhook secret and saved to config file.")
 
         logger.debug("Webhook Secret: [set]")
-        logger.debug(f"Server Bind Address: {self.host}:{self.port}")
-        logger.debug(f"Owncast Server URL: {self.owncast_url}")
+        logger.debug("Server Bind Address: %s:%s", self.host, self.port)
+        logger.debug("Owncast Server URL: %s", self.owncast_url)
         logger.debug(
-            "Owncast Access Token: "
-            f"{'[set]' if self.owncast_access_token else '[unset]'}"
+            "Owncast Access Token: %s",
+            "[set]" if self.owncast_access_token else "[unset]",
         )
-        logger.debug(f"Command Prefix: {self.command_prefix!r}")
-        logger.debug(f"Handler Timeout: {self.handler_timeout}s")
-        logger.debug(f"Storage Directory: {self.storage_dir}")
-        logger.debug(f"Modules Directory: {self.modules_dir}")
-        logger.debug(f"Log Directory: {self.log_dir or '[unset]'}")
-        logger.debug(f"Public Base URL: {self.public_base_url}")
+        logger.debug("Command Prefix: %r", self.command_prefix)
+        logger.debug("Handler Timeout: %ss", self.handler_timeout)
+        logger.debug("Storage Directory: %s", self.storage_dir)
+        logger.debug("Modules Directory: %s", self.modules_dir)
+        logger.debug("Log Directory: %s", self.log_dir or "[unset]")
+        logger.debug("Public Base URL: %s", self.public_base_url)
         logger.debug(
-            f"Admin API Enabled: {'[set]' if self.admin_enabled else '[unset]'}"
+            "Admin API Enabled: %s",
+            "[set]" if self.admin_enabled else "[unset]",
         )
         if self.admin_enabled:
-            logger.debug(f"Admin API Username: {self.admin_username}")
+            logger.debug("Admin API Username: %s", self.admin_username)
             logger.debug(
-                f"Admin API Password: {'[set]' if self.admin_password else '[unset]'}"
+                "Admin API Password: %s",
+                "[set]" if self.admin_password else "[unset]",
             )
 
     def save(self) -> None:
         """Write current configuration to the YAML file."""
-        logger.debug(f"Saving configuration to: {self.config_path.absolute()}")
+        logger.debug("Saving configuration to: %s", self.config_path.absolute())
         try:
             with self.config_path.open("w") as f:
                 yaml.safe_dump(

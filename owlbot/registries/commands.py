@@ -27,12 +27,13 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, cast
 
 from ..api.commands import CommandEvent, CommandHandler, CommandInfo, CommandMark
+from ..api.context import CommandContext, EventContext
 from ..api.event_types import ChatEvent
 
 if TYPE_CHECKING:
     from types import ModuleType
 
-    from ..api.context import EventContext, ModuleContext
+    from ..api.context import ModuleContext
     from ..api.owncast_client import OwncastClient
 
 type BuiltinCommandHandler = Callable[[ChatEvent, "OwncastClient"], Awaitable[None]]
@@ -61,7 +62,7 @@ class CommandRegistry:
 
         self.prefix = prefix
 
-        logger.debug(f"CommandRegistry initialized with prefix '{prefix}'.")
+        logger.debug("CommandRegistry initialized with prefix '%s'.", prefix)
 
     def register(
         self,
@@ -114,9 +115,13 @@ class CommandRegistry:
 
         module_logger = logging.getLogger(f"owlbot.modules.{module_name}.commands")
         module_logger.debug(
-            f"Registered command '{name_lower}' with aliases {sorted(alias_set)}, "
-            f"authenticated={requires_authenticated}, moderator={requires_moderator}, "
-            f"cooldown={cooldown}."
+            "Registered command '%s' with aliases %s, "
+            "authenticated=%s, moderator=%s, cooldown=%s.",
+            name_lower,
+            sorted(alias_set),
+            requires_authenticated,
+            requires_moderator,
+            cooldown,
         )
 
     def unregister(self, name: str) -> bool:
@@ -141,7 +146,7 @@ class CommandRegistry:
         del self._commands[primary]
 
         module_logger = logging.getLogger(f"owlbot.modules.{info.module_name}.commands")
-        module_logger.debug(f"Unregistered command '{primary}'.")
+        module_logger.debug("Unregistered command '%s'.", primary)
         return True
 
     def get(self, trigger: str) -> CommandInfo | None:
@@ -183,7 +188,7 @@ class CommandRegistry:
             for name, info in self._commands.items()
             if info.module_name == module_name
         ]
-        module_logger.debug(f"Unregistering all commands ({len(to_remove)} total).")
+        module_logger.debug("Unregistering all commands (%d total).", len(to_remove))
         for name in to_remove:
             self.unregister(name)
         return len(to_remove)
@@ -230,7 +235,7 @@ class CommandRegistry:
         command = parts[0].lower()
         args = parts[1] if len(parts) > 1 else ""
 
-        logger.debug(f"Parsed command: {command!r} with args: {args!r}")
+        logger.debug("Parsed command: %r with args: %r", command, args)
         return command, args
 
 
@@ -302,7 +307,7 @@ class CommandDispatcher:
             module_name="__builtin__",
             cooldown=60,
         )
-        logger.debug(f"Registered built-in command '{name_lower}'.")
+        logger.debug("Registered built-in command '%s'.", name_lower)
 
     def register(
         self,
@@ -416,8 +421,6 @@ class CommandDispatcher:
 
         :param event: The chat event to check for commands.
         """
-        from ..api.context import CommandContext, EventContext
-
         parsed = self._command_registry.parse(event.body)
 
         if parsed is None:
@@ -429,7 +432,7 @@ class CommandDispatcher:
 
         if command_info is None:
             # Log for debugging but don't spam the chat with "unknown command" errors.
-            logger.debug(f"Unknown command: {command_name}")
+            logger.debug("Unknown command: %s", command_name)
             return
 
         user = event.user
@@ -492,8 +495,9 @@ class CommandDispatcher:
                 )
                 elapsed = (time.perf_counter() - start) * 1000
                 logger.debug(
-                    f"Built-in command '{command_info.name}' "
-                    f"completed in {elapsed:.1f}ms."
+                    "Built-in command '%s' completed in %.1fms.",
+                    command_info.name,
+                    elapsed,
                 )
             except TimeoutError:
                 logger.warning(
@@ -535,7 +539,9 @@ class CommandDispatcher:
             )
             elapsed = (time.perf_counter() - start) * 1000
 
-            logger.debug(f"Command '{command_info.name}' completed in {elapsed:.1f}ms.")
+            logger.debug(
+                "Command '%s' completed in %.1fms.", command_info.name, elapsed
+            )
         except TimeoutError:
             logger.warning(
                 f"Command handler '{command_info.name}' "

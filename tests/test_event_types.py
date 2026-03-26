@@ -205,7 +205,7 @@ class TestUser:
         assert user.name_changed_at == datetime(2025, 7, 1, 12, 0, tzinfo=UTC)
         assert user.is_bot is False
         assert user.is_authenticated is True
-        assert user.scopes == ["MODERATOR"]
+        assert user.scopes == frozenset({"MODERATOR"})
 
     def test_empty_dict(self) -> None:
         """An empty dict produces a User with all defaults."""
@@ -218,7 +218,7 @@ class TestUser:
         assert user.name_changed_at is None
         assert user.is_bot is False
         assert user.is_authenticated is False
-        assert user.scopes == []
+        assert user.scopes == frozenset()
 
     @pytest.mark.parametrize(
         ("scopes", "expected"),
@@ -606,7 +606,7 @@ class TestLogEvent:
                         name_changed_at=None,
                         is_bot=False,
                         is_authenticated=False,
-                        scopes=[],
+                        scopes=frozenset(),
                     ),
                     client_id=1,
                     body="Hello",
@@ -630,7 +630,7 @@ class TestLogEvent:
                         name_changed_at=None,
                         is_bot=False,
                         is_authenticated=False,
-                        scopes=[],
+                        scopes=frozenset(),
                     ),
                     client_id=1,
                     event_id="evt-001",
@@ -651,7 +651,7 @@ class TestLogEvent:
                         name_changed_at=None,
                         is_bot=False,
                         is_authenticated=False,
-                        scopes=[],
+                        scopes=frozenset(),
                     ),
                     client_id=1,
                     event_id="evt-002",
@@ -672,7 +672,7 @@ class TestLogEvent:
                         name_changed_at=None,
                         is_bot=False,
                         is_authenticated=False,
-                        scopes=[],
+                        scopes=frozenset(),
                     ),
                     client_id=1,
                     new_name="NewName",

@@ -84,7 +84,7 @@ class OwncastClient:
             "Authorization": f"Bearer {access_token}"
         }
         self._auth: aiohttp.BasicAuth | None = None
-        self._logger.debug(f"Owncast API client initialized for: {self._base_url}")
+        self._logger.debug("Owncast API client initialized for: %s", self._base_url)
 
     @property
     def base_url(self) -> str:
@@ -207,7 +207,7 @@ class OwncastClient:
         :raises OwncastError: If the request fails.
         """
         url = f"{self._base_url}{endpoint}"
-        self._logger.debug(f"POST {endpoint}")
+        self._logger.debug("POST %s", endpoint)
         try:
             async with self._http.session.post(
                 url,
@@ -223,7 +223,7 @@ class OwncastClient:
                         f"Error {response.status} on POST {endpoint}: {message}"
                     )
                     raise OwncastError(response.status, message)
-                self._logger.debug(f"POST {endpoint} -> {response.status}")
+                self._logger.debug("POST %s -> %d", endpoint, response.status)
                 if response.content_type == "application/json":
                     try:
                         result = await response.json()
@@ -266,7 +266,7 @@ class OwncastClient:
         :raises OwncastError: If the request fails.
         """
         url = f"{self._base_url}{endpoint}"
-        self._logger.debug(f"GET {endpoint}")
+        self._logger.debug("GET %s", endpoint)
         try:
             async with self._http.session.get(
                 url,
@@ -282,7 +282,7 @@ class OwncastClient:
                         f"Error {response.status} on GET {endpoint}: {message}"
                     )
                     raise OwncastError(response.status, message)
-                self._logger.debug(f"GET {endpoint} -> {response.status}")
+                self._logger.debug("GET %s -> %d", endpoint, response.status)
                 try:
                     result = await response.json()
                 except (ValueError, ContentTypeError):

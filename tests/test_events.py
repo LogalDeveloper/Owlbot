@@ -63,7 +63,7 @@ def _make_user(
         name_changed_at=None,
         is_bot=False,
         is_authenticated=False,
-        scopes=[],
+        scopes=frozenset(),
     )
 
 
@@ -230,7 +230,7 @@ class TestEventRegistry:
         assert joined_entries[0].handler is handler
 
     def test_register_multiple_handlers_same_type(self) -> None:
-        """Two handlers for the same type both appear in get()."""
+        """Two handlers for the same type both appear in get(), sorted by priority."""
         registry = EventRegistry()
 
         async def handler_a(ctx: EventContext[Any]) -> None:
@@ -243,8 +243,9 @@ class TestEventRegistry:
         registry.register(handler_b, (EventType.CHAT,), "mod_b", 75)
         entries = registry.get(EventType.CHAT)
         assert len(entries) == 2
-        assert entries[0].handler is handler_a
-        assert entries[1].handler is handler_b
+        # Higher priority first (descending order).
+        assert entries[0].handler is handler_b
+        assert entries[1].handler is handler_a
 
     def test_get_empty(self) -> None:
         """get() on a fresh registry returns an empty list."""

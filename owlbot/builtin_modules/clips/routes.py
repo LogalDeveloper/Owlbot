@@ -122,7 +122,7 @@ def schedule_session_expiry(
         await asyncio.sleep(delay)
         if sessions.get(token) is not session:
             return
-        logger.debug(f"Session expired: token={token[:8]}...")
+        logger.debug("Session expired: token=%s...", token[:8])
         cleanup_session(sessions, token)
 
     session.expiry_task = asyncio.create_task(_expire())
@@ -249,7 +249,7 @@ async def editor_submit(ctx: RouteContext) -> web.Response:
         max_length=max_length,
     )
     if error is not None:
-        ctx.logger.debug(f"Clip submit validation failed: {error}")
+        ctx.logger.debug("Clip submit validation failed: %s", error)
         return _error_page(ctx, 400, error)
 
     # Remove session to prevent double-submission.

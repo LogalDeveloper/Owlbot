@@ -109,7 +109,7 @@ class HttpServer:
         await self._runner.setup()
 
         site = web.TCPSite(self._runner, host, port)
-        logger.debug(f"Binding web server to {host}:{port}...")
+        logger.debug("Binding web server to %s:%s...", host, port)
         try:
             await site.start()
         except OSError as e:
@@ -146,7 +146,7 @@ class HttpServer:
             return web.Response(status=400)
 
         event_type = data.get("type", "unknown")
-        logger.debug(f"Received webhook: {event_type}")
+        logger.debug("Received webhook: %s", event_type)
 
         result = parse_event(data)
         if result is None:

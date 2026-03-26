@@ -462,13 +462,12 @@ type PlaceholderHandler = Callable[
     [str, list[str], "PlaceholderContext"], Awaitable[str]
 ]
 
-HANDLERS: dict[str, PlaceholderHandler] = {}
-
-for _i in range(1, 10):
-    HANDLERS[str(_i)] = _evaluate_arg
-HANDLERS["user"] = _evaluate_user
-HANDLERS["count"] = _evaluate_count
-HANDLERS["getcount"] = _evaluate_getcount
-HANDLERS["rand"] = _evaluate_rand
-HANDLERS["countdown"] = _evaluate_countdown
-HANDLERS["countup"] = _evaluate_countdown
+HANDLERS: dict[str, PlaceholderHandler] = {
+    **{str(i): _evaluate_arg for i in range(1, 10)},
+    "user": _evaluate_user,
+    "count": _evaluate_count,
+    "getcount": _evaluate_getcount,
+    "rand": _evaluate_rand,
+    "countdown": _evaluate_countdown,
+    "countup": _evaluate_countdown,
+}

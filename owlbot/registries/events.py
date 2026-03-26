@@ -20,11 +20,13 @@ Internal infrastructure for managing event handler registration and dispatch.
 from __future__ import annotations
 
 import asyncio
+import bisect
 import logging
 import time
+from collections import defaultdict
 from typing import TYPE_CHECKING, NamedTuple, cast
 
-from ..api.context import PropagationState
+from ..api.context import EventContext, PropagationState
 from ..api.event_types import ChatEvent, Event, EventType, log_event
 from ..api.events import EventHandler, EventMark, Priority
 
@@ -43,7 +45,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from types import ModuleType
 
-    from ..api.context import EventContext, ModuleContext
+    from ..api.context import ModuleContext
 
 logger = logging.getLogger("owlbot.events")
 
@@ -59,7 +61,7 @@ class EventRegistry:
         """Initialize an empty handler registry."""
         # Maps event type values (strings) to lists of
         # (handler, module_name, priority) tuples.
-        self._handlers: EventHandlerMap = {}
+        self._handlers: EventHandlerMap = defaultdict(list)
 
     def register(
         self,
@@ -82,16 +84,19 @@ class EventRegistry:
         for event_type in event_types:
             key = event_type.value
 
-            if key not in self._handlers:
-                self._handlers[key] = []
-
-            # Add the handler to the list. Multiple handlers
-            # for the same event are allowed.
-            self._handlers[key].append(HandlerEntry(handler, module_name, priority))
+            # Insert in descending priority order so the dispatch loop
+            # can iterate without a separate sort step. The priority is
+            # negated because bisect works in ascending order. bisect.insort
+            # uses bisect_right, so same-priority handlers stay in
+            # registration (FIFO) order.
+            entry = HandlerEntry(handler, module_name, priority)
+            bisect.insort(self._handlers[key], entry, key=lambda e: -e.priority)
             module_logger = logging.getLogger(f"owlbot.modules.{module_name}.events")
             module_logger.debug(
-                f"Registered handler '{handler.__name__}' for {event_type.value} "
-                f"(priority={priority})."
+                "Registered handler '%s' for %s (priority=%s).",
+                handler.__name__,
+                event_type.value,
+                priority,
             )
 
     def unregister(self, handler: EventHandler) -> bool:
@@ -116,8 +121,9 @@ class EventRegistry:
         if module_name and removed_from:
             module_logger = logging.getLogger(f"owlbot.modules.{module_name}.events")
             module_logger.debug(
-                f"Unregistered handler '{handler.__name__}' "
-                f"for {', '.join(removed_from)}."
+                "Unregistered handler '%s' for %s.",
+                handler.__name__,
+                ", ".join(removed_from),
             )
             return True
         return False
@@ -170,7 +176,7 @@ class EventRegistry:
             self._handlers[key] = kept
 
         if seen:
-            module_logger.debug(f"Unregistered all handlers ({len(seen)} total).")
+            module_logger.debug("Unregistered all handlers (%d total).", len(seen))
         return len(seen)
 
     def register_from_module(self, module: ModuleType, module_name: str) -> None:
@@ -322,27 +328,19 @@ class EventDispatcher:
         # Shared state for propagation control (all handlers see the same instance).
         propagation = PropagationState()
 
-        # Phase 1: Event handlers (sequential, sorted by priority descending).
+        # Phase 1: Event handlers (sequential, already sorted by priority descending).
         if handler_entries:
-            # Sort handlers by priority (highest first).
-            # Python's sort is stable, so handlers at the same priority
-            # run in their original registration order.
-            sorted_handlers = sorted(
-                handler_entries,
-                key=lambda entry: entry.priority,
-                reverse=True,
-            )
-
             logger.debug(
-                f"Dispatching {event_type} to {len(sorted_handlers)} handler(s)."
+                "Dispatching %s to %d handler(s).", event_type, len(handler_entries)
             )
 
-            for handler, module_name, _priority in sorted_handlers:
+            for handler, module_name, _priority in handler_entries:
                 # Has propagation been stopped by a previous handler?
                 if propagation.stopped:
                     reason = propagation.reason
                     logger.debug(
-                        f"Propagation stopped{': ' + reason if reason else '.'}"
+                        "Propagation stopped%s",
+                        ": " + reason if reason else ".",
                     )
                     break
 
@@ -350,7 +348,7 @@ class EventDispatcher:
                     handler, event, event_type, module_name, propagation
                 )
         else:
-            logger.debug(f"No handlers registered for event type: {event_type}")
+            logger.debug("No handlers registered for event type: %s", event_type)
 
         # Phase 2: Command dispatch (CHAT events only, if not cancelled).
         if event_type == EventType.CHAT and isinstance(event, ChatEvent):
@@ -358,7 +356,8 @@ class EventDispatcher:
             if propagation.stopped:
                 reason = propagation.reason
                 logger.debug(
-                    f"Command dispatch skipped{': ' + reason if reason else '.'}"
+                    "Command dispatch skipped%s",
+                    ": " + reason if reason else ".",
                 )
             else:
                 try:
@@ -382,10 +381,8 @@ class EventDispatcher:
         :param module_name: The module that owns this handler.
         :param propagation: Shared propagation state for this dispatch cycle.
         """
-        from ..api.context import EventContext
-
         handler_name = handler.__name__
-        logger.debug(f"Calling handler: {handler_name} from module: {module_name}")
+        logger.debug("Calling handler: %s from module: %s", handler_name, module_name)
 
         module_ctx = self._get_module_context(module_name)
 
@@ -400,7 +397,7 @@ class EventDispatcher:
             await asyncio.wait_for(handler(ctx), timeout=self._handler_timeout)
             elapsed = (time.perf_counter() - start) * 1000
 
-            logger.debug(f"Handler '{handler_name}' completed in {elapsed:.1f}ms.")
+            logger.debug("Handler '%s' completed in %.1fms.", handler_name, elapsed)
         except TimeoutError:
             logger.warning(
                 f"Handler '{handler_name}' from module '{module_name}' "

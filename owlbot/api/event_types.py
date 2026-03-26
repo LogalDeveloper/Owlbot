@@ -23,6 +23,8 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
+_NANO_RE = re.compile(r"(\.\d{6})\d+")
+
 logger = logging.getLogger("owlbot.events")
 
 
@@ -64,7 +66,7 @@ def _parse_timestamp(ts: str | None) -> datetime | None:
     # Go's time.Time emits nanosecond-precision fractional seconds (9 digits),
     # but Python's datetime only supports microseconds (6 digits).  Truncate
     # any excess fractional digits to avoid a ValueError from fromisoformat().
-    ts = re.sub(r"(\.\d{6})\d+", r"\1", ts)
+    ts = _NANO_RE.sub(r"\1", ts)
 
     try:
         return datetime.fromisoformat(ts)
@@ -86,7 +88,7 @@ class User:
     name_changed_at: datetime | None
     is_bot: bool
     is_authenticated: bool
-    scopes: list[str]
+    scopes: frozenset[str]
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> User:
@@ -104,7 +106,7 @@ class User:
             name_changed_at=_parse_timestamp(data.get("nameChangedAt")),
             is_bot=data.get("isBot", False),
             is_authenticated=data.get("authenticated", False),
-            scopes=data.get("scopes", []),
+            scopes=frozenset(data.get("scopes", ())),
         )
 
     @property
@@ -423,29 +425,24 @@ def log_event(event_type: EventType, event: Event) -> None:
     :param event_type: The type of event being logged.
     :param event: The parsed event instance.
     """
-    if isinstance(event, ChatEvent):
-        logger.info(
-            f"[{event_type}] {event.user.display_name} "
-            f"({event.message_id}): {event.body}"
-        )
-    elif isinstance(event, UserJoinedEvent):
-        logger.info(f"[{event_type}] {event.user.display_name} joined.")
-    elif isinstance(event, UserPartedEvent):
-        logger.info(f"[{event_type}] {event.user.display_name} parted.")
-    elif isinstance(event, NameChangedEvent):
-        logger.info(
-            f"[{event_type}] {event.user.display_name} "
-            f"changed name to {event.new_name}."
-        )
-    elif isinstance(event, StreamStartedEvent):
-        logger.info(f'[{event_type}] Stream started: "{event.stream_title}"')
-    elif isinstance(event, StreamStoppedEvent):
-        logger.info(f"[{event_type}] Stream ended.")
-    elif isinstance(event, StreamTitleUpdatedEvent):
-        logger.info(f'[{event_type}] Title changed to "{event.stream_title}"')
-    elif isinstance(event, VisibilityUpdateEvent):
-        action = "shown" if event.is_visible else "hidden"
-        ids = ", ".join(event.message_ids)
-        logger.info(
-            f"[{event_type}] {len(event.message_ids)} message(s) {action}: {ids}"
-        )
+    match event:
+        case ChatEvent(user=user, message_id=mid, body=body):
+            logger.info(f"[{event_type}] {user.display_name} ({mid}): {body}")
+        case UserJoinedEvent(user=user):
+            logger.info(f"[{event_type}] {user.display_name} joined.")
+        case UserPartedEvent(user=user):
+            logger.info(f"[{event_type}] {user.display_name} parted.")
+        case NameChangedEvent(user=user, new_name=new_name):
+            logger.info(
+                f"[{event_type}] {user.display_name} changed name to {new_name}."
+            )
+        case StreamStartedEvent(stream_title=title):
+            logger.info(f'[{event_type}] Stream started: "{title}"')
+        case StreamStoppedEvent():
+            logger.info(f"[{event_type}] Stream ended.")
+        case StreamTitleUpdatedEvent(stream_title=title):
+            logger.info(f'[{event_type}] Title changed to "{title}"')
+        case VisibilityUpdateEvent(is_visible=visible, message_ids=ids):
+            action = "shown" if visible else "hidden"
+            id_list = ", ".join(ids)
+            logger.info(f"[{event_type}] {len(ids)} message(s) {action}: {id_list}")

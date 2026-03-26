@@ -86,7 +86,7 @@ class ProcessingManager:
         async with self._ffprobe_semaphore:
             duration = await self._probe_duration(output_path)
 
-        self._logger.debug(f"Preview generated ({duration:.1f}s).")
+        self._logger.debug("Preview generated (%.1fs).", duration)
         return duration
 
     async def create_clip(
@@ -110,8 +110,11 @@ class ProcessingManager:
         """
         async with self._ffmpeg_semaphore:
             self._logger.debug(
-                f"Cutting clip {start:.1f}-{end:.1f}s "
-                f"from {preview_path} -> {output_path}."
+                "Cutting clip %.1f-%.1fs from %s -> %s.",
+                start,
+                end,
+                preview_path,
+                output_path,
             )
             await self._run_ffprocess(
                 "ffmpeg",
@@ -132,7 +135,7 @@ class ProcessingManager:
         async with self._ffprobe_semaphore:
             duration = await self._probe_duration(output_path)
 
-        self._logger.debug(f"Clip created ({duration:.1f}s).")
+        self._logger.debug("Clip created (%.1fs).", duration)
         return duration
 
     async def generate_thumbnail(
@@ -171,7 +174,7 @@ class ProcessingManager:
                 str(output_path),
             )
 
-        self._logger.debug(f"Thumbnail generated: {output_path}.")
+        self._logger.debug("Thumbnail generated: %s.", output_path)
 
     async def _run_ffprocess(
         self,
