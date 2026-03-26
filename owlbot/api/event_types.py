@@ -124,8 +124,14 @@ class ChatEvent:
 
     user: User
     client_id: int
+
+    # Rendered HTML from Owncast (markdown converted, custom emotes as <img>
+    # tags, outer <p> wrapper stripped).
     body: str
+
+    # Original user input before Owncast rendering.
     raw_body: str
+
     message_id: str
     is_visible: bool
     timestamp: datetime | None
@@ -137,8 +143,9 @@ class ChatEvent:
         :param data: The event data from the webhook payload.
         :return: A populated ChatEvent instance.
         """
-        # Owncast wraps the message body in paragraph tags for HTML rendering.
-        # We strip these off so handlers get clean text without HTML cruft.
+        # Owncast wraps the rendered body in <p> tags. Strip the outer
+        # wrapper so handlers don't have to deal with it, but the
+        # contents are still rendered HTML (bold, links, emote <img>s, etc.).
         body = data.get("body", "").strip()
 
         if body.startswith("<p>") and body.endswith("</p>"):

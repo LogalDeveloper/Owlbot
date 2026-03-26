@@ -77,7 +77,7 @@ def _make_chat_event(
         user=user or _make_user(),
         client_id=client_id,
         body=body,
-        raw_body=f"<p>{body}</p>",
+        raw_body=body,
         message_id="msg-001",
         is_visible=True,
         timestamp=None,

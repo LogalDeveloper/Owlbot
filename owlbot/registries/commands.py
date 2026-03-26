@@ -421,7 +421,7 @@ class CommandDispatcher:
 
         :param event: The chat event to check for commands.
         """
-        parsed = self._command_registry.parse(event.body)
+        parsed = self._command_registry.parse(event.raw_body)
 
         if parsed is None:
             return

@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiohttp
 from aiohttp import ContentTypeError
+from markupsafe import escape as _escape_html
 
 if TYPE_CHECKING:
     from .http_client import HttpClient
@@ -102,49 +103,78 @@ class OwncastClient:
         self._logger.debug("Fetching server status.")
         return dict(await self._get("/api/status"))
 
-    async def send_message(self, body: str) -> str:
+    async def send_message(self, body: str, *, unsanitized: bool = False) -> str:
         """Send a chat message visible to all viewers.
 
+        The message body is HTML-escaped by default to prevent injection
+        when echoing user-originated content. Markdown syntax is unaffected
+        by escaping and will be rendered normally by Owncast.
+
         :param body: The message text (supports markdown).
+        :param unsanitized: If ``True``, skip HTML escaping and send the body
+            as-is. Only use this when the content is fully controlled by the
+            module and intentionally contains HTML.
         :return: Success message from the server.
         """
+        if not unsanitized:
+            body = str(_escape_html(body))
         self._logger.info(f"Sending chat message: {body}")
         return await self._post("/api/integrations/chat/send", {"body": body})
 
-    async def send_system_message(self, body: str) -> str:
+    async def send_system_message(self, body: str, *, unsanitized: bool = False) -> str:
         """Send a system message visible to all viewers.
 
         System messages are styled differently from regular chat (typically
         italicized or dimmed) and are used for announcements or notifications.
 
+        The message body is HTML-escaped by default. Pass
+        ``unsanitized=True`` to send raw HTML intentionally.
+
         :param body: The message text.
+        :param unsanitized: If ``True``, skip HTML escaping.
         :return: Success message from the server.
         """
+        if not unsanitized:
+            body = str(_escape_html(body))
         self._logger.info(f"Sending system message: {body}")
         return await self._post("/api/integrations/chat/system", {"body": body})
 
-    async def send_action(self, body: str) -> str:
+    async def send_action(self, body: str, *, unsanitized: bool = False) -> str:
         """Send an action message (like IRC /me).
 
         Action messages display as "*BotName does something*" and are used
         for describing actions rather than speech.
 
+        The message body is HTML-escaped by default. Pass
+        ``unsanitized=True`` to send raw HTML intentionally.
+
         :param body: The action text (displayed after the bot name).
+        :param unsanitized: If ``True``, skip HTML escaping.
         :return: Success message from the server.
         """
+        if not unsanitized:
+            body = str(_escape_html(body))
         self._logger.info(f"Sending action: {body}")
         return await self._post("/api/integrations/chat/action", {"body": body})
 
-    async def send_system_message_to_client(self, client_id: int, body: str) -> str:
+    async def send_system_message_to_client(
+        self, client_id: int, body: str, *, unsanitized: bool = False
+    ) -> str:
         """Send a private system message to a specific viewer.
 
         The message is only visible to the targeted client, useful for
         welcome messages or private notifications.
 
+        The message body is HTML-escaped by default. Pass
+        ``unsanitized=True`` to send raw HTML intentionally.
+
         :param client_id: The numeric client ID (from event.client_id).
         :param body: The message text.
+        :param unsanitized: If ``True``, skip HTML escaping.
         :return: Success message from the server.
         """
+        if not unsanitized:
+            body = str(_escape_html(body))
         self._logger.info(f"Sending system message to client {client_id}: {body}")
         return await self._post(
             f"/api/integrations/chat/system/client/{client_id}", {"body": body}
