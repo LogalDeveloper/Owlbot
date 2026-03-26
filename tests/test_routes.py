@@ -360,8 +360,8 @@ class TestRouteRegistry:
         info = reg.register("/data", _noop, methods=["GET"], module_name="mod")
         assert info.full_path == "/owlbot/mod/data"
         assert info.methods == frozenset({"GET"})
-        route_info, _ = reg.match("/owlbot/mod/data", "GET")
-        assert route_info is info
+        result = reg.match("/owlbot/mod/data", "GET")
+        assert result[0] is info
 
     def test_unregister_unknown_path(self) -> None:
         """unregister() returns False for unknown path."""
