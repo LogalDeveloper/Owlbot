@@ -38,6 +38,7 @@ class RouteMark(TypedDict):
 
     path: str
     methods: list[str] | None
+    streaming: bool
 
 
 # Handler type: receives RouteContext, returns a response or dict (auto-JSON).
@@ -55,12 +56,14 @@ class RouteInfo:
     methods: frozenset[str]  # HTTP methods (GET, POST, etc.).
     handler: RouteHandler
     module_name: str
+    streaming: bool = False
 
 
 def on_route(
     path: str,
     *,
     methods: list[str] | None = None,
+    streaming: bool = False,
 ) -> Callable[[RouteHandler], RouteHandler]:
     """Register an HTTP route handler.
 
@@ -68,6 +71,8 @@ def on_route(
 
     :param path: URL path (relative to module namespace, e.g., "/stats").
     :param methods: List of HTTP methods to accept. Default: ["GET"].
+    :param streaming: If True, the handler bypasses the dispatch timeout.
+        The handler is responsible for its own keepalives and cleanup.
     :return: Decorator that marks the function for registration.
     """
 
@@ -75,7 +80,7 @@ def on_route(
         # Mark the function with route info for deferred registration.
         # methods=None is resolved to ["GET"] by RouteRegistry.register().
         func._owlbot_route = RouteMark(  # type: ignore[attr-defined]
-            path=path, methods=methods
+            path=path, methods=methods, streaming=streaming
         )
         return func
 

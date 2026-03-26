@@ -92,6 +92,7 @@ class RouteRegistry:
         *,
         methods: list[str] | None = None,
         module_name: str,
+        streaming: bool = False,
     ) -> RouteInfo:
         """Register a route handler.
 
@@ -100,6 +101,8 @@ class RouteRegistry:
         :param handler: Async function to handle the route.
         :param methods: List of HTTP methods. Default: ["GET"].
         :param module_name: Name of the module registering this route.
+        :param streaming: Whether this route streams its response and should
+            bypass the handler timeout. Default: False.
         :return: RouteInfo for the registered route.
         :raises ValueError: If any method overlaps with an existing handler
             on the same path.
@@ -129,6 +132,7 @@ class RouteRegistry:
             methods=new_methods,
             handler=handler,
             module_name=module_name,
+            streaming=streaming,
         )
 
         if group is None:
@@ -351,6 +355,7 @@ class RouteRegistry:
                         handler=obj,
                         methods=mark["methods"],
                         module_name=module_name,
+                        streaming=mark["streaming"],
                     )
 
 
@@ -385,6 +390,7 @@ class RouteDispatcher:
         *,
         methods: list[str] | None = None,
         module_name: str,
+        streaming: bool = False,
     ) -> RouteInfo:
         """Register a route handler.
 
@@ -394,6 +400,7 @@ class RouteDispatcher:
         :param handler: Async function to handle the route.
         :param methods: List of HTTP methods. Default: ["GET"].
         :param module_name: Name of the module registering this route.
+        :param streaming: If True, handler runs without timeout. Default: False.
         :return: RouteInfo for the registered route.
         :raises ValueError: If route conflicts with existing route.
         """
@@ -402,6 +409,7 @@ class RouteDispatcher:
             handler=handler,
             methods=methods,
             module_name=module_name,
+            streaming=streaming,
         )
 
     def unregister(self, full_path: str, *, method: str | None = None) -> bool:
@@ -537,9 +545,16 @@ class RouteDispatcher:
 
         try:
             start = time.perf_counter()
-            result = await asyncio.wait_for(
-                route_info.handler(ctx), timeout=self._handler_timeout
-            )
+            if route_info.streaming:
+                mod_logger.debug(
+                    "Streaming handler '%s' dispatched (no timeout).",
+                    route_info.full_path,
+                )
+                result = await route_info.handler(ctx)
+            else:
+                result = await asyncio.wait_for(
+                    route_info.handler(ctx), timeout=self._handler_timeout
+                )
             elapsed = (time.perf_counter() - start) * 1000
 
             mod_logger.debug(
@@ -614,6 +629,7 @@ class ModuleRoutes:
         handler: RouteHandler,
         *,
         methods: list[str] | None = None,
+        streaming: bool = False,
     ) -> RouteInfo:
         """Register a route handler for this module.
 
@@ -622,6 +638,7 @@ class ModuleRoutes:
         :param path: URL path relative to module namespace (e.g., "/stats").
         :param handler: Async function to handle the route.
         :param methods: List of HTTP methods (e.g., ["GET"]). Default: ["GET"].
+        :param streaming: If True, handler runs without timeout. Default: False.
         :return: RouteInfo for the registered route.
         :raises ValueError: If route conflicts with existing route.
         """
@@ -630,6 +647,7 @@ class ModuleRoutes:
             handler=handler,
             methods=methods,
             module_name=self._module_name,
+            streaming=streaming,
         )
 
     def unregister(self, path: str, *, method: str | None = None) -> bool:
