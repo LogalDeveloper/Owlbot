@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("owlbot.web")
 
 
-@dataclass
+@dataclass(slots=True)
 class _RouteGroup:
     """Groups route handlers that share the same path pattern.
 

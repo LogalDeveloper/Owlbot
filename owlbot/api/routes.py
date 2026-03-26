@@ -46,7 +46,7 @@ type RouteHandler = (
 )
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class RouteInfo:
     """Metadata about a registered route."""
 

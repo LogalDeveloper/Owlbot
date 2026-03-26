@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from .http_client import HttpClient
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class StreamKey:
     """A stream key for ingest authentication.
 
@@ -49,7 +49,7 @@ class StreamKey:
         return {"key": self.key, "comment": self.comment}
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class VideoVariant:
     """A video output variant (quality level) for transcoding.
 
@@ -113,7 +113,7 @@ class VideoVariant:
         }
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class SocialHandle:
     """A social media handle displayed on the server page.
 
@@ -134,7 +134,7 @@ class SocialHandle:
         return {"platform": self.platform, "url": self.url}
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class ExternalAction:
     """An external action button displayed in the player UI.
 

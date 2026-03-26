@@ -43,7 +43,7 @@ class CommandMark(TypedDict):
     cooldown: int | float
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class CommandEvent:
     """Parsed command information from a chat message."""
 
@@ -57,7 +57,7 @@ class CommandEvent:
 type CommandHandler = "Callable[[CommandContext], Awaitable[None]]"
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class CommandInfo:
     """Metadata about a registered command."""
 
@@ -72,7 +72,7 @@ class CommandInfo:
 
     def __post_init__(self) -> None:
         """Compute derived fields."""
-        self.all_triggers = frozenset({self.name}) | self.aliases
+        object.__setattr__(self, "all_triggers", frozenset({self.name}) | self.aliases)
 
 
 def on_command(

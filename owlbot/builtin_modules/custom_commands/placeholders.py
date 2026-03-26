@@ -53,7 +53,7 @@ from .placeholder_handlers import HANDLERS, PlaceholderError
 DEFAULT_MAX_DEPTH: int = 4
 
 
-@dataclass
+@dataclass(slots=True)
 class TextNode:
     """A span of literal text that needs no further processing.
 
@@ -63,7 +63,7 @@ class TextNode:
     text: str
 
 
-@dataclass
+@dataclass(slots=True)
 class PlaceholderNode:
     """A ``$(name ...)`` placeholder expression.
 
@@ -82,7 +82,7 @@ class PlaceholderNode:
 type Node = TextNode | PlaceholderNode
 
 
-@dataclass
+@dataclass(slots=True)
 class PlaceholderContext:
     """Bundles the runtime state needed to resolve placeholders.
 

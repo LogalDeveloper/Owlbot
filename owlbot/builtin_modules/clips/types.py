@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from .processing import ProcessingManager
 
 
-@dataclass
+@dataclass(slots=True)
 class EditorSession:
     """A clip editor session."""
 
@@ -40,7 +40,7 @@ class EditorSession:
     expiry_task: asyncio.Task[None] | None = None
 
 
-@dataclass
+@dataclass(slots=True)
 class ModuleState:
     """Runtime state for the clips module."""
 

@@ -76,7 +76,7 @@ def _parse_timestamp(ts: str | None) -> datetime | None:
         return None
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class User:
     """Represents a chat user's identity and metadata."""
 
@@ -118,7 +118,7 @@ class User:
         return "MODERATOR" in self.scopes
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class ChatEvent:
     """Represents a chat message sent by a user."""
 
@@ -155,7 +155,7 @@ class ChatEvent:
         )
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class UserJoinedEvent:
     """Fired when a user joins the chat."""
 
@@ -179,7 +179,7 @@ class UserJoinedEvent:
         )
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class UserPartedEvent:
     """Fired when a user disconnects from chat."""
 
@@ -203,7 +203,7 @@ class UserPartedEvent:
         )
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class NameChangedEvent:
     """Fired when a user changes their display name."""
 
@@ -231,7 +231,7 @@ class NameChangedEvent:
         )
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class StreamStartedEvent:
     """Fired when the stream goes live."""
 
@@ -257,7 +257,7 @@ class StreamStartedEvent:
         )
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class StreamStoppedEvent:
     """Fired when the stream goes offline."""
 
@@ -283,7 +283,7 @@ class StreamStoppedEvent:
         )
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class StreamStatus:
     """Current stream status snapshot included in some events."""
 
@@ -315,7 +315,7 @@ class StreamStatus:
         )
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class StreamTitleUpdatedEvent:
     """Fired when the stream title is changed."""
 
@@ -344,7 +344,7 @@ class StreamTitleUpdatedEvent:
         )
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class VisibilityUpdateEvent:
     """Fired when message visibility changes (moderation action)."""
 

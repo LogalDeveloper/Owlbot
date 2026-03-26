@@ -43,7 +43,7 @@ if TYPE_CHECKING:
     from .templates import ModuleTemplates
 
 
-@dataclass
+@dataclass(slots=True)
 class ModuleContext:
     """Shared services available to all module handlers.
 
@@ -97,7 +97,7 @@ class ModuleContext:
         self.logger = logging.getLogger(f"owlbot.modules.{self.module_name}")
 
 
-@dataclass
+@dataclass(slots=True)
 class PropagationState:
     """Mutable state for controlling event propagation across handlers."""
 
@@ -105,7 +105,7 @@ class PropagationState:
     reason: str = ""
 
 
-@dataclass
+@dataclass(slots=True)
 class EventContext[E]:
     """Context passed to event handlers.
 
@@ -200,7 +200,7 @@ class EventContext[E]:
             self._propagation.reason = reason
 
 
-@dataclass
+@dataclass(slots=True)
 class CommandContext:
     """Context passed to command handlers.
 
@@ -304,7 +304,7 @@ class CommandContext:
         return self.module.admin_client
 
 
-@dataclass
+@dataclass(slots=True)
 class RouteContext:
     """Context passed to HTTP route handlers.
 
