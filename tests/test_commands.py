@@ -31,15 +31,17 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from owlbot.api.commands import CommandEvent, CommandInfo, CommandMark, on_command
-from owlbot.api.context import CommandContext, EventContext, ModuleContext
+from owlbot.api.context import CommandContext, EventContext
 from owlbot.api.event_types import ChatEvent, User
 from owlbot.registries.commands import (
     CommandDispatcher,
     CommandRegistry,
     ModuleCommands,
 )
+from tests.conftest import make_module_context
 
 if TYPE_CHECKING:
+    from owlbot.api.context import ModuleContext
     from owlbot.api.storage import ModuleStorage
 
 
@@ -94,24 +96,6 @@ class _StubOwncastClient:
 
     async def send_message(self, body: str) -> None:
         self.messages.append(body)
-
-
-def _make_module_context(
-    storage: ModuleStorage | None, module_name: str = "mod_a"
-) -> ModuleContext:
-    """Build a stub ModuleContext backed by real or None storage."""
-    return ModuleContext(
-        module_name=module_name,
-        config=None,  # type: ignore[arg-type]
-        owncast_client=None,  # type: ignore[arg-type]
-        storage=storage,  # type: ignore[arg-type]
-        commands=None,  # type: ignore[arg-type]
-        events=None,  # type: ignore[arg-type]
-        routes=None,  # type: ignore[arg-type]
-        http=None,  # type: ignore[arg-type]
-        templates=None,  # type: ignore[arg-type]
-        admin_client=None,
-    )
 
 
 class TestOnCommandDecorator:
@@ -516,7 +500,7 @@ class TestCommandDispatcherDispatch:
     ) -> tuple[CommandDispatcher, ModuleContext, _StubOwncastClient]:
         """Build a CommandDispatcher with a real storage-backed ModuleContext."""
         stub = owncast_client or _StubOwncastClient()
-        module_ctx = _make_module_context(storage, module_name)
+        module_ctx = make_module_context(storage, module_name)
 
         dispatcher = CommandDispatcher(
             get_module_context=lambda name: module_ctx,
@@ -919,7 +903,7 @@ class TestModuleCommands:
         """Build a dispatcher and ModuleCommands wrappers for given modules."""
         stub = _StubOwncastClient()
         dispatcher = CommandDispatcher(
-            get_module_context=lambda name: _make_module_context(None, name),
+            get_module_context=lambda name: make_module_context(None, name),
             owncast_client=stub,  # type: ignore[arg-type]
             handler_timeout=5.0,
             loaded_modules=set(),
@@ -1043,7 +1027,7 @@ class TestCommandContext:
         storage: ModuleStorage,
     ) -> tuple[CommandContext, ModuleContext, CommandEvent, EventContext[ChatEvent]]:
         """Build a CommandContext with all stub parts."""
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
         event = _make_chat_event(body="!greet world")
         cmd_event = CommandEvent(
             command="greet",

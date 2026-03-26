@@ -20,11 +20,30 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from owlbot.api.context import ModuleContext
 from owlbot.api.storage import ModuleStorage
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
     from pathlib import Path
+
+
+def make_module_context(
+    storage: ModuleStorage | None = None, module_name: str = "mod_a"
+) -> ModuleContext:
+    """Build a stub ModuleContext backed by real or None storage."""
+    return ModuleContext(
+        module_name=module_name,
+        config=None,  # type: ignore[arg-type]
+        owncast_client=None,  # type: ignore[arg-type]
+        storage=storage,  # type: ignore[arg-type]
+        commands=None,  # type: ignore[arg-type]
+        events=None,  # type: ignore[arg-type]
+        routes=None,  # type: ignore[arg-type]
+        http=None,  # type: ignore[arg-type]
+        templates=None,  # type: ignore[arg-type]
+        admin_client=None,
+    )
 
 
 @pytest.fixture

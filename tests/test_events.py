@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from owlbot.api.context import EventContext, ModuleContext, PropagationState
+from owlbot.api.context import EventContext, PropagationState
 from owlbot.api.event_types import (
     ChatEvent,
     EventType,
@@ -43,8 +43,10 @@ from owlbot.registries.events import (
     HandlerEntry,
     ModuleEvents,
 )
+from tests.conftest import make_module_context
 
 if TYPE_CHECKING:
+    from owlbot.api.context import ModuleContext
     from owlbot.api.storage import ModuleStorage
 
 
@@ -81,24 +83,6 @@ def _make_chat_event(
         message_id="msg-001",
         is_visible=True,
         timestamp=None,
-    )
-
-
-def _make_module_context(
-    storage: ModuleStorage | None, module_name: str = "mod_a"
-) -> ModuleContext:
-    """Build a stub ModuleContext backed by real or None storage."""
-    return ModuleContext(
-        module_name=module_name,
-        config=None,  # type: ignore[arg-type]
-        owncast_client=None,  # type: ignore[arg-type]
-        storage=storage,  # type: ignore[arg-type]
-        commands=None,  # type: ignore[arg-type]
-        events=None,  # type: ignore[arg-type]
-        routes=None,  # type: ignore[arg-type]
-        http=None,  # type: ignore[arg-type]
-        templates=None,  # type: ignore[arg-type]
-        admin_client=None,
     )
 
 
@@ -446,7 +430,7 @@ class TestEventDispatcherDispatch:
         async def handler(ctx: EventContext[Any]) -> None:
             received.append(ctx.event)
 
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
 
         async def command_dispatch(event: ChatEvent) -> None:
             pass
@@ -475,7 +459,7 @@ class TestEventDispatcherDispatch:
         async def low_handler(ctx: EventContext[Any]) -> None:
             call_order.append("low")
 
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
 
         async def command_dispatch(event: ChatEvent) -> None:
             pass
@@ -501,7 +485,7 @@ class TestEventDispatcherDispatch:
         async def second(ctx: EventContext[Any]) -> None:
             call_order.append("second")
 
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
 
         async def command_dispatch(event: ChatEvent) -> None:
             pass
@@ -524,7 +508,7 @@ class TestEventDispatcherDispatch:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda name: module_ctx,
@@ -552,7 +536,7 @@ class TestEventDispatcherDispatch:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda name: module_ctx,
@@ -576,7 +560,7 @@ class TestEventDispatcherDispatch:
         async def handler_b(ctx: EventContext[Any]) -> None:
             call_order.append("b")
 
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
 
         async def command_dispatch(event: ChatEvent) -> None:
             pass
@@ -602,7 +586,7 @@ class TestEventDispatcherDispatch:
         async def handler_b(ctx: EventContext[Any]) -> None:
             pass
 
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
 
         async def command_dispatch(event: ChatEvent) -> None:
             pass
@@ -633,7 +617,7 @@ class TestEventDispatcherDispatch:
         async def follower(ctx: EventContext[Any]) -> None:
             call_order.append("follower")
 
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
 
         async def command_dispatch(event: ChatEvent) -> None:
             pass
@@ -666,7 +650,7 @@ class TestEventDispatcherStorage:
                 "INSERT INTO test_tbl (val) VALUES (?)", ("committed",)
             )
 
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
 
         async def command_dispatch(event: ChatEvent) -> None:
             pass
@@ -696,7 +680,7 @@ class TestEventDispatcherStorage:
             )
             raise RuntimeError("boom")
 
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
 
         async def command_dispatch(event: ChatEvent) -> None:
             pass
@@ -728,7 +712,7 @@ class TestEventDispatcherStorage:
         async def second_handler(ctx: EventContext[Any]) -> None:
             call_order.append("second")
 
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
 
         async def command_dispatch(event: ChatEvent) -> None:
             pass
@@ -751,7 +735,7 @@ class TestEventDispatcherStorage:
         async def slow_handler(ctx: EventContext[Any]) -> None:
             await asyncio.sleep(10)
 
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
 
         async def command_dispatch(event: ChatEvent) -> None:
             pass
@@ -781,7 +765,7 @@ class TestEventDispatcherStorage:
             )
             await asyncio.sleep(10)
 
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
 
         async def command_dispatch(event: ChatEvent) -> None:
             pass
@@ -811,7 +795,7 @@ class TestEventDispatcherStorage:
                 )
                 await asyncio.sleep(10)
 
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
 
         async def command_dispatch(event: ChatEvent) -> None:
             pass
@@ -866,7 +850,7 @@ class TestCommandDispatchPhase:
         async def command_dispatch(event: ChatEvent) -> None:
             command_calls.append(event)
 
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda name: module_ctx,
@@ -890,7 +874,7 @@ class TestCommandDispatchPhase:
         async def stopper(ctx: EventContext[Any]) -> None:
             ctx.stop_propagation("spam")
 
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda name: module_ctx,
@@ -912,7 +896,7 @@ class TestCommandDispatchPhase:
         async def command_dispatch(event: ChatEvent) -> None:
             raise RuntimeError("fail")
 
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda name: module_ctx,
@@ -1080,7 +1064,7 @@ class TestEventContext:
         self, storage: ModuleStorage, prop: str, use_is: bool
     ) -> None:
         """EventContext properties proxy to the underlying ModuleContext."""
-        module_ctx = _make_module_context(storage, "mod_a")
+        module_ctx = make_module_context(storage, "mod_a")
         event = _make_chat_event()
         ctx: EventContext[ChatEvent] = EventContext(event=event, module=module_ctx)
         ctx_val = getattr(ctx, prop)
@@ -1092,14 +1076,14 @@ class TestEventContext:
 
     def test_event_attribute(self) -> None:
         """ctx.event is the event object passed at construction."""
-        module_ctx = _make_module_context(None, "mod_a")
+        module_ctx = make_module_context(None, "mod_a")
         event = _make_chat_event()
         ctx: EventContext[ChatEvent] = EventContext(event=event, module=module_ctx)
         assert ctx.event is event
 
     def test_propagation_stopped_default(self) -> None:
         """propagation_stopped is False by default."""
-        module_ctx = _make_module_context(None, "mod_a")
+        module_ctx = make_module_context(None, "mod_a")
         ctx: EventContext[ChatEvent] = EventContext(
             event=_make_chat_event(), module=module_ctx
         )
@@ -1107,7 +1091,7 @@ class TestEventContext:
 
     def test_stop_propagation(self) -> None:
         """After stop_propagation(), propagation_stopped is True."""
-        module_ctx = _make_module_context(None, "mod_a")
+        module_ctx = make_module_context(None, "mod_a")
         ctx: EventContext[ChatEvent] = EventContext(
             event=_make_chat_event(), module=module_ctx
         )
@@ -1116,7 +1100,7 @@ class TestEventContext:
 
     def test_stop_propagation_stores_reason(self) -> None:
         """stop_propagation() stores the reason string."""
-        module_ctx = _make_module_context(None, "mod_a")
+        module_ctx = make_module_context(None, "mod_a")
         ctx: EventContext[ChatEvent] = EventContext(
             event=_make_chat_event(), module=module_ctx
         )
@@ -1125,7 +1109,7 @@ class TestEventContext:
 
     def test_first_reason_wins(self) -> None:
         """Only the first non-empty reason is stored."""
-        module_ctx = _make_module_context(None, "mod_a")
+        module_ctx = make_module_context(None, "mod_a")
         ctx: EventContext[ChatEvent] = EventContext(
             event=_make_chat_event(), module=module_ctx
         )
@@ -1135,7 +1119,7 @@ class TestEventContext:
 
     def test_none_reason_leaves_empty(self) -> None:
         """stop_propagation(None) leaves reason as empty string."""
-        module_ctx = _make_module_context(None, "mod_a")
+        module_ctx = make_module_context(None, "mod_a")
         ctx: EventContext[ChatEvent] = EventContext(
             event=_make_chat_event(), module=module_ctx
         )
@@ -1144,7 +1128,7 @@ class TestEventContext:
 
     def test_shared_propagation_across_contexts(self) -> None:
         """Two contexts sharing a PropagationState see each other's mutations."""
-        module_ctx = _make_module_context(None, "mod_a")
+        module_ctx = make_module_context(None, "mod_a")
         propagation = PropagationState()
         ctx_a: EventContext[ChatEvent] = EventContext(
             event=_make_chat_event(), module=module_ctx, _propagation=propagation
