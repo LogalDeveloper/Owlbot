@@ -17,15 +17,43 @@
 import logging
 import os
 import secrets
+from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any, TypeVar, overload
 
-import yaml
+from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.error import YAMLError
 
 logger = logging.getLogger("owlbot.config")
 
+_yaml = YAML(typ="rt")
+_yaml.preserve_quotes = True
+
 _UNSET = object()
 _T = TypeVar("_T")
+
+
+def _cm_set(cm: MutableMapping[str, Any], key: str, value: object) -> None:
+    """Set a key on a mapping, preserving comment placement for CommentedMaps.
+
+    When appending a new key to a ruamel.yaml CommentedMap, the trailing
+    comment on the previous last key (e.g. a blank line + section header)
+    would visually attach to the wrong location.  This helper migrates that
+    trailing comment token to the newly inserted key so the output stays clean.
+
+    Falls back to plain dict assignment for non-CommentedMap mappings.
+    """
+    if isinstance(cm, CommentedMap) and key not in cm and cm:
+        last_key = next(reversed(cm))
+        items = cm.ca.items
+        if last_key in items and items[last_key][2] is not None:
+            cm[key] = value
+            items.setdefault(key, [None, None, None, None])
+            items[key][2] = items[last_key][2]
+            items[last_key][2] = None
+            return
+    cm[key] = value
 
 
 class Config:
@@ -325,8 +353,8 @@ class Config:
         if self.config_path.exists():
             try:
                 with self.config_path.open() as f:
-                    self._data = yaml.safe_load(f) or {}
-            except yaml.YAMLError as e:
+                    self._data = _yaml.load(f) or {}
+            except YAMLError as e:
                 logger.error(f"Failed to parse config file: {e}")
                 raise
             except OSError as e:
@@ -337,11 +365,11 @@ class Config:
             raise FileNotFoundError(f"Config file not found: {self.config_path}")
 
         if not isinstance(self._data.get("owlbot"), dict):
-            self._data["owlbot"] = {}
+            _cm_set(self._data, "owlbot", {})
         if not isinstance(self._data.get("owncast"), dict):
-            self._data["owncast"] = {}
+            _cm_set(self._data, "owncast", {})
         if not isinstance(self._data.get("modules"), dict):
-            self._data["modules"] = {}
+            _cm_set(self._data, "modules", {})
 
         if not self.owncast_url:
             raise ValueError(
@@ -355,7 +383,7 @@ class Config:
         # (and not provided via env var or CLI override).
         if not self.webhook_secret:
             generated = secrets.token_urlsafe(32)
-            self._data["owlbot"]["webhook_secret"] = generated
+            _cm_set(self._data["owlbot"], "webhook_secret", generated)
             self.save()
             logger.info("Generated webhook secret and saved to config file.")
 
@@ -388,10 +416,8 @@ class Config:
         logger.debug("Saving configuration to: %s", self.config_path.absolute())
         try:
             with self.config_path.open("w") as f:
-                yaml.safe_dump(
-                    self._ordered_data(), f, default_flow_style=False, sort_keys=False
-                )
-        except yaml.YAMLError as e:
+                _yaml.dump(self._data, f)
+        except YAMLError as e:
             logger.error(f"Failed to serialize config data: {e}")
             raise
         except OSError as e:
@@ -442,8 +468,8 @@ class Config:
         :param config: Dict of configuration values to set.
         """
         if not isinstance(self._data.get("modules"), dict):
-            self._data["modules"] = {}
-        self._data["modules"][module_name] = config
+            _cm_set(self._data, "modules", {})
+        _cm_set(self._data["modules"], module_name, config)
         self.save()
         module_logger = logging.getLogger(f"owlbot.modules.{module_name}.config")
         module_logger.debug("Updated config.")
@@ -463,7 +489,7 @@ class Config:
         self._module_defaults[module_name] = defaults
 
         if not isinstance(self._data.get("modules"), dict):
-            self._data["modules"] = {}
+            _cm_set(self._data, "modules", {})
 
         existing = self._data["modules"].get(module_name, {})
 
@@ -481,26 +507,13 @@ class Config:
             # Existing section, but some default keys were missing.
             changed = True
 
-        self._data["modules"][module_name] = merged
+        _cm_set(self._data["modules"], module_name, merged)
 
         if changed:
             self.save()
 
         module_logger = logging.getLogger(f"owlbot.modules.{module_name}.config")
         module_logger.debug("Registered defaults.")
-
-    def _ordered_data(self) -> dict[str, Any]:
-        """Return config data with sections in a stable order."""
-        ordered: dict[str, Any] = {}
-        for key in ("owlbot", "owncast", "modules"):
-            if key in self._data:
-                value = self._data[key]
-                if key == "modules" and isinstance(value, dict):
-                    value = dict(sorted(value.items()))
-                ordered[key] = value
-        for key in sorted(self._data.keys() - ordered.keys()):
-            ordered[key] = self._data[key]
-        return ordered
 
 
 class ModuleConfig:

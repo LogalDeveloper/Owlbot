@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-import yaml
+from ruamel.yaml.error import YAMLError
 
 from . import OWNCAST_TARGET_VERSION, __version__
 from .api.config import Config
@@ -60,7 +60,7 @@ class Owlbot:
         # Load config. Raises StartupError on missing/invalid config.
         try:
             self.config = Config(config_path, overrides=overrides)
-        except (FileNotFoundError, ValueError, yaml.YAMLError, OSError) as e:
+        except (FileNotFoundError, ValueError, YAMLError, OSError) as e:
             raise StartupError(str(e)) from e
 
         self.modules_dir = self.config.modules_dir
