@@ -81,6 +81,28 @@ modules:
     # Maximum nesting depth for placeholders in command responses.
     #max_nesting_depth: 4
 
+  emoji_wall:
+    enabled: true
+
+    # Minimum emoji size in pixels.
+    #min_size: 20
+    # Maximum emoji size in pixels.
+    #max_size: 60
+    # Minimum animation duration in seconds.
+    #min_duration: 3
+    # Maximum animation duration in seconds.
+    #max_duration: 10
+    # Maximum number of emojis on screen at once.
+    #max_count: 50
+    # Direction emojis travel. Named presets: up, up-right, right,
+    # down-right, down, down-left, left, up-left, random.
+    # Also accepts a degree value (0-359, where 0 is up, clockwise).
+    #direction: "up"
+    # Maximum rotation angle in degrees. Each emoji gets a random
+    # rotation between -max_rotation and +max_rotation. Set to 0 to
+    # disable rotation.
+    #max_rotation: 25
+
   quotes:
     enabled: true
 
