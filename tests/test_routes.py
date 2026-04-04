@@ -698,6 +698,178 @@ class TestRouteDispatcherDispatch:
         assert response.status == 200
 
 
+class TestRouteDispatcherDrainHandlers:
+    """Tests RouteDispatcher.drain_handlers() from owlbot.registries.routes."""
+
+    async def test_drain_handlers_cancels_active_handler(self) -> None:
+        """drain_handlers() cancels a running streaming handler."""
+        entered = asyncio.Event()
+
+        async def forever_stream(ctx: RouteContext) -> web.Response:
+            entered.set()
+            await asyncio.sleep(3600)
+            return web.Response(text="done")
+
+        dispatcher = _make_dispatcher()
+        dispatcher.register(
+            "/stream", forever_stream, module_name="mod", streaming=True
+        )
+
+        request = make_mocked_request("GET", "/owlbot/mod/stream")
+        request.match_info["module_name"] = "mod"
+        request.match_info["path"] = "stream"
+
+        # Run dispatch in a task so we can cancel it from the outside.
+        task = asyncio.create_task(dispatcher.dispatch(request))
+        await entered.wait()
+
+        assert len(dispatcher._streaming_tasks) == 1
+        await dispatcher.drain_handlers()
+        assert len(dispatcher._streaming_tasks) == 0
+
+        # The dispatch task should now be done (cancelled).
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    async def test_drain_handlers_noop_when_empty(self) -> None:
+        """drain_handlers() with no active handlers completes immediately."""
+        dispatcher = _make_dispatcher()
+        await dispatcher.drain_handlers()
+        assert len(dispatcher._streaming_tasks) == 0
+
+    async def test_streaming_task_cleaned_up_on_normal_return(self) -> None:
+        """Streaming task is removed from tracking after normal completion."""
+
+        async def quick_stream(ctx: RouteContext) -> dict[str, str]:
+            return {"ok": "true"}
+
+        dispatcher = _make_dispatcher()
+        dispatcher.register("/quick", quick_stream, module_name="mod", streaming=True)
+
+        request = make_mocked_request("GET", "/owlbot/mod/quick")
+        request.match_info["module_name"] = "mod"
+        request.match_info["path"] = "quick"
+
+        await dispatcher.dispatch(request)
+        assert len(dispatcher._streaming_tasks) == 0
+
+    async def test_streaming_task_cleaned_up_on_exception(self) -> None:
+        """Streaming task is removed from tracking after handler exception."""
+
+        async def bad_stream(ctx: RouteContext) -> web.Response:
+            raise RuntimeError("boom")
+
+        dispatcher = _make_dispatcher()
+        dispatcher.register("/bad", bad_stream, module_name="mod", streaming=True)
+
+        request = make_mocked_request("GET", "/owlbot/mod/bad")
+        request.match_info["module_name"] = "mod"
+        request.match_info["path"] = "bad"
+
+        await dispatcher.dispatch(request)
+        assert len(dispatcher._streaming_tasks) == 0
+
+    async def test_drain_handlers_multiple_handlers(self) -> None:
+        """drain_handlers() cancels all active streaming handlers."""
+        entered = asyncio.Event()
+        count = 0
+
+        async def forever_stream(ctx: RouteContext) -> web.Response:
+            nonlocal count
+            count += 1
+            if count == 2:
+                entered.set()
+            await asyncio.sleep(3600)
+            return web.Response(text="done")
+
+        dispatcher = _make_dispatcher()
+        dispatcher.register("/s1", forever_stream, module_name="mod", streaming=True)
+        dispatcher.register("/s2", forever_stream, module_name="mod", streaming=True)
+
+        request1 = make_mocked_request("GET", "/owlbot/mod/s1")
+        request1.match_info["module_name"] = "mod"
+        request1.match_info["path"] = "s1"
+        request2 = make_mocked_request("GET", "/owlbot/mod/s2")
+        request2.match_info["module_name"] = "mod"
+        request2.match_info["path"] = "s2"
+
+        task1 = asyncio.create_task(dispatcher.dispatch(request1))
+        task2 = asyncio.create_task(dispatcher.dispatch(request2))
+        await entered.wait()
+
+        assert len(dispatcher._streaming_tasks) == 2
+        await dispatcher.drain_handlers()
+        assert len(dispatcher._streaming_tasks) == 0
+
+        with pytest.raises(asyncio.CancelledError):
+            await task1
+        with pytest.raises(asyncio.CancelledError):
+            await task2
+
+    async def test_nonstreaming_task_tracked_and_cleaned_up(self) -> None:
+        """Non-streaming handler tasks are tracked and cleaned up."""
+
+        async def handler(ctx: RouteContext) -> dict[str, str]:
+            return {"ok": "true"}
+
+        dispatcher = _make_dispatcher()
+        dispatcher.register("/api", handler, module_name="mod")
+
+        request = make_mocked_request("GET", "/owlbot/mod/api")
+        request.match_info["module_name"] = "mod"
+        request.match_info["path"] = "api"
+
+        await dispatcher.dispatch(request)
+        assert len(dispatcher._handler_tasks) == 0
+
+    async def test_drain_handlers_waits_for_nonstreaming_first(self) -> None:
+        """drain_handlers() waits for non-streaming handlers before cancelling."""
+        order: list[str] = []
+        handler_entered = asyncio.Event()
+        stream_entered = asyncio.Event()
+
+        async def slow_handler(ctx: RouteContext) -> dict[str, str]:
+            handler_entered.set()
+            await asyncio.sleep(0.15)
+            order.append("handler_done")
+            return {"ok": "true"}
+
+        async def forever_stream(ctx: RouteContext) -> web.Response:
+            stream_entered.set()
+            try:
+                await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                order.append("stream_cancelled")
+                raise
+            return web.Response(text="done")
+
+        dispatcher = _make_dispatcher(handler_timeout=5.0)
+        dispatcher.register("/api", slow_handler, module_name="mod")
+        dispatcher.register(
+            "/stream", forever_stream, module_name="mod", streaming=True
+        )
+
+        req_handler = make_mocked_request("GET", "/owlbot/mod/api")
+        req_handler.match_info["module_name"] = "mod"
+        req_handler.match_info["path"] = "api"
+        req_stream = make_mocked_request("GET", "/owlbot/mod/stream")
+        req_stream.match_info["module_name"] = "mod"
+        req_stream.match_info["path"] = "stream"
+
+        handler_task = asyncio.create_task(dispatcher.dispatch(req_handler))
+        stream_task = asyncio.create_task(dispatcher.dispatch(req_stream))
+        await handler_entered.wait()
+        await stream_entered.wait()
+
+        await dispatcher.drain_handlers()
+
+        assert order == ["handler_done", "stream_cancelled"]
+
+        await handler_task
+        with pytest.raises(asyncio.CancelledError):
+            await stream_task
+
+
 class TestRouteDispatcherDelegation:
     """Tests RouteDispatcher delegation methods from owlbot.registries.routes."""
 

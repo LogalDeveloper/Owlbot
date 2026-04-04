@@ -80,6 +80,7 @@ class HttpServer:
         self._runner: web.AppRunner | None = None
 
         self.app = web.Application(middlewares=[_server_header_middleware])
+        self.app.on_shutdown.append(self._on_shutdown)
         self.app.router.add_post(self.config.webhook_path, self._handle_webhook)
 
         # Static assets served from the owlbot package.
@@ -134,6 +135,10 @@ class HttpServer:
             )
             await asyncio.gather(*self._pending_tasks)
             logger.debug("All pending events drained.")
+
+    async def _on_shutdown(self, _app: web.Application) -> None:
+        """Drain active route handlers so connections close promptly."""
+        await self._route_dispatcher.drain_handlers()
 
     async def _handle_webhook(self, request: web.Request) -> web.Response:
         """Handle incoming webhook requests from Owncast."""

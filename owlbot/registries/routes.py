@@ -24,7 +24,7 @@ import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast, overload
+from typing import TYPE_CHECKING, Any, cast, overload
 
 from aiohttp import web
 from aiohttp.web import DynamicResource
@@ -382,6 +382,8 @@ class RouteDispatcher:
         self._route_registry = RouteRegistry()
         self._get_module_context = get_module_context
         self._handler_timeout = handler_timeout
+        self._streaming_tasks: set[asyncio.Task[Any]] = set()
+        self._handler_tasks: set[asyncio.Task[Any]] = set()
 
     def register(
         self,
@@ -474,6 +476,37 @@ class RouteDispatcher:
         """
         return self._route_registry.unregister_by_module(module_name)
 
+    async def drain_handlers(self) -> None:
+        """Drain all active route handlers during shutdown.
+
+        Waits for in-flight non-streaming handlers to complete, then
+        cancels long-lived streaming handlers so their connections
+        close promptly instead of blocking until aiohttp's shutdown
+        timeout expires.
+
+        Intended to be called via ``app.on_shutdown``.
+        """
+        if self._handler_tasks:
+            logger.info(
+                "Waiting for %d non-streaming handler(s) to complete...",
+                len(self._handler_tasks),
+            )
+            await asyncio.gather(*list(self._handler_tasks), return_exceptions=True)
+            logger.debug("All non-streaming handlers completed.")
+
+        if not self._streaming_tasks:
+            return
+
+        logger.info(
+            "Cancelling %d active streaming handler(s)...",
+            len(self._streaming_tasks),
+        )
+        tasks = list(self._streaming_tasks)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        logger.debug("All streaming handlers cancelled.")
+
     async def dispatch(self, request: web.Request) -> web.StreamResponse:
         """Dispatch an HTTP request to the appropriate module route handler.
 
@@ -543,6 +576,13 @@ class RouteDispatcher:
             module_name,
         )
 
+        task = asyncio.current_task()
+        if task is not None:
+            if route_info.streaming:
+                self._streaming_tasks.add(task)
+            else:
+                self._handler_tasks.add(task)
+
         try:
             start = time.perf_counter()
             if route_info.streaming:
@@ -587,6 +627,10 @@ class RouteDispatcher:
                 f"Route handler '{route_info.full_path}' raised exception: {e}"
             )
             return web.Response(status=500)
+        finally:
+            if task is not None:
+                self._streaming_tasks.discard(task)
+                self._handler_tasks.discard(task)
 
 
 class ModuleRoutes:
