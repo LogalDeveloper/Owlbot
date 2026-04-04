@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import logging
 from contextlib import asynccontextmanager
@@ -243,13 +244,34 @@ class ModuleStorage:
         return row[0]
 
     async def _create_connection(self) -> aiosqlite.Connection:
-        """Create a new database connection with WAL mode and foreign keys."""
+        """Create a new database connection with WAL mode and foreign keys.
+
+        The connection is tracked in ``_all_connections`` immediately after
+        opening so that ``_close()`` can clean it up if the PRAGMA setup is
+        interrupted (e.g. by task cancellation).  A ``busy_timeout`` is set
+        first so that new connections briefly wait for any lock held by a
+        partially-initialised peer instead of failing immediately.
+        """
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = await aiosqlite.connect(self._db_path)
-        conn.row_factory = aiosqlite.Row
-        await conn.execute("PRAGMA journal_mode=WAL")
-        await conn.execute("PRAGMA foreign_keys = ON")
+        # Track immediately so _close() always sees this connection.
         self._all_connections.append(conn)
+        try:
+            conn.row_factory = aiosqlite.Row
+            await conn.execute("PRAGMA busy_timeout = 1000")
+            await conn.execute("PRAGMA journal_mode = WAL")
+            await conn.execute("PRAGMA foreign_keys = ON")
+        except BaseException:
+            # Setup interrupted (timeout, cancellation, etc.). Close the
+            # connection to release any write lock held by a partially-
+            # executed PRAGMA, then free the pool slot. shield() keeps the
+            # close running on the background thread even if this task is
+            # cancelled; suppress swallows the CancelledError from the await.
+            with contextlib.suppress(ValueError):
+                self._all_connections.remove(conn)
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await asyncio.shield(conn.close())
+            raise
         self._logger.debug(
             "Pool connection created (%d/%d).",
             len(self._all_connections),
