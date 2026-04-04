@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import contextvars
 import logging
 from contextlib import asynccontextmanager
@@ -242,9 +244,18 @@ class ModuleStorage:
             return self._conn
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = await aiosqlite.connect(self._db_path)
-        conn.row_factory = aiosqlite.Row
-        await conn.execute("PRAGMA journal_mode = WAL")
-        await conn.execute("PRAGMA foreign_keys = ON")
+        try:
+            conn.row_factory = aiosqlite.Row
+            await conn.execute("PRAGMA journal_mode = WAL")
+            await conn.execute("PRAGMA foreign_keys = ON")
+        except BaseException:
+            # Setup interrupted (timeout, cancellation, etc.). Close the
+            # connection to release any write lock held by a partially-
+            # executed PRAGMA. shield() keeps the close running on the
+            # background thread even if this task is cancelled.
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await asyncio.shield(conn.close())
+            raise
         self._conn = conn
         self._logger.info(f"Database opened at: {self._db_path.absolute()}")
         return conn
