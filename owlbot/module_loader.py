@@ -320,9 +320,7 @@ class ModuleLoader:
             module_templates = ModuleTemplates(module_dir, self._core_template_dir)
 
             scoped_config = ModuleConfig(self.config, module_name)
-            storage = ModuleStorage(
-                self.config.storage_dir, module_name, self.config.pool_size
-            )
+            storage = ModuleStorage(self.config.storage_dir, module_name)
             module_commands = ModuleCommands(self.command_dispatcher, module_name)
             module_events = ModuleEvents(self.event_dispatcher, module_name)
             module_routes = ModuleRoutes(

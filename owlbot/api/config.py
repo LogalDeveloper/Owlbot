@@ -207,20 +207,6 @@ class Config:
         )
 
     @property
-    def pool_size(self) -> int:
-        """Maximum number of SQLite connections per module storage pool."""
-        return max(
-            1,
-            self._resolve(
-                env="OWLBOT_POOL_SIZE",
-                section="owlbot",
-                key="pool_size",
-                default=4,
-                type_fn=int,
-            ),
-        )
-
-    @property
     def command_prefix(self) -> str:
         """Prefix character for chat commands."""
         return self._resolve(

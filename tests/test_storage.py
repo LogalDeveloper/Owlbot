@@ -39,18 +39,18 @@ async def storage_with_table(storage: ModuleStorage) -> ModuleStorage:
 
 
 class TestLazyConnections:
-    """No connections exist until the first operation."""
+    """No connection exists until the first operation."""
 
-    async def test_no_connections_before_use(self, storage: ModuleStorage) -> None:
-        """Pool is empty immediately after construction."""
-        assert len(storage._all_connections) == 0
+    async def test_no_connection_before_use(self, storage: ModuleStorage) -> None:
+        """Connection is None immediately after construction."""
+        assert storage._conn is None
 
-    async def test_first_operation_creates_one_connection(
+    async def test_first_operation_creates_connection(
         self, storage: ModuleStorage
     ) -> None:
-        """The first execute creates exactly one pooled connection."""
+        """The first execute creates the connection."""
         await storage.execute("SELECT 1")
-        assert len(storage._all_connections) == 1
+        assert storage._conn is not None
 
 
 class TestPragmas:
@@ -196,17 +196,15 @@ class TestAutoCommit:
     async def test_auto_commits_on_success(
         self, storage_with_table: ModuleStorage
     ) -> None:
-        """A successful write is visible from a second storage instance."""
+        """A successful write is visible on the next read."""
         await storage_with_table.execute(
             "INSERT INTO items (name, value) VALUES (?, ?)", ("a", 1)
         )
-        # Open a second storage pointing at the same file to verify commit.
-        async with ModuleStorage(
-            storage_with_table._db_path.parent, "test_module"
-        ) as s2:
-            row = await s2.fetch_one("SELECT name FROM items WHERE id = 1")
-            assert row is not None
-            assert row["name"] == "a"
+        row = await storage_with_table.fetch_one(
+            "SELECT name FROM items WHERE id = 1"
+        )
+        assert row is not None
+        assert row["name"] == "a"
 
     async def test_auto_rollback_on_error(
         self, storage_with_table: ModuleStorage
@@ -267,21 +265,6 @@ class TestTransaction:
                 async with storage_with_table.transaction():
                     pass  # pragma: no cover
 
-    async def test_uncommitted_transaction_invisible_from_other_connection(
-        self, storage_with_table: ModuleStorage
-    ) -> None:
-        """Uncommitted writes inside a transaction are not visible externally."""
-        async with (
-            ModuleStorage(storage_with_table._db_path.parent, "test_module") as s2,
-            storage_with_table.transaction(),
-        ):
-            await storage_with_table.execute(
-                "INSERT INTO items (name, value) VALUES (?, ?)", ("a", 1)
-            )
-            # Before commit, s2 should not see the row.
-            row = await s2.fetch_one("SELECT name FROM items WHERE id = 1")
-            assert row is None
-
     async def test_rolls_back_on_cancellation(
         self, storage_with_table: ModuleStorage
     ) -> None:
@@ -302,48 +285,6 @@ class TestTransaction:
 
         row = await storage_with_table.fetch_one("SELECT name FROM items WHERE id = 1")
         assert row is None
-
-
-class TestConnectionPool:
-    """Connection pool reuses connections and respects pool_size."""
-
-    async def test_connections_are_reused(self, storage: ModuleStorage) -> None:
-        """After release, the same connection is reused."""
-        await storage.execute("SELECT 1")
-        assert len(storage._all_connections) == 1
-        await storage.execute("SELECT 2")
-        assert len(storage._all_connections) == 1
-
-    async def test_pool_grows_up_to_pool_size(self, tmp_path: Path) -> None:
-        """Concurrent transactions grow the pool up to pool_size."""
-        gate = asyncio.Event()
-
-        async def hold_transaction(storage: ModuleStorage) -> None:
-            async with storage.transaction():
-                gate.set()
-                await asyncio.sleep(0.5)
-
-        async with ModuleStorage(tmp_path, "pool_test", pool_size=2) as s:
-            task = asyncio.create_task(hold_transaction(s))
-            await gate.wait()
-            # First task holds one connection; acquire a second directly.
-            conn = await asyncio.wait_for(s._acquire(), timeout=1.0)
-            assert len(s._all_connections) == 2
-            s._release(conn)
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-
-    async def test_pool_exhaustion_blocks(self, tmp_path: Path) -> None:
-        """When the pool is exhausted, acquire blocks until a connection is released."""
-        async with (
-            ModuleStorage(tmp_path, "pool_block", pool_size=1) as s,
-            s.transaction(),
-        ):
-            # Pool is exhausted (pool_size=1, one held by transaction).
-            # A second acquire should block, so wait_for should time out.
-            with pytest.raises(TimeoutError):
-                await asyncio.wait_for(s._acquire(), timeout=0.1)
 
 
 class TestStorageError:
@@ -412,15 +353,15 @@ class TestStorageError:
 
 
 class TestClose:
-    """_close() drains the pool and marks storage closed."""
+    """_close() closes the connection and marks storage closed."""
 
-    async def test_close_drains_pool(self, storage: ModuleStorage) -> None:
-        """After close, all connections are removed."""
+    async def test_close_releases_connection(self, storage: ModuleStorage) -> None:
+        """After close, the connection is None."""
         await storage.execute("SELECT 1")
-        assert len(storage._all_connections) == 1
+        assert storage._conn is not None
         await storage._close()
-        assert len(storage._all_connections) == 0
-        assert storage._closed is True
+        assert storage._closed
+        assert storage._conn is None
 
     async def test_double_close_is_safe(self, storage: ModuleStorage) -> None:
         """Calling _close() twice does not raise."""
@@ -429,9 +370,9 @@ class TestClose:
         await storage._close()
 
     async def test_context_manager_closes_on_exit(self, tmp_path: Path) -> None:
-        """Exiting the async with block closes all connections."""
+        """Exiting the async with block closes the connection."""
         async with ModuleStorage(tmp_path, "ctx_test") as s:
             await s.execute("SELECT 1")
-            assert len(s._all_connections) == 1
-        assert len(s._all_connections) == 0
-        assert s._closed is True
+            assert s._conn is not None
+        assert s._closed
+        assert s._conn is None

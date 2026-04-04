@@ -49,9 +49,6 @@ owlbot:
   # logs go to stdout only.
   #log_dir: "logs"
 
-  # Maximum number of SQLite connections per module in the connection pool.
-  # Connections are created lazily as needed, up to this limit.
-  pool_size: 4
 
 # Per-module configuration. Each key is a module name (the filename without
 # .py for single-file modules, or the directory name for package modules).

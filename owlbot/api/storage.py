@@ -16,8 +16,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import contextvars
 import logging
 from contextlib import asynccontextmanager
@@ -35,40 +33,35 @@ class StorageError(Exception):
 
 
 class ModuleStorage:
-    """Module-scoped async SQLite storage backed by a lazy connection pool.
+    """Module-scoped async SQLite storage with a single lazy connection.
 
-    Each module gets its own isolated database file. Connections are created
-    lazily and pooled up to ``pool_size``. WAL mode is enabled so that
-    concurrent readers and a single writer can operate without "database is
-    locked" errors.
+    Each module gets its own isolated database file. The connection is
+    created lazily on the first storage operation and reused for all
+    subsequent calls. WAL mode is enabled for crash resilience.
 
-    Each storage operation (execute, fetch_one, etc.) independently acquires a
-    connection from the pool, auto-commits on success, rolls back on failure,
-    and releases the connection immediately. No connection is held between
-    calls.
+    Each storage operation (execute, fetch_one, etc.) auto-commits on
+    success and rolls back on failure. No transaction state is held
+    between calls.
 
-    For operations that must succeed or fail together, use the transaction()
-    context manager to group them into a single atomic unit.
+    For operations that must succeed or fail together, use the
+    transaction() context manager to group them into a single atomic
+    unit.
     """
 
-    def __init__(self, storage_dir: Path, module_name: str, pool_size: int = 4):
+    def __init__(self, storage_dir: Path, module_name: str):
         """Initialize the storage API.
 
         :param storage_dir: Directory where module databases are stored.
         :param module_name: Name of the module this storage belongs to.
-        :param pool_size: Maximum number of pooled connections.
         """
         self._db_path = storage_dir / f"{module_name}.db"
         self._module_name = module_name
-        self._pool: asyncio.Queue[aiosqlite.Connection] = asyncio.Queue()
-        self._pool_size = pool_size
-        self._all_connections: list[aiosqlite.Connection] = []
+        self._conn: aiosqlite.Connection | None = None
         self._closed = False
         self._txn_conn: contextvars.ContextVar[aiosqlite.Connection | None] = (
             contextvars.ContextVar(f"_txn_conn_{module_name}", default=None)
         )
         self._logger = logging.getLogger(f"owlbot.modules.{module_name}.storage")
-        self._logger.info(f"Database initialized at: {self._db_path.absolute()}")
 
     async def __aenter__(self) -> ModuleStorage:
         """Enter an async context manager that closes the storage on exit.
@@ -91,14 +84,13 @@ class ModuleStorage:
     async def transaction(self) -> AsyncIterator[ModuleStorage]:
         """Context manager for explicit transaction control.
 
-        Use this when you need multiple operations to succeed or fail together.
-        Acquires a dedicated connection from the pool and shares it across all
-        operations within the block. Commits on success, rolls back on exception.
+        Use this when you need multiple operations to succeed or fail
+        together. Shares the single connection across all operations
+        within the block, skipping per-operation auto-commit. Commits on
+        success, rolls back on exception.
 
         Nesting ``transaction()`` calls is not supported and raises
-        ``RuntimeError``.  SQLite only allows one writer at a time, so a
-        nested transaction would deadlock waiting for the outer connection's
-        write lock.
+        ``RuntimeError``.
 
         Example:
             async with ctx.storage.transaction():
@@ -114,7 +106,7 @@ class ModuleStorage:
             raise RuntimeError(
                 "transaction() cannot be nested. Already inside an active transaction."
             )
-        conn = await self._acquire()
+        conn = await self._ensure_connection()
         token = self._txn_conn.set(conn)
         self._logger.debug("Explicit transaction started.")
         try:
@@ -127,7 +119,6 @@ class ModuleStorage:
             raise
         finally:
             self._txn_conn.reset(token)
-            self._release(conn)
 
     async def execute(
         self,
@@ -243,95 +234,46 @@ class ModuleStorage:
             return None
         return row[0]
 
-    async def _create_connection(self) -> aiosqlite.Connection:
-        """Create a new database connection with WAL mode and foreign keys.
-
-        The connection is tracked in ``_all_connections`` immediately after
-        opening so that ``_close()`` can clean it up if the PRAGMA setup is
-        interrupted (e.g. by task cancellation).  A ``busy_timeout`` is set
-        first so that new connections briefly wait for any lock held by a
-        partially-initialised peer instead of failing immediately.
-        """
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = await aiosqlite.connect(self._db_path)
-        # Track immediately so _close() always sees this connection.
-        self._all_connections.append(conn)
-        try:
-            conn.row_factory = aiosqlite.Row
-            await conn.execute("PRAGMA busy_timeout = 1000")
-            await conn.execute("PRAGMA journal_mode = WAL")
-            await conn.execute("PRAGMA foreign_keys = ON")
-        except BaseException:
-            # Setup interrupted (timeout, cancellation, etc.). Close the
-            # connection to release any write lock held by a partially-
-            # executed PRAGMA, then free the pool slot. shield() keeps the
-            # close running on the background thread even if this task is
-            # cancelled; suppress swallows the CancelledError from the await.
-            with contextlib.suppress(ValueError):
-                self._all_connections.remove(conn)
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await asyncio.shield(conn.close())
-            raise
-        self._logger.debug(
-            "Pool connection created (%d/%d).",
-            len(self._all_connections),
-            self._pool_size,
-        )
-        return conn
-
-    async def _acquire(self) -> aiosqlite.Connection:
-        """Acquire a connection from the pool, creating one if needed."""
+    async def _ensure_connection(self) -> aiosqlite.Connection:
+        """Return the existing connection or create one on first use."""
         if self._closed:
             raise StorageError("Storage is closed")
-
-        try:
-            return self._pool.get_nowait()
-        except asyncio.QueueEmpty:
-            pass
-
-        if len(self._all_connections) < self._pool_size:
-            return await self._create_connection()
-
-        # Pool exhausted, wait for one to be returned.
-        return await self._pool.get()
-
-    def _release(self, conn: aiosqlite.Connection) -> None:
-        """Return a connection to the pool."""
-        self._pool.put_nowait(conn)
+        if self._conn is not None:
+            return self._conn
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = await aiosqlite.connect(self._db_path)
+        conn.row_factory = aiosqlite.Row
+        await conn.execute("PRAGMA journal_mode = WAL")
+        await conn.execute("PRAGMA foreign_keys = ON")
+        self._conn = conn
+        self._logger.info(f"Database opened at: {self._db_path.absolute()}")
+        return conn
 
     @asynccontextmanager
     async def _connection(self) -> AsyncIterator[aiosqlite.Connection]:
-        """Async context manager that provides a connection.
+        """Async context manager that provides the connection.
 
         If already inside a ``transaction()``, yields the shared connection
         without committing (the transaction block handles that). Otherwise
-        acquires a standalone connection from the pool that auto-commits on
-        success and rolls back on failure before being released.
+        auto-commits on success and rolls back on failure.
         """
         existing = self._txn_conn.get()
         if existing is not None:
             yield existing
             return
 
-        conn = await self._acquire()
+        conn = await self._ensure_connection()
         try:
             yield conn
             await conn.commit()
         except BaseException:
             await conn.rollback()
             raise
-        finally:
-            self._release(conn)
 
     async def _close(self) -> None:
-        """Close all pool connections (internal use by bot)."""
+        """Close the connection (internal use by bot)."""
         self._closed = True
-
-        for conn in self._all_connections:
-            await conn.close()
-
-        while not self._pool.empty():
-            self._pool.get_nowait()
-
-        self._all_connections.clear()
-        self._logger.info("All pool connections closed.")
+        if self._conn is not None:
+            await self._conn.close()
+            self._conn = None
+        self._logger.info("Connection closed.")
