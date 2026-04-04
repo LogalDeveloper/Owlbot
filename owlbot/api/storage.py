@@ -21,13 +21,13 @@ import contextlib
 import contextvars
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
-    from pathlib import Path
 
 
 class StorageError(Exception):
@@ -41,6 +41,9 @@ class ModuleStorage:
     created lazily on the first storage operation and reused for all
     subsequent calls. WAL mode is enabled for crash resilience.
 
+    Pass ``None`` as ``storage_dir`` to use an in-memory database
+    instead of a file, which is useful for testing.
+
     Each storage operation (execute, fetch_one, etc.) auto-commits on
     success and rolls back on failure. No transaction state is held
     between calls.
@@ -50,13 +53,18 @@ class ModuleStorage:
     unit.
     """
 
-    def __init__(self, storage_dir: Path, module_name: str):
+    def __init__(self, storage_dir: Path | None, module_name: str):
         """Initialize the storage API.
 
         :param storage_dir: Directory where module databases are stored.
+            Pass ``None`` to use an in-memory database (useful for tests).
         :param module_name: Name of the module this storage belongs to.
         """
-        self._db_path = storage_dir / f"{module_name}.db"
+        self._db_path: Path | str = (
+            storage_dir / f"{module_name}.db"
+            if storage_dir is not None
+            else ":memory:"
+        )
         self._module_name = module_name
         self._conn: aiosqlite.Connection | None = None
         self._closed = False
@@ -242,7 +250,8 @@ class ModuleStorage:
             raise StorageError("Storage is closed")
         if self._conn is not None:
             return self._conn
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(self._db_path, Path):
+            self._db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = await aiosqlite.connect(self._db_path)
         try:
             conn.row_factory = aiosqlite.Row
@@ -257,7 +266,7 @@ class ModuleStorage:
                 await asyncio.shield(conn.close())
             raise
         self._conn = conn
-        self._logger.info(f"Database opened at: {self._db_path.absolute()}")
+        self._logger.info(f"Database opened at: {self._db_path}")
         return conn
 
     @asynccontextmanager

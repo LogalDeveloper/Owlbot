@@ -25,7 +25,6 @@ from owlbot.api.storage import ModuleStorage
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
-    from pathlib import Path
 
 
 def make_module_context(
@@ -47,7 +46,7 @@ def make_module_context(
 
 
 @pytest.fixture
-async def storage(tmp_path: Path) -> AsyncIterator[ModuleStorage]:
-    """Yield an open ModuleStorage backed by a temporary directory."""
-    async with ModuleStorage(tmp_path, "test_module") as s:
+async def storage() -> AsyncIterator[ModuleStorage]:
+    """Yield an open in-memory ModuleStorage."""
+    async with ModuleStorage(None, "test_module") as s:
         yield s

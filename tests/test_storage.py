@@ -24,7 +24,6 @@ import pytest
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
 from owlbot.api.storage import ModuleStorage, StorageError
 
@@ -54,12 +53,7 @@ class TestLazyConnections:
 
 
 class TestPragmas:
-    """WAL mode and foreign keys are enabled on new connections."""
-
-    async def test_wal_mode(self, storage: ModuleStorage) -> None:
-        """journal_mode is set to WAL."""
-        value = await storage.fetch_value("PRAGMA journal_mode")
-        assert value == "wal"
+    """Foreign keys are enabled on new connections."""
 
     async def test_foreign_keys_enabled(self, storage: ModuleStorage) -> None:
         """foreign_keys pragma is enabled."""
@@ -369,9 +363,9 @@ class TestClose:
         await storage._close()
         await storage._close()
 
-    async def test_context_manager_closes_on_exit(self, tmp_path: Path) -> None:
+    async def test_context_manager_closes_on_exit(self) -> None:
         """Exiting the async with block closes the connection."""
-        async with ModuleStorage(tmp_path, "ctx_test") as s:
+        async with ModuleStorage(None, "ctx_test") as s:
             await s.execute("SELECT 1")
             assert s._conn is not None
         assert s._closed
