@@ -22,6 +22,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import orjson
 from aiohttp import web
 
 from . import __version__
@@ -143,7 +144,7 @@ class HttpServer:
     async def _handle_webhook(self, request: web.Request) -> web.Response:
         """Handle incoming webhook requests from Owncast."""
         try:
-            data = await request.json()
+            data = await request.json(loads=orjson.loads)
         except ValueError as e:
             # Invalid JSON received. This shouldn't happen
             # with legitimate Owncast webhooks.

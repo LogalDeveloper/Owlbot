@@ -26,6 +26,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast, overload
 
+import orjson
 from aiohttp import web
 from aiohttp.web import DynamicResource
 
@@ -608,7 +609,10 @@ class RouteDispatcher:
             if isinstance(result, web.StreamResponse):
                 return result
             if isinstance(result, dict):
-                return web.json_response(result)
+                return web.Response(
+                    body=orjson.dumps(result),
+                    content_type="application/json",
+                )
             # pragma: no branch — defensive against untyped handlers
             mod_logger.error(  # type: ignore[unreachable]
                 f"Route handler '{route_info.full_path}' returned "

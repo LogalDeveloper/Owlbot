@@ -16,10 +16,10 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import TYPE_CHECKING, ClassVar
 
+import orjson
 import pytest
 
 if TYPE_CHECKING:
@@ -309,7 +309,7 @@ class TestBroadcast:
 
         await _broadcast(clients, events, logging.getLogger("test"))
 
-        expected = f"data: {json.dumps(events[0])}\n\n".encode()
+        expected = b"data: " + orjson.dumps(events[0]) + b"\n\n"
         assert c1.written == [expected]
         assert c2.written == [expected]
         assert len(clients) == 2
@@ -354,8 +354,8 @@ class TestBroadcast:
 
         assert len(client.written) == 1
         payload = client.written[0].decode()
-        assert f"data: {json.dumps(events[0])}\n\n" in payload
-        assert f"data: {json.dumps(events[1])}\n\n" in payload
+        assert "data: " + orjson.dumps(events[0]).decode() + "\n\n" in payload
+        assert "data: " + orjson.dumps(events[1]).decode() + "\n\n" in payload
 
     async def test_empty_clients_noop(self) -> None:
         """Broadcasting to no clients completes without error."""

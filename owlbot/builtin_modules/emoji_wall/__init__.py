@@ -23,13 +23,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import secrets
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import emoji
+import orjson
 from aiohttp import web
 
 if TYPE_CHECKING:
@@ -203,7 +203,7 @@ async def _broadcast(
     :param events: The event data dicts to broadcast.
     :param logger: Logger instance from the module context.
     """
-    payload = "".join(f"data: {json.dumps(event)}\n\n" for event in events).encode()
+    payload = b"".join(b"data: " + orjson.dumps(event) + b"\n\n" for event in events)
     snapshot = list(clients)
     results = await asyncio.gather(
         *(client.write(payload) for client in snapshot),

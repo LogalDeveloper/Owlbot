@@ -16,11 +16,11 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
+import orjson
 from aiohttp import ContentTypeError
 from markupsafe import escape as _escape_html
 
@@ -38,7 +38,7 @@ def _extract_error(text: str) -> str:
     :return: The extracted error string.
     """
     try:
-        data = json.loads(text)
+        data = orjson.loads(text)
     except (ValueError, TypeError):
         return text
     if isinstance(data, dict):
@@ -256,7 +256,7 @@ class OwncastClient:
                 self._logger.debug("POST %s -> %d", endpoint, response.status)
                 if response.content_type == "application/json":
                     try:
-                        result = await response.json()
+                        result = await response.json(loads=orjson.loads)
                     except (ValueError, ContentTypeError):
                         text = await response.text()
                         self._logger.error(f"Invalid JSON on POST {endpoint}: {text}")
@@ -314,7 +314,7 @@ class OwncastClient:
                     raise OwncastError(response.status, message)
                 self._logger.debug("GET %s -> %d", endpoint, response.status)
                 try:
-                    result = await response.json()
+                    result = await response.json(loads=orjson.loads)
                 except (ValueError, ContentTypeError):
                     text = await response.text()
                     self._logger.error(f"Invalid JSON on GET {endpoint}: {text}")

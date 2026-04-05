@@ -20,8 +20,9 @@ Serializes ffmpeg/ffprobe execution via semaphores.
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import TYPE_CHECKING
+
+import orjson
 
 if TYPE_CHECKING:
     import logging
@@ -230,5 +231,5 @@ class ProcessingManager:
             str(file_path),
         )
 
-        data = json.loads(stdout)
+        data = orjson.loads(stdout)
         return float(data["format"]["duration"])
