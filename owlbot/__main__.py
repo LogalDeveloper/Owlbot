@@ -26,6 +26,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import uvloop
+
 from . import __version__
 from .api.config import Config
 from .bot import Owlbot, StartupError
@@ -223,7 +225,7 @@ Examples:
             logger.info("Received shutdown signal.")
 
     try:
-        asyncio.run(_run())
+        uvloop.run(_run())
     except StartupError as e:
         logger.error(str(e))
         sys.exit(1)
