@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -35,16 +35,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger("owlbot.web")
 
 
-@web.middleware
-async def _server_header_middleware(
-    request: web.Request,
-    handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
-) -> web.StreamResponse:
-    response = await handler(request)
+async def _on_response_prepare(
+    request: web.Request, response: web.StreamResponse
+) -> None:
+    """Set the Server header on all responses before headers are sent."""
     response.headers["Server"] = f"Owlbot/{__version__}"
     if request.path.startswith("/owlbot/static/"):
         response.headers["Cache-Control"] = "max-age=86400"
-    return response
 
 
 # Callback type for webhook dispatch (injected from Owlbot).
@@ -80,7 +77,8 @@ class HttpServer:
         # Runner is created by start() and cleaned up by stop().
         self._runner: web.AppRunner | None = None
 
-        self.app = web.Application(middlewares=[_server_header_middleware])
+        self.app = web.Application()
+        self.app.on_response_prepare.append(_on_response_prepare)
         self.app.on_shutdown.append(self._on_shutdown)
         self.app.router.add_post(self.config.webhook_path, self._handle_webhook)
 
