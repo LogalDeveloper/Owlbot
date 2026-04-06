@@ -61,9 +61,7 @@ class ModuleStorage:
         :param module_name: Name of the module this storage belongs to.
         """
         self._db_path: Path | str = (
-            storage_dir / f"{module_name}.db"
-            if storage_dir is not None
-            else ":memory:"
+            storage_dir / f"{module_name}.db" if storage_dir is not None else ":memory:"
         )
         self._module_name = module_name
         self._conn: aiosqlite.Connection | None = None

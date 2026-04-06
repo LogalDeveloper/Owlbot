@@ -194,9 +194,7 @@ class TestAutoCommit:
         await storage_with_table.execute(
             "INSERT INTO items (name, value) VALUES (?, ?)", ("a", 1)
         )
-        row = await storage_with_table.fetch_one(
-            "SELECT name FROM items WHERE id = 1"
-        )
+        row = await storage_with_table.fetch_one("SELECT name FROM items WHERE id = 1")
         assert row is not None
         assert row["name"] == "a"
 
