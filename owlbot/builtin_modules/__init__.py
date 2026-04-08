@@ -19,6 +19,7 @@ BUILTIN_MODULE_NAMES: frozenset[str] = frozenset(
         "clips",
         "custom_commands",
         "emoji_wall",
+        "polls",
         "quotes",
         "timers",
     }

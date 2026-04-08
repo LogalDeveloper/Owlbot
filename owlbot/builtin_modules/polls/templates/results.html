@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Results: {{ question }}{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ polls_css_url }}?v={{ owlbot_version }}">
+{% endblock %}
+{% block content %}
+<h1 class="mb-3">{{ question }}</h1>
+
+{% set total = results.counts | sum %}
+<div class="d-flex flex-column gap-2 mb-4">
+    {% for option in options %}
+    {% set count = results.counts[loop.index0] %}
+    {% set pct = (count / total * 100) | round(0) | int if total > 0 else 0 %}
+    {% set is_winner = option in results.winners and results.total_votes > 0 %}
+    <div class="option-bar">
+        <div class="bar-fill {{ 'winner' if is_winner else 'other' }}" style="width: {{ pct }}%"></div>
+        <span class="option-label">
+            {{ option }}
+            {% if is_winner %}
+            <span class="badge bg-success ms-1">{{ "Tie" if results.is_tie else "Winner" }}</span>
+            {% endif %}
+        </span>
+        <span class="vote-count">
+            {{ count }} ({{ pct }}%)
+        </span>
+    </div>
+    {% endfor %}
+</div>
+
+<p class="text-body-secondary">Total votes: {{ results.total_votes }}</p>
+{% endblock %}

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Create Poll{% endblock %}
+{% block content %}
+<h1 class="mb-4">Create Poll</h1>
+{% if error %}
+<div class="alert alert-danger" role="alert">{{ error }}</div>
+{% endif %}
+<form method="POST" action="{{ submit_url }}" id="poll-form">
+    <div class="mb-3">
+        <label for="question" class="form-label">Question</label>
+        <input type="text" class="form-control" id="question" name="question" required maxlength="{{ constraints.max_question_length }}" placeholder="What do you want to ask chat?" value="{{ form.question }}">
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Options</label>
+        <div id="options-container">
+            {% for opt in form.options %}
+            <div class="input-group mb-2 option-row">
+                <span class="input-group-text option-number">{{ loop.index }}</span>
+                <input type="text" class="form-control option-input" name="option_{{ loop.index }}" required maxlength="{{ constraints.max_option_length }}" placeholder="Option {{ loop.index }}" value="{{ opt }}">
+                {% if loop.index > 2 %}
+                <button type="button" class="btn btn-outline-danger remove-option">Remove</button>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="add-option">Add Option</button>
+    </div>
+
+    <div class="mb-3">
+        <label for="duration" class="form-label">Duration (seconds)</label>
+        <input type="number" class="form-control" id="duration" name="duration" value="{{ form.duration }}" min="{{ constraints.min_duration }}" max="{{ constraints.max_duration }}">
+    </div>
+
+    <div class="mb-3 form-check">
+        <input type="checkbox" class="form-check-input" id="hidden" name="hidden" {% if form.hidden %}checked{% endif %}>
+        <label class="form-check-label" for="hidden">Hidden until end</label>
+        <div class="form-text">Vote counts stay hidden from voters until the poll ends.</div>
+    </div>
+
+    <div class="mb-3 form-check">
+        <input type="checkbox" class="form-check-input" id="requires_auth" name="requires_auth" {% if form.requires_auth %}checked{% endif %}>
+        <label class="form-check-label" for="requires_auth">Require authentication</label>
+        <div class="form-text">Only viewers with an authenticated Owncast account can vote.</div>
+    </div>
+
+    <div class="mb-3 form-check">
+        <input type="checkbox" class="form-check-input" id="allow_multiple" name="allow_multiple" {% if form.allow_multiple %}checked{% endif %}>
+        <label class="form-check-label" for="allow_multiple">Allow multiple selections</label>
+        <div class="form-text">Voters can select more than one option.</div>
+    </div>
+
+    <div class="mb-3 ms-4 {{ '' if form.allow_multiple else 'd-none' }} d-flex align-items-center gap-2 flex-wrap" id="multi-select-options">
+        <span>Voters must select between</span>
+        <input type="number" class="form-control form-control-sm" style="width: 5rem" id="min_selections" name="min_selections" min="1" placeholder="1" value="{{ form.min_selections }}">
+        <span>and</span>
+        <input type="number" class="form-control form-control-sm" style="width: 5rem" id="max_selections" name="max_selections" min="1" value="{{ form.max_selections }}">
+        <span>options.</span>
+    </div>
+
+    <input type="hidden" name="options" id="options-hidden">
+    <button type="submit" class="btn btn-primary">Create Poll</button>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>window.CREATE_CONFIG = {
+    maxOptions: {{ constraints.max_options | tojson }},
+    maxOptionLength: {{ constraints.max_option_length | tojson }}
+};</script>
+<script src="{{ create_js_url }}?v={{ owlbot_version }}"></script>
+{% endblock %}

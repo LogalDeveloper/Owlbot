@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Vote: {{ poll.question }}{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ polls_css_url }}?v={{ owlbot_version }}">
+{% endblock %}
+{% block content %}
+<h1 class="mb-3">{{ poll.question }}</h1>
+<div id="poll-status" class="mb-4">
+    <p class="text-body-secondary mb-1">Time remaining: <strong id="timer">--:--</strong></p>
+    {% if poll.hidden %}
+        {% if token.is_moderator %}
+    <p class="text-body-secondary mb-0">Results are hidden until this poll ends. As a moderator, you can still see the real-time results.</p>
+        {% else %}
+    <p class="text-body-secondary mb-0">Results are hidden until this poll ends.</p>
+        {% endif %}
+    {% else %}
+    <p class="text-body-secondary mb-0">Results are updated in real time.</p>
+    {% endif %}
+</div>
+
+<form method="POST" action="{{ vote_url }}" id="vote-form">
+    <div class="d-flex flex-column gap-2 mb-4">
+        {% for option in poll.options %}
+        <div class="option-bar" data-index="{{ loop.index0 }}">
+            <div class="bar-fill" style="width: 0%"></div>
+            <label>
+                {% if poll.allow_multiple %}
+                <input type="checkbox" name="option" value="{{ loop.index0 }}" class="form-check-input me-2"
+                    {% if loop.index0 in current_votes %}checked{% endif %}
+                    {% if has_voted or (not token.is_authenticated and poll.requires_auth) %}disabled{% endif %}>
+                {% else %}
+                <input type="radio" name="option" value="{{ loop.index0 }}" class="form-check-input me-2" required
+                    {% if loop.index0 in current_votes %}checked{% endif %}
+                    {% if has_voted or (not token.is_authenticated and poll.requires_auth) %}disabled{% endif %}>
+                {% endif %}
+                {{ option }}
+            </label>
+            <span class="vote-count d-none" data-index="{{ loop.index0 }}">
+                <span class="count">-</span> (<span class="pct">-</span>%)
+            </span>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if poll.requires_auth and not token.is_authenticated %}
+    <div class="alert alert-warning mb-0" role="alert">This poll requires an authenticated account to vote. You are viewing results only.</div>
+    {% elif not has_voted %}
+    <button type="submit" class="btn btn-primary me-2">Vote</button>
+    {% else %}
+    <p class="text-body-secondary mb-0">You have already voted in this poll.</p>
+    {% endif %}
+</form>
+
+{% if token.is_moderator %}
+<hr class="my-4">
+<h5>Manage Poll</h5>
+<p class="text-body-secondary">As a moderator, you can perform the following actions on this poll:</p>
+<div class="d-flex gap-2">
+    <form method="POST" action="{{ vote_url }}/end">
+        <button type="submit" class="btn btn-success">End Poll</button>
+    </form>
+    <form method="POST" action="{{ vote_url }}/cancel">
+        <button type="submit" class="btn btn-danger">Cancel Poll</button>
+    </form>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+window.POLL_CONFIG = {
+    hidden: {{ poll.hidden | tojson }},
+    timeRemaining: {{ poll.time_remaining | tojson }},
+    allowMultiple: {{ poll.allow_multiple | tojson }},
+    minSelections: {{ poll.min_selections | tojson }},
+    maxSelections: {{ poll.max_selections | tojson }}
+};
+window.TOKEN_INFO = {
+    isModerator: {{ token.is_moderator | tojson }},
+    eventsUrl: {{ (vote_url + "/events") | tojson }}
+};
+</script>
+<script src="{{ polls_js_url }}?v={{ owlbot_version }}"></script>
+{% endblock %}
