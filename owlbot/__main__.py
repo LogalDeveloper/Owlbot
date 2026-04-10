@@ -18,10 +18,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import importlib.resources
 import logging
+import os
 import shutil
 import signal
+import socket
 import sys
 from pathlib import Path
 from typing import Any
@@ -31,6 +34,43 @@ import uvloop
 from . import __version__
 from .api.config import Config
 from .bot import Owlbot, StartupError
+
+
+def _sd_notify(state: str) -> None:
+    """Send a notification to systemd, if running under a systemd service."""
+    addr = os.environ.get("NOTIFY_SOCKET")
+    if not addr:
+        return
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
+            if addr[0] == "@":
+                addr = "\0" + addr[1:]
+            sock.sendto(state.encode(), addr)
+    except OSError:
+        pass
+
+
+def _watchdog_interval() -> float | None:
+    """Return the watchdog ping interval in seconds, or None if disabled.
+
+    systemd sets WATCHDOG_USEC to the total timeout. We ping at half that
+    interval so there's margin for scheduling jitter.
+    """
+    usec = os.environ.get("WATCHDOG_USEC")
+    if not usec:
+        return None
+    try:
+        return int(usec) / 1_000_000 / 2
+    except ValueError:
+        return None
+
+
+async def _watchdog_loop(interval: float, stop: asyncio.Event) -> None:
+    """Periodically send WATCHDOG=1 until *stop* is set."""
+    while not stop.is_set():
+        _sd_notify("WATCHDOG=1")
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=interval)
 
 
 def _init() -> None:
@@ -221,8 +261,27 @@ Examples:
             loop.add_signal_handler(sig, stop_event.set)
 
         async with bot:
+            _sd_notify("READY=1")
+
+            wd_interval = _watchdog_interval()
+            wd_task: asyncio.Task[None] | None = None
+            if wd_interval is not None:
+                logger.info(
+                    f"systemd watchdog enabled (pinging every {wd_interval:.1f}s)."
+                )
+                wd_task = asyncio.create_task(
+                    _watchdog_loop(wd_interval, stop_event),
+                    name="systemd-watchdog",
+                )
+
             await stop_event.wait()
             logger.info("Received shutdown signal.")
+            _sd_notify("STOPPING=1")
+
+            if wd_task is not None:
+                wd_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await wd_task
 
     try:
         uvloop.run(_run())
