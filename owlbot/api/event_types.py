@@ -402,6 +402,12 @@ _EVENT_TYPE_MAP: dict[EventType, type[Event]] = {
     EventType.VISIBILITY_UPDATE: VisibilityUpdateEvent,
 }
 
+# Pre-built lookup table keyed by raw webhook strings, derived from
+# _EVENT_TYPE_MAP at import time so StrEnum overhead is paid once.
+_EVENT_DISPATCH: dict[str, tuple[EventType, type[Event]]] = {
+    et.value: (et, cls) for et, cls in _EVENT_TYPE_MAP.items()
+}
+
 
 def parse_event(data: dict[str, Any]) -> _ParsedEvent | None:
     """Parse a raw webhook payload into a typed event.
@@ -416,13 +422,11 @@ def parse_event(data: dict[str, Any]) -> _ParsedEvent | None:
     if event_type_str is None:
         return None
 
-    try:
-        event_type = EventType(event_type_str)
-    except ValueError:
-        # Unknown event type. This could be a new Owncast feature we don't support yet.
+    entry = _EVENT_DISPATCH.get(event_type_str)
+    if entry is None:
         return None
 
-    event_class = _EVENT_TYPE_MAP[event_type]
+    event_type, event_class = entry
     return event_type, event_class.from_dict(event_data)
 
 
