@@ -17,167 +17,48 @@
 Allows moderators to store quotes and anyone to recall random quotes.
 """
 
-from datetime import UTC, datetime
+from owlbot.api import ModuleContext, on_setup, on_teardown
 
-from aiohttp import web
-
-from owlbot.api import (
-    CommandContext,
-    ModuleContext,
-    RouteContext,
-    on_command,
-    on_route,
-    on_setup,
+# Re-export decorated handlers so the module loader discovers them.
+from .commands import (
+    addquote_command,
+    deletequote_command,
+    listquotes_command,
+    quote_command,
 )
+from .manager import QuoteManager
+from .repository import QuoteRepository
+from .routes import quotes_list_page
+
+__all__ = [
+    "addquote_command",
+    "deletequote_command",
+    "listquotes_command",
+    "quote_command",
+    "quotes_list_page",
+    "setup",
+    "teardown",
+]
 
 
 @on_setup
 async def setup(ctx: ModuleContext) -> None:
     """Initialize the quotes module.
 
-    Creates the database schema.
+    Creates the database schema and instantiates the QuoteManager.
 
     :param ctx: Module context with config, storage, and other services.
     """
-    await ctx.storage.execute("""
-        CREATE TABLE IF NOT EXISTS quotes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            text TEXT NOT NULL,
-            added_by TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-    """)
-
-    count = await ctx.storage.fetch_value("SELECT COUNT(*) FROM quotes")
-    ctx.logger.info(f"Loaded {count} quote(s) from database.")
+    repo = QuoteRepository(ctx.storage)
+    await repo.setup()
+    manager = QuoteManager(ctx, repo)
+    ctx.state["manager"] = manager
 
 
-@on_route("/list", methods=["GET"])
-async def quotes_list_page(ctx: RouteContext) -> web.Response:
-    """Serve an HTML page listing all quotes in a table.
+@on_teardown
+async def teardown(ctx: ModuleContext) -> None:
+    """Clean up the quotes module.
 
-    Columns: #, Quote, Added By, Date Added.
-    Accessible at /owlbot/quotes/list.
-
-    :param ctx: The route context.
-    :return: HTML response with the quotes list table.
+    :param ctx: Module context.
     """
-    rows = await ctx.storage.fetch_all(
-        "SELECT id, text, added_by, created_at FROM quotes ORDER BY id"
-    )
-
-    quotes = [
-        {
-            "id": row["id"],
-            "text": row["text"],
-            "added_by": row["added_by"],
-            "date": datetime.fromisoformat(row["created_at"]).strftime("%Y-%m-%d"),
-        }
-        for row in rows
-    ]
-
-    page = ctx.templates.render("list.html", quotes=quotes)
-    return web.Response(text=page, content_type="text/html")
-
-
-@on_command("quote", aliases=["q"])
-async def quote_command(ctx: CommandContext) -> None:
-    """Display a quote. Random if no argument, specific if an ID is given.
-
-    :param ctx: The command context.
-    """
-    args = ctx.args_list
-
-    if not args:
-        row = await ctx.storage.fetch_one(
-            "SELECT id, text FROM quotes ORDER BY RANDOM() LIMIT 1"
-        )
-
-        if not row:
-            await ctx.owncast_client.send_message("No quotes have been added yet.")
-            return
-
-        await ctx.owncast_client.send_message(f'"{row["text"]}" (#{row["id"]})')
-        return
-
-    try:
-        quote_id = int(args[0])
-    except ValueError:
-        await ctx.owncast_client.send_message("Usage: !quote [id]")
-        return
-
-    row = await ctx.storage.fetch_one(
-        "SELECT id, text, added_by, created_at FROM quotes WHERE id = ?", (quote_id,)
-    )
-    if not row:
-        await ctx.owncast_client.send_message(f"Quote #{quote_id} not found.")
-        return
-
-    created_at = datetime.fromisoformat(row["created_at"])
-    date_str = created_at.strftime("%Y-%m-%d")
-
-    await ctx.owncast_client.send_message(
-        f'Quote #{row["id"]}: "{row["text"]}" '
-        f"- Added by {row['added_by']} on {date_str}"
-    )
-
-
-@on_command("addquote", requires_moderator=True)
-async def addquote_command(ctx: CommandContext) -> None:
-    """Add a new quote to the database. Moderator only.
-
-    :param ctx: The command context.
-    """
-    quote_text = ctx.args.strip()
-    if not quote_text:
-        await ctx.owncast_client.send_message("Usage: !addquote <quote text>")
-        return
-
-    now = datetime.now(UTC).isoformat()
-    cursor = await ctx.storage.execute(
-        "INSERT INTO quotes (text, added_by, created_at) VALUES (?, ?, ?)",
-        (quote_text, ctx.user.display_name, now),
-    )
-
-    ctx.logger.info(f"Quote #{cursor.lastrowid} added by {ctx.user.display_name}.")
-    await ctx.owncast_client.send_message(f"Quote #{cursor.lastrowid} added.")
-
-
-@on_command("deletequote", aliases=["delquote"], requires_moderator=True)
-async def deletequote_command(ctx: CommandContext) -> None:
-    """Delete a quote by ID. Moderator only.
-
-    :param ctx: The command context.
-    """
-    args = ctx.args_list
-    if not args:
-        await ctx.owncast_client.send_message("Usage: !deletequote <id>")
-        return
-
-    try:
-        quote_id = int(args[0])
-    except ValueError:
-        await ctx.owncast_client.send_message("Usage: !deletequote <id>")
-        return
-
-    existing = await ctx.storage.fetch_one(
-        "SELECT id FROM quotes WHERE id = ?", (quote_id,)
-    )
-    if not existing:
-        await ctx.owncast_client.send_message(f"Quote #{quote_id} not found.")
-        return
-
-    await ctx.storage.execute("DELETE FROM quotes WHERE id = ?", (quote_id,))
-
-    ctx.logger.info(f"Quote #{quote_id} deleted by {ctx.user.display_name}.")
-    await ctx.owncast_client.send_message(f"Quote #{quote_id} deleted.")
-
-
-@on_command("listquotes", cooldown=15)
-async def listquotes_command(ctx: CommandContext) -> None:
-    """Send the URL to the quotes list web page.
-
-    :param ctx: The command context.
-    """
-    url = ctx.routes.url_for("/list")
-    await ctx.owncast_client.send_message(f"Quotes: {url}")
+    ctx.state["manager"] = None
