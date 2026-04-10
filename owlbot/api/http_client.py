@@ -23,6 +23,7 @@ import logging
 from typing import Any
 
 import aiohttp
+import orjson
 
 logger = logging.getLogger("owlbot.http")
 
@@ -68,6 +69,7 @@ class HttpClient:
         self._session = aiohttp.ClientSession(
             connector=connector,
             timeout=timeout,
+            json_serialize=lambda obj: orjson.dumps(obj).decode(),
             headers={
                 "User-Agent": (
                     f"Owlbot/{__version__} "
