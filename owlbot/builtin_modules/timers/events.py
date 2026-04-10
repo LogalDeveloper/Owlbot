@@ -12,27 +12,57 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Chat message counting for the timers module.
-
-Tracks chat messages per timer to support the minimum chat lines threshold.
-Bot messages and hidden messages are excluded from the count.
-"""
+"""Event handlers for the timers module."""
 
 from owlbot.api import (
     ChatEvent,
     EventContext,
     EventType,
     Priority,
+    StreamStartedEvent,
+    StreamStoppedEvent,
     VisibilityUpdateEvent,
     on_event,
 )
 
-from .scheduler import get_scheduler
+from .manager import get_manager
+
+
+@on_event(EventType.STREAM_STARTED)
+async def handle_stream_started(ctx: EventContext[StreamStartedEvent]) -> None:
+    """Start timers when the stream goes live.
+
+    Cancels any pending offline stop (stream returned within grace period)
+    and starts all enabled timers.
+
+    :param ctx: The event context.
+    """
+    manager = get_manager(ctx.module)
+    manager.cancel_offline_stop()
+    await manager.start_all()
+    ctx.logger.info("Stream started. Timers activated.")
+
+
+@on_event(EventType.STREAM_STOPPED)
+async def handle_stream_stopped(ctx: EventContext[StreamStoppedEvent]) -> None:
+    """Schedule timers to stop after a grace period.
+
+    If the stream returns within the grace period, the stop is cancelled
+    by handle_stream_started.
+
+    :param ctx: The event context.
+    """
+    manager = get_manager(ctx.module)
+    manager.schedule_offline_stop()
+    ctx.logger.info(
+        "Stream stopped. Timers will stop in %.0f seconds.",
+        manager.OFFLINE_STOP_DELAY,
+    )
 
 
 @on_event(EventType.CHAT, priority=Priority.LOWEST)
 async def count_chat_message(ctx: EventContext[ChatEvent]) -> None:
-    """Count a chat message for all tracked timers.
+    """Count a chat message for all active timers.
 
     Runs at lowest priority so all other CHAT handlers (moderation, etc.)
     execute first. Skips bot messages and hidden messages.
@@ -42,19 +72,9 @@ async def count_chat_message(ctx: EventContext[ChatEvent]) -> None:
     event = ctx.event
 
     if event.user.is_bot or not event.is_visible:
-        reason = "bot message" if event.user.is_bot else "hidden message"
-        ctx.logger.debug("Skipping chat count for %s: %s.", event.message_id, reason)
         return
 
-    counted_ids = get_scheduler(ctx.module).counted_ids
-    ctx.logger.debug(
-        "Counting message %s from %s for %d timer(s).",
-        event.message_id,
-        event.user.display_name,
-        len(counted_ids),
-    )
-    for timer_set in counted_ids.values():
-        timer_set.add(event.message_id)
+    get_manager(ctx.module).count_message(event.message_id)
 
 
 @on_event(EventType.VISIBILITY_UPDATE, priority=Priority.LOWEST)
@@ -72,12 +92,4 @@ async def handle_visibility_update(ctx: EventContext[VisibilityUpdateEvent]) -> 
     if event.is_visible:
         return
 
-    affected = set(event.message_ids)
-    counted_ids = get_scheduler(ctx.module).counted_ids
-
-    ctx.logger.debug(
-        "Removing %d hidden message(s) from chat counts.",
-        len(affected),
-    )
-    for timer_set in counted_ids.values():
-        timer_set -= affected
+    get_manager(ctx.module).remove_messages(set(event.message_ids))

@@ -14,65 +14,19 @@
 
 """Moderator commands for managing timers."""
 
-from __future__ import annotations
-
-import re
-from datetime import UTC, datetime
-from typing import TYPE_CHECKING
-
 from owlbot.api import CommandContext, on_command
 
-if TYPE_CHECKING:
-    import aiosqlite
-
-from .scheduler import get_scheduler, parse_interval
-
-# Timer names: must start with a letter or underscore to avoid ambiguity with
-# numeric timer IDs. Letters, numbers, underscores, max 32 chars.
-_NAME_PATTERN = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,31}$")
-
-
-async def _resolve_timer(ctx: CommandContext, identifier: str) -> aiosqlite.Row | None:
-    """Resolve a timer by numeric ID or name.
-
-    Tries parsing as an integer first, then falls back to a name lookup.
-
-    :param ctx: The command context.
-    :param identifier: A timer ID or name string.
-    :return: The timer row, or None if not found.
-    """
-    try:
-        timer_id = int(identifier)
-        ctx.logger.debug("Resolving timer by ID: %d", timer_id)
-        row = await ctx.storage.fetch_one(
-            "SELECT * FROM timers WHERE id = ?", (timer_id,)
-        )
-        if row:
-            ctx.logger.debug("Found timer by ID: %s", _timer_display(row))
-            return row
-    except ValueError:
-        pass
-
-    ctx.logger.debug("Resolving timer by name: %s", identifier)
-    row = await ctx.storage.fetch_one(
-        "SELECT * FROM timers WHERE name = ?", (identifier.lower(),)
-    )
-    if row:
-        ctx.logger.debug("Found timer by name: %s", _timer_display(row))
-    else:
-        ctx.logger.debug("Timer '%s' not found.", identifier)
-    return row
-
-
-def _timer_display(row: aiosqlite.Row) -> str:
-    """Format a timer's display identifier.
-
-    :param row: Timer database row.
-    :return: Display string like "timer_name (#3)" or "timer #3".
-    """
-    if row["name"]:
-        return f"{row['name']} (#{row['id']})"
-    return f"timer #{row['id']}"
+from .manager import get_manager
+from .types import (
+    InvalidTimerNameError,
+    NegativeLineCountError,
+    TimerAlreadyDisabledError,
+    TimerAlreadyEnabledError,
+    TimerMessageRequiredError,
+    TimerNameTakenError,
+    TimerNotFoundError,
+    parse_interval,
+)
 
 
 @on_command("addtimer", requires_moderator=True)
@@ -84,38 +38,24 @@ async def addtimer(ctx: CommandContext) -> None:
     :param ctx: The command context.
     """
     args = ctx.args_list
-    name = None
+    name = args[0].lower() if args else None
 
-    if args:
-        name = args[0].lower()
-        if not _NAME_PATTERN.match(name):
-            await ctx.owncast_client.send_message(
-                "Invalid timer name. Must start with a letter or underscore, "
-                "followed by letters, numbers, or underscores (max 32 characters)."
-            )
-            return
-
-        existing = await ctx.storage.fetch_one(
-            "SELECT id FROM timers WHERE name = ?", (name,)
+    try:
+        info = await get_manager(ctx.module).create_timer(name)
+    except InvalidTimerNameError:
+        await ctx.owncast_client.send_message(
+            "Invalid timer name. Must start with a letter or underscore, "
+            "followed by letters, numbers, or underscores "
+            "(max 32 characters)."
         )
-        if existing:
-            await ctx.owncast_client.send_message(
-                f"A timer named '{name}' already exists (#{existing['id']})."
-            )
-            return
+        return
+    except TimerNameTakenError as e:
+        await ctx.owncast_client.send_message(
+            f"A timer named '{e.name}' already exists (#{e.existing_id})."
+        )
+        return
 
-    now = datetime.now(UTC).isoformat()
-    cursor = await ctx.storage.execute(
-        "INSERT INTO timers (name, message, interval_value, interval_type, "
-        "min_chat_lines, enabled, created_at, updated_at) "
-        "VALUES (?, NULL, '15m', 'simple', 0, 0, ?, ?)",
-        (name, now, now),
-    )
-
-    timer_id = cursor.lastrowid
-    display = f"{name} (#{timer_id})" if name else f"#{timer_id}"
-    ctx.logger.info(f"Timer {display} created by {ctx.user.display_name}.")
-    await ctx.owncast_client.send_message(f"Timer {display} created.")
+    await ctx.owncast_client.send_message(f"Timer {info.display} created.")
 
 
 @on_command("settimermessage", requires_moderator=True)
@@ -127,35 +67,21 @@ async def settimermessage(ctx: CommandContext) -> None:
     :param ctx: The command context.
     """
     parts = ctx.args.split(maxsplit=1)
-    if len(parts) < 2:
+    if len(parts) < 2 or not parts[1].strip():
         await ctx.owncast_client.send_message(
             "Usage: !settimermessage <id|name> <message>"
         )
         return
 
     identifier, message = parts
-    if not message.strip():
-        await ctx.owncast_client.send_message(
-            "Usage: !settimermessage <id|name> <message>"
-        )
+
+    try:
+        info = await get_manager(ctx.module).set_message(identifier, message)
+    except TimerNotFoundError as e:
+        await ctx.owncast_client.send_message(f"Timer '{e.identifier}' not found.")
         return
 
-    row = await _resolve_timer(ctx, identifier)
-    if not row:
-        await ctx.owncast_client.send_message(f"Timer '{identifier}' not found.")
-        return
-
-    now = datetime.now(UTC).isoformat()
-    await ctx.storage.execute(
-        "UPDATE timers SET message = ?, updated_at = ? WHERE id = ?",
-        (message, now, row["id"]),
-    )
-
-    display = _timer_display(row)
-    ctx.logger.info(f"Timer {display} message updated by {ctx.user.display_name}.")
-    await ctx.owncast_client.send_message(f"Message set for {display}.")
-    if row["enabled"]:
-        get_scheduler(ctx.module).reschedule()
+    await ctx.owncast_client.send_message(f"Message set for {info.display}.")
 
 
 @on_command("settimerinterval", requires_moderator=True)
@@ -176,10 +102,6 @@ async def settimerinterval(ctx: CommandContext) -> None:
         return
 
     identifier, interval_str = parts
-    row = await _resolve_timer(ctx, identifier)
-    if not row:
-        await ctx.owncast_client.send_message(f"Timer '{identifier}' not found.")
-        return
 
     try:
         interval_type, normalized = parse_interval(interval_str)
@@ -187,22 +109,18 @@ async def settimerinterval(ctx: CommandContext) -> None:
         await ctx.owncast_client.send_message(str(e))
         return
 
-    now = datetime.now(UTC).isoformat()
-    await ctx.storage.execute(
-        "UPDATE timers SET interval_type = ?, interval_value = ?, updated_at = ? "
-        "WHERE id = ?",
-        (interval_type, normalized, now, row["id"]),
-    )
+    try:
+        info = await get_manager(ctx.module).set_interval(
+            identifier, interval_type, normalized
+        )
+    except TimerNotFoundError as e:
+        await ctx.owncast_client.send_message(f"Timer '{e.identifier}' not found.")
+        return
 
-    display = _timer_display(row)
-    ctx.logger.info(
-        f"Timer {display} interval set to {normalized} by {ctx.user.display_name}."
-    )
     await ctx.owncast_client.send_message(
-        f"Interval for {display} set to {normalized} ({interval_type})."
+        f"Interval for {info.display} set to "
+        f"{info.interval_value} ({info.interval_type})."
     )
-    if row["enabled"]:
-        get_scheduler(ctx.module).reschedule()
 
 
 @on_command("settimerlines", requires_moderator=True)
@@ -218,45 +136,31 @@ async def settimerlines(ctx: CommandContext) -> None:
         await ctx.owncast_client.send_message("Usage: !settimerlines <id|name> <count>")
         return
 
-    identifier = args[0]
-    row = await _resolve_timer(ctx, identifier)
-    if not row:
-        await ctx.owncast_client.send_message(f"Timer '{identifier}' not found.")
-        return
-
     try:
         count = int(args[1])
     except ValueError:
         await ctx.owncast_client.send_message("Line count must be a number.")
         return
 
-    if count < 0:
+    try:
+        info = await get_manager(ctx.module).set_min_chat_lines(args[0], count)
+    except TimerNotFoundError as e:
+        await ctx.owncast_client.send_message(f"Timer '{e.identifier}' not found.")
+        return
+    except NegativeLineCountError:
         await ctx.owncast_client.send_message("Line count cannot be negative.")
         return
 
-    now = datetime.now(UTC).isoformat()
-    await ctx.storage.execute(
-        "UPDATE timers SET min_chat_lines = ?, updated_at = ? WHERE id = ?",
-        (count, now, row["id"]),
-    )
-
-    display = _timer_display(row)
-    label = f"{count} line(s)" if count > 0 else "disabled"
-    ctx.logger.info(
-        f"Timer {display} min chat lines set to {count} by {ctx.user.display_name}."
-    )
+    lines = info.min_chat_lines
+    label = f"{lines} line(s)" if lines > 0 else "disabled"
     await ctx.owncast_client.send_message(
-        f"Minimum chat lines for {display} set to {label}."
+        f"Minimum chat lines for {info.display} set to {label}."
     )
-    if row["enabled"]:
-        get_scheduler(ctx.module).reschedule()
 
 
 @on_command("enabletimer", requires_moderator=True)
 async def enabletimer(ctx: CommandContext) -> None:
     """Enable a timer.
-
-    Won't enable a timer that has no message set.
 
     Usage: !enabletimer <id|name>
 
@@ -267,38 +171,24 @@ async def enabletimer(ctx: CommandContext) -> None:
         await ctx.owncast_client.send_message("Usage: !enabletimer <id|name>")
         return
 
-    identifier = args[0]
-    row = await _resolve_timer(ctx, identifier)
-    if not row:
-        await ctx.owncast_client.send_message(f"Timer '{identifier}' not found.")
+    try:
+        info = await get_manager(ctx.module).enable_timer(args[0])
+    except TimerNotFoundError as e:
+        await ctx.owncast_client.send_message(f"Timer '{e.identifier}' not found.")
         return
-
-    display = _timer_display(row)
-
-    if row["enabled"]:
-        await ctx.owncast_client.send_message(f"Timer {display} is already enabled.")
-        return
-
-    if not row["message"]:
+    except TimerAlreadyEnabledError as e:
         await ctx.owncast_client.send_message(
-            f"Cannot enable {display}: no message set. "
+            f"Timer {e.info.display} is already enabled."
+        )
+        return
+    except TimerMessageRequiredError as e:
+        await ctx.owncast_client.send_message(
+            f"Cannot enable {e.info.display}: no message set. "
             f"Use !settimermessage to set one first."
         )
         return
 
-    now = datetime.now(UTC).isoformat()
-    await ctx.storage.execute(
-        "UPDATE timers SET enabled = 1, updated_at = ? WHERE id = ?",
-        (now, row["id"]),
-    )
-
-    # Start tracking chat lines for this timer.
-    get_scheduler(ctx.module).counted_ids[row["id"]] = set()
-    ctx.logger.debug("Started chat line tracking for timer %s.", display)
-
-    ctx.logger.info(f"Timer {display} enabled by {ctx.user.display_name}.")
-    await ctx.owncast_client.send_message(f"Timer {display} enabled.")
-    get_scheduler(ctx.module).reschedule()
+    await ctx.owncast_client.send_message(f"Timer {info.display} enabled.")
 
 
 @on_command("disabletimer", requires_moderator=True)
@@ -314,31 +204,18 @@ async def disabletimer(ctx: CommandContext) -> None:
         await ctx.owncast_client.send_message("Usage: !disabletimer <id|name>")
         return
 
-    identifier = args[0]
-    row = await _resolve_timer(ctx, identifier)
-    if not row:
-        await ctx.owncast_client.send_message(f"Timer '{identifier}' not found.")
+    try:
+        info = await get_manager(ctx.module).disable_timer(args[0])
+    except TimerNotFoundError as e:
+        await ctx.owncast_client.send_message(f"Timer '{e.identifier}' not found.")
+        return
+    except TimerAlreadyDisabledError as e:
+        await ctx.owncast_client.send_message(
+            f"Timer {e.info.display} is already disabled."
+        )
         return
 
-    display = _timer_display(row)
-
-    if not row["enabled"]:
-        await ctx.owncast_client.send_message(f"Timer {display} is already disabled.")
-        return
-
-    now = datetime.now(UTC).isoformat()
-    await ctx.storage.execute(
-        "UPDATE timers SET enabled = 0, updated_at = ? WHERE id = ?",
-        (now, row["id"]),
-    )
-
-    # Stop tracking chat lines for this timer.
-    get_scheduler(ctx.module).counted_ids.pop(row["id"], None)
-    ctx.logger.debug("Stopped chat line tracking for timer %s.", display)
-
-    ctx.logger.info(f"Timer {display} disabled by {ctx.user.display_name}.")
-    await ctx.owncast_client.send_message(f"Timer {display} disabled.")
-    get_scheduler(ctx.module).reschedule()
+    await ctx.owncast_client.send_message(f"Timer {info.display} disabled.")
 
 
 @on_command("deletetimer", requires_moderator=True)
@@ -354,21 +231,13 @@ async def deletetimer(ctx: CommandContext) -> None:
         await ctx.owncast_client.send_message("Usage: !deletetimer <id|name>")
         return
 
-    identifier = args[0]
-    row = await _resolve_timer(ctx, identifier)
-    if not row:
-        await ctx.owncast_client.send_message(f"Timer '{identifier}' not found.")
+    try:
+        info = await get_manager(ctx.module).delete_timer(args[0])
+    except TimerNotFoundError as e:
+        await ctx.owncast_client.send_message(f"Timer '{e.identifier}' not found.")
         return
 
-    display = _timer_display(row)
-    await ctx.storage.execute("DELETE FROM timers WHERE id = ?", (row["id"],))
-
-    # Stop tracking chat lines.
-    get_scheduler(ctx.module).counted_ids.pop(row["id"], None)
-
-    ctx.logger.info(f"Timer {display} deleted by {ctx.user.display_name}.")
-    await ctx.owncast_client.send_message(f"Timer {display} deleted.")
-    get_scheduler(ctx.module).reschedule()
+    await ctx.owncast_client.send_message(f"Timer {info.display} deleted.")
 
 
 @on_command("listtimers", requires_moderator=True, cooldown=15)

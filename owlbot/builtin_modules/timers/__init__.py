@@ -21,8 +21,6 @@ duration intervals and cron expressions.
 
 from owlbot.api import ModuleContext, on_setup, on_teardown
 
-from .chat_counter import count_chat_message, handle_visibility_update
-
 # Re-export decorated handlers so the module loader discovers them.
 from .commands import (
     addtimer,
@@ -34,8 +32,15 @@ from .commands import (
     settimerlines,
     settimermessage,
 )
+from .events import (
+    count_chat_message,
+    handle_stream_started,
+    handle_stream_stopped,
+    handle_visibility_update,
+)
+from .manager import TimerManager
+from .repository import TimerRepository
 from .routes import timer_list_page
-from .scheduler import TimerScheduler
 
 __all__ = [
     "addtimer",
@@ -43,6 +48,8 @@ __all__ = [
     "deletetimer",
     "disabletimer",
     "enabletimer",
+    "handle_stream_started",
+    "handle_stream_stopped",
     "handle_visibility_update",
     "listtimers",
     "settimerinterval",
@@ -58,51 +65,40 @@ __all__ = [
 async def setup(ctx: ModuleContext) -> None:
     """Initialize the timers module.
 
-    Creates the database schema, initializes chat counters for enabled timers,
-    and starts the background scheduler.
+    Creates the database schema, instantiates the TimerManager, and starts
+    timers if the stream is currently live.
 
     :param ctx: Module context with config, storage, and other services.
     """
-    await ctx.storage.execute("""
-        CREATE TABLE IF NOT EXISTS timers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE,
-            message TEXT,
-            interval_value TEXT NOT NULL DEFAULT '15m',
-            interval_type TEXT NOT NULL DEFAULT 'simple',
-            min_chat_lines INTEGER NOT NULL DEFAULT 0,
-            enabled INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            last_fired_at TEXT
+    repo = TimerRepository(ctx.storage)
+    await repo.setup()
+    manager = TimerManager(ctx, repo)
+    ctx.state["manager"] = manager
+
+    try:
+        status = await ctx.owncast_client.get_status()
+        if status.get("online", False):
+            await manager.start_all()
+            ctx.logger.info("Stream is live. Timers started.")
+        else:
+            ctx.logger.info("Stream is offline. Timers will start on stream start.")
+    except Exception:
+        ctx.logger.warning(
+            "Could not check stream status. Timers will start on stream start.",
+            exc_info=True,
         )
-    """)
-
-    rows = await ctx.storage.fetch_all(
-        "SELECT id FROM timers WHERE enabled = 1 AND message IS NOT NULL"
-    )
-    timer_ids = [row["id"] for row in rows]
-
-    sched = TimerScheduler()
-    sched.init_counted_ids(timer_ids)
-    ctx.logger.debug("Initialized chat counters for timer IDs: %s", timer_ids)
-
-    count = await ctx.storage.fetch_value("SELECT COUNT(*) FROM timers")
-    ctx.logger.info(f"Loaded {count} timer(s) from database.")
-
-    sched.start(ctx)
-    ctx.state["scheduler"] = sched
 
 
 @on_teardown
 async def teardown(ctx: ModuleContext) -> None:
     """Clean up the timers module.
 
-    Stops the background scheduler task.
+    Cancels any pending offline stop and stops all running timer tasks.
 
     :param ctx: Module context.
     """
-    scheduler: TimerScheduler | None = ctx.state.get("scheduler")
-    if scheduler is not None:
-        await scheduler.stop(ctx)
-        ctx.state["scheduler"] = None
+    manager: TimerManager | None = ctx.state.get("manager")
+    if manager is not None:
+        manager.cancel_offline_stop()
+        await manager.stop_all()
+        ctx.state["manager"] = None

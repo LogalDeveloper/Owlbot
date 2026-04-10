@@ -19,12 +19,12 @@
         {% for timer in timers %}
         <tr>
             <td class="text-center">{{ timer.id }}</td>
-            <td>{{ timer.name }}</td>
-            <td>{{ timer.message }}</td>
-            <td class="text-center">{{ timer.interval }}</td>
-            <td class="text-center">{{ timer.min_lines }}</td>
-            <td class="text-center">{{ timer.status }}</td>
-            <td>{{ timer.last_fired }}</td>
+            <td>{{ timer.name or "" }}</td>
+            <td>{{ timer.message or "(not set)" }}</td>
+            <td class="text-center">{{ timer.interval_value }} ({{ timer.interval_type }})</td>
+            <td class="text-center">{{ timer.min_chat_lines }}</td>
+            <td class="text-center">{% if timer.enabled %}Enabled{% else %}Disabled{% endif %}</td>
+            <td>{% if timer.last_fired_at %}{{ timer.last_fired_at[:19] | replace("T", " ") }} UTC{% else %}Never{% endif %}</td>
         </tr>
         {% endfor %}
     </tbody>

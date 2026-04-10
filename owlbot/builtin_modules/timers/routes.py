@@ -14,11 +14,11 @@
 
 """Web routes for the timers module."""
 
-from datetime import datetime
-
 from aiohttp import web
 
 from owlbot.api import RouteContext, on_route
+
+from .manager import get_manager
 
 
 @on_route("/list", methods=["GET"])
@@ -31,33 +31,6 @@ async def timer_list_page(ctx: RouteContext) -> web.Response:
     :param ctx: The route context.
     :return: HTML response with the timer list table.
     """
-    rows = await ctx.storage.fetch_all(
-        "SELECT id, name, message, interval_type, interval_value, "
-        "min_chat_lines, enabled, last_fired_at "
-        "FROM timers ORDER BY id"
-    )
-
-    timers = []
-    for row in rows:
-        last_fired = row["last_fired_at"]
-        if last_fired:
-            last_fired = datetime.fromisoformat(last_fired).strftime(
-                "%Y-%m-%d %H:%M:%S UTC"
-            )
-        else:
-            last_fired = "Never"
-
-        timers.append(
-            {
-                "id": row["id"],
-                "name": row["name"] or "",
-                "message": row["message"] or "(not set)",
-                "interval": f"{row['interval_value']} ({row['interval_type']})",
-                "min_lines": row["min_chat_lines"],
-                "status": "Enabled" if row["enabled"] else "Disabled",
-                "last_fired": last_fired,
-            }
-        )
-
+    timers = await get_manager(ctx.module).list_timers()
     page = ctx.templates.render("list.html", timers=timers)
     return web.Response(text=page, content_type="text/html")
