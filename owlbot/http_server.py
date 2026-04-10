@@ -166,7 +166,8 @@ class HttpServer:
         # we can respond immediately. This avoids the possibility
         # of slow handlers blocking Owncast's webhook delivery.
         task: asyncio.Task[None] = asyncio.create_task(
-            self._event_dispatch(parsed_type, event)
+            self._event_dispatch(parsed_type, event),
+            name=f"Event dispatch - {parsed_type.value}",
         )
         self._pending_tasks.add(task)
         task.add_done_callback(self._pending_tasks.discard)
