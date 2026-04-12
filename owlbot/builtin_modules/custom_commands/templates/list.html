@@ -17,10 +17,10 @@
         {% for cmd in commands %}
         <tr>
             <td>{{ prefix }}{{ cmd.name }}</td>
-            <td>{{ cmd.aliases }}</td>
+            <td>{% if cmd.aliases %}{% for a in cmd.aliases | sort %}{{ prefix }}{{ a }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}None{% endif %}</td>
             <td>{{ cmd.response }}</td>
-            <td class="text-center">{{ cmd.cooldown }}</td>
-            <td class="text-center">{{ cmd.permissions }}</td>
+            <td class="text-center">{% if cmd.cooldown == 0 %}None{% else %}{{ cmd.cooldown }}s{% endif %}</td>
+            <td class="text-center">{% if cmd.requires_moderator %}Moderator{% else %}Everyone{% endif %}</td>
         </tr>
         {% endfor %}
     </tbody>

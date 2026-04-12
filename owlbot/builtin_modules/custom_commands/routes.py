@@ -18,41 +18,18 @@ from aiohttp import web
 
 from owlbot.api import RouteContext, on_route
 
+from .manager import get_manager
+
 
 @on_route("/list", methods=["GET"])
 async def command_list_page(ctx: RouteContext) -> web.Response:
     """Serve an HTML page listing all custom commands in a table.
 
-    Columns: Command, Aliases, Response, Cooldown, Permissions.
-    Accessible at /owlbot/custom_commands/list.
-
     :param ctx: The route context.
     :return: HTML response with the command list table.
     """
-    rows = await ctx.storage.fetch_all(
-        "SELECT c.name, c.response, c.requires_moderator, c.cooldown, "
-        "GROUP_CONCAT(ca.alias, ', ') AS aliases "
-        "FROM commands c "
-        "LEFT JOIN command_aliases ca ON c.name = ca.command_name "
-        "GROUP BY c.name "
-        "ORDER BY c.name"
+    commands = await get_manager(ctx.module).list_commands()
+    page = ctx.templates.render(
+        "list.html", commands=commands, prefix=ctx.commands.prefix
     )
-
-    prefix = ctx.commands.prefix
-    commands = [
-        {
-            "name": row["name"],
-            "aliases": (
-                ", ".join(f"{prefix}{a}" for a in row["aliases"].split(", "))
-                if row["aliases"]
-                else "None"
-            ),
-            "response": row["response"],
-            "permissions": "Moderator" if row["requires_moderator"] else "Everyone",
-            "cooldown": "None" if row["cooldown"] == 0 else f"{row['cooldown']}s",
-        }
-        for row in rows
-    ]
-
-    page = ctx.templates.render("list.html", commands=commands, prefix=prefix)
     return web.Response(text=page, content_type="text/html")

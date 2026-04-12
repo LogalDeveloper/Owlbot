@@ -29,6 +29,7 @@ from freezegun import freeze_time
 
 from owlbot.builtin_modules.custom_commands.placeholder_handlers import _format_duration
 from owlbot.builtin_modules.custom_commands.placeholders import process_placeholders
+from owlbot.builtin_modules.custom_commands.types import Command
 
 if TYPE_CHECKING:
     from owlbot.api.storage import ModuleStorage
@@ -38,6 +39,49 @@ CREATE_COUNTERS = (
     "name TEXT PRIMARY KEY NOT NULL, "
     "value INTEGER DEFAULT 0)"
 )
+
+
+class _StorageCounterAccessor:
+    """CounterAccessor backed by raw ModuleStorage for placeholder tests."""
+
+    def __init__(self, storage: ModuleStorage) -> None:
+        self._storage = storage
+
+    async def get_counter(self, name: str) -> int:
+        row = await self._storage.fetch_one(
+            "SELECT value FROM counters WHERE name = ?", (name,)
+        )
+        return int(row["value"]) if row else 0
+
+    async def set_counter(self, name: str, value: int) -> int:
+        result = await self._storage.fetch_value(
+            "INSERT OR REPLACE INTO counters (name, value) "
+            "VALUES (?, ?) RETURNING value",
+            (name, value),
+        )
+        return int(result)  # type: ignore[arg-type]
+
+    async def adjust_counter(self, name: str, delta: int) -> int:
+        result = await self._storage.fetch_value(
+            "INSERT INTO counters (name, value) VALUES (?, ?) "
+            "ON CONFLICT(name) DO UPDATE SET value = value + ? "
+            "RETURNING value",
+            (name, delta, delta),
+        )
+        return int(result)  # type: ignore[arg-type]
+
+
+def _make_command(use_count: int = 1) -> Command:
+    """Build a minimal Command snapshot for placeholder tests."""
+    return Command(
+        name="test",
+        response="",
+        use_count=use_count,
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        requires_moderator=False,
+        cooldown=0,
+    )
 
 
 @pytest.fixture
@@ -60,8 +104,8 @@ async def process(
         template,
         args or [],
         user,
-        use_count,
-        storage,
+        _make_command(use_count),
+        _StorageCounterAccessor(storage),
         max_depth=max_depth,
     )
 

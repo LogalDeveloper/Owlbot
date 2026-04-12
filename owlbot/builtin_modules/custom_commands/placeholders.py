@@ -46,7 +46,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from owlbot.api.storage import ModuleStorage
+    from .types import Command, CounterAccessor
 
 from .placeholder_handlers import HANDLERS, PlaceholderError
 
@@ -88,14 +88,14 @@ class PlaceholderContext:
 
     :param args_list: Command arguments (``$(1)``-``$(9)`` values).
     :param user_display_name: Display name of the invoking user.
-    :param use_count: The command's current use count.
-    :param storage: Module storage for database access.
+    :param command: Snapshot of the command being executed.
+    :param counters: Counter accessor for named counter operations.
     """
 
     args_list: list[str]
     user_display_name: str
-    use_count: int
-    storage: ModuleStorage
+    command: Command
+    counters: CounterAccessor
 
 
 # The parser uses recursive descent to convert a template string into a list
@@ -360,8 +360,8 @@ async def process_placeholders(
     template: str,
     args_list: list[str],
     user_display_name: str,
-    use_count: int,
-    storage: ModuleStorage,
+    command: Command,
+    counters: CounterAccessor,
     max_depth: int = DEFAULT_MAX_DEPTH,
 ) -> str:
     """Replace placeholders in a response template.
@@ -375,8 +375,8 @@ async def process_placeholders(
     :param template: The response template with placeholders.
     :param args_list: List of arguments passed to the command.
     :param user_display_name: The executing user's display name.
-    :param use_count: The command's current use count.
-    :param storage: Module storage for database access.
+    :param command: Snapshot of the command being executed.
+    :param counters: Counter accessor for named counter operations.
     :param max_depth: Maximum nesting depth for placeholders.
     :return: The processed response string, or the error message on failure.
     """
@@ -384,8 +384,8 @@ async def process_placeholders(
     ctx = PlaceholderContext(
         args_list=args_list,
         user_display_name=user_display_name,
-        use_count=use_count,
-        storage=storage,
+        command=command,
+        counters=counters,
     )
     try:
         return await _evaluate(nodes, ctx)

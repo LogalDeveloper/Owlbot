@@ -24,10 +24,11 @@ the entire response, discarding any other template content.
 from __future__ import annotations
 
 import random
-import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
+
+from .types import NAME_RE
 
 if TYPE_CHECKING:
     from .placeholders import PlaceholderContext
@@ -250,9 +251,6 @@ TIMEZONE_OFFSETS: dict[str, float] = {
     "YEKT": 5,
 }
 
-# Pattern for validating identifiers (command names, counter names, aliases).
-NAME_RE = re.compile(r"^[a-z0-9_]+$")
-
 
 def _parse_placeholder_date(date_str: str) -> datetime | None:
     """Parse a placeholder date string.
@@ -341,7 +339,7 @@ async def _evaluate_count(
     """``$(count)`` / ``$(count name [mod])`` -- use count or named counter."""
     if not args:
         # No arguments: return the command's use_count (backward compatible).
-        return str(ctx.use_count)
+        return str(ctx.command.use_count)
 
     # Named counter.
     counter_name = args[0].lower()
@@ -357,30 +355,16 @@ async def _evaluate_count(
             "Invalid $(count): too many arguments, expected $(count name [modifier])"
         )
 
-    if modifier_str[0] in ("+", "-"):
-        try:
-            delta = int(modifier_str)
-        except ValueError as e:
-            raise PlaceholderError(
-                "Invalid $(count): modifier must be an integer (e.g., +5, -1, 0)"
-            ) from e
-        result = await ctx.storage.fetch_value(
-            "INSERT INTO counters (name, value) VALUES (?, ?) "
-            "ON CONFLICT(name) DO UPDATE SET value = value + ? "
-            "RETURNING value",
-            (counter_name, delta, delta),
-        )
-        return str(result)
     try:
         value = int(modifier_str)
     except ValueError as e:
         raise PlaceholderError(
             "Invalid $(count): modifier must be an integer (e.g., +5, -1, 0)"
         ) from e
-    result = await ctx.storage.fetch_value(
-        "INSERT OR REPLACE INTO counters (name, value) VALUES (?, ?) RETURNING value",
-        (counter_name, value),
-    )
+    if modifier_str[0] in ("+", "-"):
+        result = await ctx.counters.adjust_counter(counter_name, value)
+    else:
+        result = await ctx.counters.set_counter(counter_name, value)
     return str(result)
 
 
@@ -402,10 +386,8 @@ async def _evaluate_getcount(
             "Invalid $(getcount): counter name may only contain "
             "letters, numbers, and underscores"
         )
-    row = await ctx.storage.fetch_one(
-        "SELECT value FROM counters WHERE name = ?", (counter_name,)
-    )
-    return str(row["value"]) if row else "0"
+    result = await ctx.counters.get_counter(counter_name)
+    return str(result)
 
 
 async def _evaluate_rand(
