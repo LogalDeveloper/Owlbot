@@ -42,6 +42,7 @@ Example AST::
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -209,7 +210,9 @@ def _parse_nodes(
     """Core recursive parser loop.
 
     Scans *template* starting at *pos*, accumulating literal characters and
-    recognising ``$(...)`` placeholder openings.
+    recognising ``$(...)`` placeholder openings.  Uses :meth:`str.find` to
+    skip over literal spans in a single C-level call rather than iterating
+    character-by-character.
 
     :param template: The full template string.
     :param pos: Current scan position.
@@ -231,22 +234,59 @@ def _parse_nodes(
             buf.clear()
 
     while pos < length:
+        # Find the next $ (potential placeholder or escape trigger) and
+        # ) (potential placeholder close) using C-level str.find to skip
+        # over literal text without per-character Python overhead.
+        dollar = template.find("$", pos)
+        close = template.find(")", pos) if inside_placeholder else -1
+
+        # Nothing special left -- rest is literal.
+        if dollar == -1 and close == -1:
+            buf.append(template[pos:])
+            pos = length
+            break
+
+        # Normalise -1 to length for min comparison.
+        d = dollar if dollar != -1 else length
+        c = close if close != -1 else length
+
+        # Closing paren before next $ -- close the current placeholder group.
+        if c < d:
+            if c > pos:
+                buf.append(template[pos:c])
+            flush_buffer()
+            return nodes, c + 1, True
+
         # Escaped placeholder: \$(...) becomes literal text.
-        if template[pos] == "\\" and template[pos + 1 : pos + 3] == "$(":
+        if (
+            dollar > 0
+            and dollar - 1 >= pos
+            and template[dollar - 1] == "\\"
+            and dollar + 1 < length
+            and template[dollar + 1] == "("
+        ):
+            # Bulk-append literal text before the backslash.
+            if dollar - 1 > pos:
+                buf.append(template[pos : dollar - 1])
             # Find the matching close paren, accounting for inner $( pairs.
-            close = _find_matching_close(template, pos + 3)
-            if close == -1:
-                # No matching close, treat everything from here as literal.
-                buf.append(template[pos:])
+            match_close = _find_matching_close(template, dollar + 2)
+            if match_close == -1:
+                # No matching close, treat everything from \ onward as literal.
+                buf.append(template[dollar - 1 :])
                 pos = length
             else:
                 # Emit the content (without the leading backslash) as literal.
-                buf.append(template[pos + 1 : close + 1])
-                pos = close + 1
+                buf.append(template[dollar : match_close + 1])
+                pos = match_close + 1
             continue
 
         # Placeholder opening: $(
-        if template[pos : pos + 2] == "$(":
+        if dollar + 1 < length and template[dollar + 1] == "(":
+            # Bulk-append literal text before the $(.
+            if dollar > pos:
+                buf.append(template[pos:dollar])
+            pos = dollar
+
             # If we've hit the nesting limit, treat $( as literal text.
             if depth >= max_depth:
                 buf.append("$(")
@@ -267,23 +307,22 @@ def _parse_nodes(
                 nodes.append(node)
             continue
 
-        # Closing paren while inside a placeholder's children.
-        if template[pos] == ")" and inside_placeholder:
-            flush_buffer()
-            return nodes, pos + 1, True
-
-        # Ordinary character: accumulate into the literal buffer.
-        buf.append(template[pos])
-        pos += 1
+        # Lone $ not followed by ( -- bulk-append up to and including it.
+        buf.append(template[pos : dollar + 1])
+        pos = dollar + 1
 
     flush_buffer()
     return nodes, pos, False
 
 
+@functools.lru_cache(maxsize=256)
 def _parse(template: str, max_depth: int = DEFAULT_MAX_DEPTH) -> list[Node]:
     """Parse a template string into an AST of ``Node`` objects.
 
-    This is the entry point for the parser stage.
+    This is the entry point for the parser stage.  Results are cached by
+    ``(template, max_depth)`` so repeated invocations of the same command
+    skip parsing entirely.  The evaluator never mutates the returned AST,
+    so sharing cached nodes across calls is safe.
 
     :param template: The response template with placeholders.
     :param max_depth: Maximum nesting depth for placeholders.  ``$(`` tokens
