@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from .cache import ChunkCache
 
 
-class ProcessingManager:
+class VideoProcessor:
     """Manages ffmpeg/ffprobe subprocess execution with concurrency control.
 
     Provides semaphore-gated methods for preview generation, clip
@@ -63,30 +63,22 @@ class ProcessingManager:
         :raises RuntimeError: If no segments are cached.
         """
         async with cache.suppress_pruning():
-            if len(cache) == 0:
-                msg = "ffmpeg: no cached segments available."
-                raise RuntimeError(msg)
             concat_string = cache.concat_protocol_string()
+            self._logger.debug(
+                "Generating preview via concat protocol -> %s.", output_path
+            )
+            await self._run_ffmpeg(
+                "-y",
+                "-i",
+                f"concat:{concat_string}",
+                "-c",
+                "copy",
+                "-movflags",
+                "+faststart",
+                str(output_path),
+            )
 
-            async with self._ffmpeg_semaphore:
-                self._logger.debug(
-                    f"Generating preview via concat protocol -> {output_path}."
-                )
-                await self._run_ffprocess(
-                    "ffmpeg",
-                    "-y",
-                    "-i",
-                    f"concat:{concat_string}",
-                    "-c",
-                    "copy",
-                    "-movflags",
-                    "+faststart",
-                    str(output_path),
-                )
-
-        async with self._ffprobe_semaphore:
-            duration = await self._probe_duration(output_path)
-
+        duration = await self._probe_duration(output_path)
         self._logger.debug("Preview generated (%.1fs).", duration)
         return duration
 
@@ -99,8 +91,8 @@ class ProcessingManager:
     ) -> float:
         """Cut a clip from a preview MP4.
 
-        Acquires the ffmpeg semaphore for the cut step, then the ffprobe
-        semaphore for the duration probe.
+        Cuts the specified time range via ffmpeg, then probes the
+        output duration via ffprobe.
 
         :param preview_path: Path to the preview MP4.
         :param output_path: Where to write the final clip MP4.
@@ -109,33 +101,29 @@ class ProcessingManager:
         :return: Duration of the created clip in seconds.
         :raises RuntimeError: If ffmpeg fails.
         """
-        async with self._ffmpeg_semaphore:
-            self._logger.debug(
-                "Cutting clip %.1f-%.1fs from %s -> %s.",
-                start,
-                end,
-                preview_path,
-                output_path,
-            )
-            await self._run_ffprocess(
-                "ffmpeg",
-                "-y",
-                "-ss",
-                str(start),
-                "-to",
-                str(end),
-                "-i",
-                str(preview_path),
-                "-c",
-                "copy",
-                "-movflags",
-                "+faststart",
-                str(output_path),
-            )
+        self._logger.debug(
+            "Cutting clip %.1f-%.1fs from %s -> %s.",
+            start,
+            end,
+            preview_path,
+            output_path,
+        )
+        await self._run_ffmpeg(
+            "-y",
+            "-ss",
+            str(start),
+            "-to",
+            str(end),
+            "-i",
+            str(preview_path),
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            str(output_path),
+        )
 
-        async with self._ffprobe_semaphore:
-            duration = await self._probe_duration(output_path)
-
+        duration = await self._probe_duration(output_path)
         self._logger.debug("Clip created (%.1fs).", duration)
         return duration
 
@@ -148,8 +136,6 @@ class ProcessingManager:
     ) -> None:
         """Extract a single frame from the middle of a clip as a WebP thumbnail.
 
-        Acquires the ffmpeg semaphore for the extraction step.
-
         :param clip_path: Path to the source MP4 clip.
         :param output_path: Where to write the output WebP image.
         :param duration: Duration of the clip in seconds (used to find midpoint).
@@ -157,38 +143,41 @@ class ProcessingManager:
         """
         midpoint = duration / 2
 
-        async with self._ffmpeg_semaphore:
-            self._logger.debug(
-                f"Generating thumbnail at {midpoint:.1f}s -> {output_path}."
-            )
-            await self._run_ffprocess(
-                "ffmpeg",
-                "-y",
-                "-ss",
-                str(midpoint),
-                "-i",
-                str(clip_path),
-                "-frames:v",
-                "1",
-                "-f",
-                "webp",
-                str(output_path),
-            )
+        self._logger.debug(
+            "Generating thumbnail at %.1fs -> %s.", midpoint, output_path
+        )
+        await self._run_ffmpeg(
+            "-y",
+            "-ss",
+            str(midpoint),
+            "-i",
+            str(clip_path),
+            "-frames:v",
+            "1",
+            "-f",
+            "webp",
+            str(output_path),
+            time_limit=30.0,
+        )
 
         self._logger.debug("Thumbnail generated: %s.", output_path)
 
     async def _run_ffprocess(
         self,
         *args: str,
+        time_limit: float,
     ) -> tuple[bytes, bytes]:
-        """Run an ffmpeg/ffprobe subprocess with cancellation safety.
+        """Run an ffmpeg/ffprobe subprocess with timeout and cancellation safety.
 
-        If the calling coroutine is cancelled (e.g. by a handler timeout),
-        the subprocess is killed before re-raising.
+        If the process exceeds *time_limit* seconds it is killed and a
+        `RuntimeError` is raised.  If the calling coroutine is cancelled
+        (e.g. by a handler timeout), the subprocess is killed before
+        re-raising.
 
         :param args: Command and arguments (e.g. "ffmpeg", "-y", ...).
+        :param time_limit: Maximum seconds to wait for the process.
         :return: Tuple of (stdout, stderr) bytes.
-        :raises RuntimeError: If the process returns non-zero.
+        :raises RuntimeError: If the process returns non-zero or times out.
         """
         proc = await asyncio.create_subprocess_exec(
             *args,
@@ -196,7 +185,14 @@ class ProcessingManager:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout, stderr = await proc.communicate()
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=time_limit
+            )
+        except TimeoutError:
+            proc.kill()
+            await proc.wait()
+            msg = f"{args[0]} timed out after {time_limit}s"
+            raise RuntimeError(msg) from None
         except asyncio.CancelledError:
             proc.kill()
             await proc.wait()
@@ -211,6 +207,36 @@ class ProcessingManager:
 
         return stdout, stderr
 
+    async def _run_ffmpeg(
+        self,
+        *args: str,
+        time_limit: float = 120.0,
+    ) -> tuple[bytes, bytes]:
+        """Run ffmpeg with semaphore gating and a timeout.
+
+        :param args: Arguments passed after ``ffmpeg``.
+        :param time_limit: Maximum seconds to wait (default 120).
+        :return: Tuple of (stdout, stderr) bytes.
+        :raises RuntimeError: If the process fails or times out.
+        """
+        async with self._ffmpeg_semaphore:
+            return await self._run_ffprocess("ffmpeg", *args, time_limit=time_limit)
+
+    async def _run_ffprobe(
+        self,
+        *args: str,
+        time_limit: float = 30.0,
+    ) -> tuple[bytes, bytes]:
+        """Run ffprobe with semaphore gating and a timeout.
+
+        :param args: Arguments passed after ``ffprobe``.
+        :param time_limit: Maximum seconds to wait (default 30).
+        :return: Tuple of (stdout, stderr) bytes.
+        :raises RuntimeError: If the process fails or times out.
+        """
+        async with self._ffprobe_semaphore:
+            return await self._run_ffprocess("ffprobe", *args, time_limit=time_limit)
+
     async def _probe_duration(
         self,
         file_path: Path,
@@ -221,8 +247,7 @@ class ProcessingManager:
         :return: Duration in seconds.
         :raises RuntimeError: If ffprobe fails.
         """
-        stdout, _ = await self._run_ffprocess(
-            "ffprobe",
+        stdout, _ = await self._run_ffprobe(
             "-v",
             "quiet",
             "-print_format",
@@ -230,6 +255,5 @@ class ProcessingManager:
             "-show_format",
             str(file_path),
         )
-
         data = orjson.loads(stdout)
         return float(data["format"]["duration"])

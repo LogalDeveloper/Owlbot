@@ -14,12 +14,12 @@
 <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
     {% for clip in clips %}
     <div class="col">
-        <a href="{{ clip.url }}" class="text-decoration-none">
+        <a href="{{ url_for('/view/' ~ clip.id) }}" class="text-decoration-none">
             <div class="card h-100">
-                <img src="{{ clip.thumbnail_url }}" class="card-img-top clip-thumb" alt="{{ clip.title }}">
+                <img src="{{ url_for('/view/' ~ clip.id ~ '/thumbnail') }}" class="card-img-top clip-thumb" alt="{{ clip.title or 'Clip #' ~ clip.id }}">
                 <div class="card-body">
-                    <h5 class="card-title">{{ clip.title }}</h5>
-                    <p class="card-text text-body-secondary">{{ clip.created_at }}</p>
+                    <h5 class="card-title">{{ clip.title or 'Clip #' ~ clip.id }}</h5>
+                    <p class="card-text text-body-secondary">{{ format_date(clip.created_at) }}</p>
                 </div>
             </div>
         </a>

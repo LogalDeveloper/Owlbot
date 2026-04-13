@@ -12,69 +12,86 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Typed state containers for the clips module."""
+"""Domain types and errors for the clips module."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import asyncio
-    from pathlib import Path
-
-    from owlbot.api import ModuleContext
-
-    from .cache import ChunkCache
-    from .processing import ProcessingManager
+    import aiosqlite
 
 
-@dataclass(slots=True)
-class EditorSession:
-    """A clip editor session."""
+@dataclass(frozen=True, slots=True)
+class Clip:
+    """Immutable snapshot of a persisted clip."""
 
-    preview_path: Path
-    work_dir: Path
-    duration: float
+    id: int
+    title: str | None
     creator: str
-    expiry_task: asyncio.Task[None] | None = None
+    created_at: str
+    duration: float | None
 
+    @classmethod
+    def from_row(cls, row: aiosqlite.Row) -> Clip:
+        """Construct a Clip from a database row.
 
-@dataclass(slots=True)
-class ModuleState:
-    """Runtime state for the clips module."""
-
-    cache: ChunkCache | None = None
-    sessions: dict[str, EditorSession] = field(default_factory=dict)
-    grace_task: asyncio.Task[None] | None = None
-    cache_task: asyncio.Task[None] | None = None
-    _manager: ProcessingManager | None = None
-
-    @property
-    def manager(self) -> ProcessingManager:
-        """Return the processing manager, raising if not yet initialized.
-
-        :return: The active ProcessingManager.
-        :raises RuntimeError: If the manager has not been set.
+        :param row: A database row with clip columns.
+        :return: A new Clip instance.
         """
-        if self._manager is None:
-            msg = "ProcessingManager is not initialized."
-            raise RuntimeError(msg)
-        return self._manager
+        return cls(
+            id=row["id"],
+            title=row["title"],
+            creator=row["creator"],
+            created_at=row["created_at"],
+            duration=row["duration"],
+        )
 
-    @manager.setter
-    def manager(self, value: ProcessingManager | None) -> None:
-        self._manager = value
+
+class ClipError(Exception):
+    """Base class for clip module domain errors."""
 
 
-def get_state(ctx: ModuleContext) -> ModuleState:
-    """Retrieve the ModuleState from the module context.
+class ClipNotFoundError(ClipError):
+    """Raised when a clip ID does not exist."""
 
-    :param ctx: The module context.
-    :return: The ModuleState instance.
-    :raises RuntimeError: If ModuleState has not been initialized.
-    """
-    state = ctx.state.get("clips")
-    if not isinstance(state, ModuleState):
-        raise RuntimeError("ModuleState is not initialized.")
-    return state
+    def __init__(self, clip_id: int) -> None:
+        """Initialize with the missing clip ID.
+
+        :param clip_id: The ID that was not found.
+        """
+        self.clip_id = clip_id
+        super().__init__(f"clip not found: {clip_id}")
+
+
+class SessionNotFoundError(ClipError):
+    """Raised when an editor session token is invalid or expired."""
+
+    def __init__(self, token: str) -> None:
+        """Initialize with the invalid session token.
+
+        :param token: The token that was not found.
+        """
+        self.token = token
+        super().__init__(f"session not found: {token}")
+
+
+class CacheUnavailableError(ClipError):
+    """No active HLS cache (stream is offline)."""
+
+
+class InsufficientCacheError(ClipError):
+    """Cache exists but does not have enough data for clipping."""
+
+
+class InvalidClipParamsError(ClipError):
+    """Raised when clip start/end/duration validation fails."""
+
+    def __init__(self, reason: str) -> None:
+        """Initialize with the validation failure reason.
+
+        :param reason: Human-readable description of why validation failed.
+        """
+        self.reason = reason
+        super().__init__(reason)
