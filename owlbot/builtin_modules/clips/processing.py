@@ -63,10 +63,10 @@ class ProcessingManager:
         :raises RuntimeError: If no segments are cached.
         """
         async with cache.suppress_pruning():
-            concat_string = cache.concat_protocol_string()
-            if not concat_string:
+            if len(cache) == 0:
                 msg = "ffmpeg: no cached segments available."
                 raise RuntimeError(msg)
+            concat_string = cache.concat_protocol_string()
 
             async with self._ffmpeg_semaphore:
                 self._logger.debug(
