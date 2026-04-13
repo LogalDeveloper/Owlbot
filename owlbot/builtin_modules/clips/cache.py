@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import AsyncIterator
 
-_SEGMENT_URI_RE = re.compile(r"stream-([A-Za-z0-9]+)-(\d+)\.(ts|m4s)$")
+_SEGMENT_URI_RE = re.compile(r"stream-([A-Za-z0-9_-]+)-(\d+)\.(ts|m4s)$")
 
 _MAX_RETRIES = 10
 _RETRY_DELAY = 3.0
