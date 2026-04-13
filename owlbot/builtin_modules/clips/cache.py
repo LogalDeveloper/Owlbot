@@ -27,6 +27,7 @@ import re
 import shutil
 import tempfile
 from contextlib import asynccontextmanager
+from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urljoin
@@ -140,7 +141,7 @@ class ChunkCache:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
-        await asyncio.to_thread(shutil.rmtree, self._cache_dir, True)
+        await asyncio.to_thread(shutil.rmtree, self._cache_dir, ignore_errors=True)
         self._sequences.clear()
 
     async def _download_segment(self, segment_url: str, seq: int) -> bool:
@@ -152,7 +153,7 @@ class ChunkCache:
         """
         try:
             async with self._http.get(segment_url) as seg_resp:
-                if seg_resp.status != 200:
+                if seg_resp.status != HTTPStatus.OK:
                     return False
                 data = await seg_resp.read()
         except asyncio.CancelledError:
@@ -177,7 +178,7 @@ class ChunkCache:
         while True:
             try:
                 async with self._http.get(self._variant_url) as resp:
-                    if resp.status != 200:
+                    if resp.status != HTTPStatus.OK:
                         self._logger.warning(
                             "Variant playlist returned HTTP %d.", resp.status
                         )
@@ -233,7 +234,7 @@ class ChunkCache:
                         oldest = min(self._sequences)
                         self._sequences.discard(oldest)
                         path = self._segment_path(oldest)
-                        await asyncio.to_thread(path.unlink, True)
+                        await asyncio.to_thread(path.unlink, missing_ok=True)
                     if len(self._sequences) < pre_prune:
                         self._logger.debug(
                             "Pruned %d segment(s). Cache: %d chunks, %.1fs total.",
@@ -245,7 +246,7 @@ class ChunkCache:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                self._logger.error("Error in HLS polling loop.", exc_info=True)
+                self._logger.exception("Error in HLS polling loop.")
 
             await asyncio.sleep(self._target_duration)
 
@@ -338,11 +339,12 @@ async def start_caching(
 
         cache.start()
         logger.info("HLS caching started. Cache dir: %s", cache_dir)
-        return cache
 
     except BaseException:
         shutil.rmtree(cache_dir, ignore_errors=True)
         raise
+    else:
+        return cache
 
 
 async def _fetch_playlist(
@@ -364,7 +366,7 @@ async def _fetch_playlist(
         exc_info = False
         try:
             async with http.get(url) as resp:
-                if resp.status != 200:
+                if resp.status != HTTPStatus.OK:
                     reason = f"HTTP {resp.status}"
                 else:
                     content = await resp.text()
@@ -409,7 +411,7 @@ async def _download_init_segment(
         exc_info = False
         try:
             async with http.get(init_url) as resp:
-                if resp.status != 200:
+                if resp.status != HTTPStatus.OK:
                     reason = f"HTTP {resp.status}"
                 else:
                     data = await resp.read()

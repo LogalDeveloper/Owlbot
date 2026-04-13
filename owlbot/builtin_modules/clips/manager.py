@@ -192,8 +192,8 @@ class ClipManager:
                 preview_path, self._cache
             )
         except Exception:
-            self._ctx.logger.error("Failed to generate clip preview.", exc_info=True)
-            await asyncio.to_thread(shutil.rmtree, work_dir, True)
+            self._ctx.logger.exception("Failed to generate clip preview.")
+            await asyncio.to_thread(shutil.rmtree, work_dir, ignore_errors=True)
             raise
 
         token = secrets.token_urlsafe(32)
@@ -303,7 +303,7 @@ class ClipManager:
                     thumbnail_path,
                     duration=actual_duration,
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001  # best-effort; clip already saved, thumbnail is optional
                 self._ctx.logger.warning(
                     "Thumbnail generation failed for clip %d.",
                     clip.id,
@@ -311,14 +311,12 @@ class ClipManager:
                 )
                 thumbnail_path.unlink(missing_ok=True)
 
-            return clip
-
         except Exception:
             # Clean up partial state to avoid orphaned DB rows or files.
             if clip_id is not None:
                 try:
                     await self._repo.delete(clip_id)
-                except Exception:
+                except Exception:  # noqa: BLE001  # last-resort; cleanup itself failed, just log it
                     self._ctx.logger.warning(
                         "Failed to clean up DB row for clip %d.",
                         clip_id,
@@ -327,8 +325,10 @@ class ClipManager:
             if clip_path is not None:
                 clip_path.unlink(missing_ok=True)
             raise
+        else:
+            return clip
         finally:
-            await asyncio.to_thread(shutil.rmtree, session.work_dir, True)
+            await asyncio.to_thread(shutil.rmtree, session.work_dir, ignore_errors=True)
 
     async def cleanup_session(self, token: str) -> None:
         """Remove a session and clean up its working directory.
@@ -339,7 +339,7 @@ class ClipManager:
         if session is not None:
             if session.expiry_task is not None:
                 session.expiry_task.cancel()
-            await asyncio.to_thread(shutil.rmtree, session.work_dir, True)
+            await asyncio.to_thread(shutil.rmtree, session.work_dir, ignore_errors=True)
 
     async def start_caching(self) -> None:
         """Start HLS caching from the Owncast stream.
@@ -357,7 +357,7 @@ class ClipManager:
                 logger=self._ctx.logger,
             )
         except Exception:
-            self._ctx.logger.error("Failed to start HLS caching.", exc_info=True)
+            self._ctx.logger.exception("Failed to start HLS caching.")
 
     async def stop_caching(self) -> None:
         """Stop HLS caching and clean up cached files."""
@@ -434,5 +434,5 @@ def get_manager(ctx: ModuleContext) -> ClipManager:
     manager = ctx.state.get("manager")
     if not isinstance(manager, ClipManager):
         msg = "ClipManager is not initialized."
-        raise RuntimeError(msg)
+        raise RuntimeError(msg)  # noqa: TRY004  # state error, not a type error
     return manager

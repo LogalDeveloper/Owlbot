@@ -75,7 +75,8 @@ def on_event(
     def decorator(func: EventHandler) -> EventHandler:
         # Mark the function with event info for deferred registration.
         # The module loader will scan for this attribute and register handlers.
-        func._owlbot_event = EventMark(  # type: ignore[attr-defined]
+        # Framework decorator marker; private to module authors.
+        func._owlbot_event = EventMark(  # type: ignore[attr-defined]  # noqa: SLF001
             event_types=event_types, priority=priority
         )
         return func

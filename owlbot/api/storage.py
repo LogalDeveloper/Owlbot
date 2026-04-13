@@ -22,7 +22,7 @@ import contextvars
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 import aiosqlite
 
@@ -53,7 +53,7 @@ class ModuleStorage:
     unit.
     """
 
-    def __init__(self, storage_dir: Path | None, module_name: str):
+    def __init__(self, storage_dir: Path | None, module_name: str) -> None:
         """Initialize the storage API.
 
         :param storage_dir: Directory where module databases are stored.
@@ -71,7 +71,7 @@ class ModuleStorage:
         )
         self._logger = logging.getLogger(f"owlbot.modules.{module_name}.storage")
 
-    async def __aenter__(self) -> ModuleStorage:
+    async def __aenter__(self) -> Self:
         """Enter an async context manager that closes the storage on exit.
 
         Enables ``async with ModuleStorage(...) as s:`` for scoped usage
@@ -141,13 +141,11 @@ class ModuleStorage:
         :raises StorageError: If execution fails.
         """
         async with self._connection() as conn:
-            self._logger.debug(
-                "Execute: %s%s", sql[:80], "..." if len(sql) > 80 else ""
-            )
+            self._logger.debug("Execute: %s", sql)
             try:
                 return await conn.execute(sql, parameters)
             except aiosqlite.Error as e:
-                self._logger.error(f"SQL error: {e}")
+                self._logger.exception("SQL error.")
                 raise StorageError(f"SQL execution failed: {e}") from e
 
     async def execute_many(
@@ -166,15 +164,14 @@ class ModuleStorage:
         """
         async with self._connection() as conn:
             self._logger.debug(
-                "Execute many (%d rows): %s%s",
+                "Execute many (%d rows): %s",
                 len(parameters),
-                sql[:80],
-                "..." if len(sql) > 80 else "",
+                sql,
             )
             try:
                 return await conn.executemany(sql, parameters)
             except aiosqlite.Error as e:
-                self._logger.error(f"SQL error in executemany: {e}")
+                self._logger.exception("SQL error in executemany.")
                 raise StorageError(f"SQL execution failed: {e}") from e
 
     async def fetch_one(
@@ -191,14 +188,12 @@ class ModuleStorage:
         :raises StorageError: If execution fails.
         """
         async with self._connection() as conn:
-            self._logger.debug(
-                "Fetch one: %s%s", sql[:80], "..." if len(sql) > 80 else ""
-            )
+            self._logger.debug("Fetch one: %s", sql)
             try:
                 cursor = await conn.execute(sql, parameters)
                 return await cursor.fetchone()
             except aiosqlite.Error as e:
-                self._logger.error(f"SQL error: {e}")
+                self._logger.exception("SQL error.")
                 raise StorageError(f"SQL fetch failed: {e}") from e
 
     async def fetch_all(
@@ -215,14 +210,12 @@ class ModuleStorage:
         :raises StorageError: If execution fails.
         """
         async with self._connection() as conn:
-            self._logger.debug(
-                "Fetch all: %s%s", sql[:80], "..." if len(sql) > 80 else ""
-            )
+            self._logger.debug("Fetch all: %s", sql)
             try:
                 cursor = await conn.execute(sql, parameters)
                 return list(await cursor.fetchall())
             except aiosqlite.Error as e:
-                self._logger.error(f"SQL error: {e}")
+                self._logger.exception("SQL error.")
                 raise StorageError(f"SQL fetch failed: {e}") from e
 
     async def fetch_value(
@@ -264,7 +257,7 @@ class ModuleStorage:
                 await asyncio.shield(conn.close())
             raise
         self._conn = conn
-        self._logger.info(f"Database opened at: {self._db_path}")
+        self._logger.info("Database opened at: %s", self._db_path)
         return conn
 
     @asynccontextmanager

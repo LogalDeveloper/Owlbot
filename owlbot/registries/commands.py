@@ -26,15 +26,16 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, cast
 
-from ..api.commands import CommandEvent, CommandHandler, CommandInfo, CommandMark
-from ..api.context import CommandContext, EventContext
-from ..api.event_types import ChatEvent
+from owlbot._version import __version__
+from owlbot.api.commands import CommandEvent, CommandHandler, CommandInfo, CommandMark
+from owlbot.api.context import CommandContext, EventContext
+from owlbot.api.event_types import ChatEvent
 
 if TYPE_CHECKING:
     from types import ModuleType
 
-    from ..api.context import ModuleContext
-    from ..api.owncast_client import OwncastClient
+    from owlbot.api.context import ModuleContext
+    from owlbot.api.owncast_client import OwncastClient
 
 type BuiltinCommandHandler = Callable[[ChatEvent, "OwncastClient"], Awaitable[None]]
 
@@ -72,7 +73,7 @@ class CommandRegistry:
         aliases: list[str] | tuple[str, ...] | None = None,
         requires_authenticated: bool = False,
         requires_moderator: bool = False,
-        cooldown: int | float = 0,
+        cooldown: int = 0,
         module_name: str,
     ) -> None:
         """Register a command handler.
@@ -317,7 +318,7 @@ class CommandDispatcher:
         aliases: list[str] | tuple[str, ...] | None = None,
         requires_authenticated: bool = False,
         requires_moderator: bool = False,
-        cooldown: int | float = 0,
+        cooldown: int = 0,
         module_name: str,
     ) -> None:
         """Register a command handler.
@@ -438,14 +439,17 @@ class CommandDispatcher:
         user = event.user
 
         logger.info(
-            f"Command '{command_info.name}' invoked by {user.display_name}"
-            f" with args: {args!r}"
+            "Command '%s' invoked by %s with args: %r",
+            command_info.name,
+            user.display_name,
+            args,
         )
 
         if command_info.requires_authenticated and not user.is_authenticated:
             logger.info(
-                f"Command '{command_name}' denied for {user.display_name}: "
-                "authentication required"
+                "Command '%s' denied for %s: authentication required",
+                command_name,
+                user.display_name,
             )
             await self._owncast_client.send_system_message_to_client(
                 event.client_id,
@@ -455,8 +459,9 @@ class CommandDispatcher:
 
         if command_info.requires_moderator and not user.is_moderator:
             logger.info(
-                f"Command '{command_name}' denied for {user.display_name}: "
-                "moderator required"
+                "Command '%s' denied for %s: moderator required",
+                command_name,
+                user.display_name,
             )
             await self._owncast_client.send_system_message_to_client(
                 event.client_id,
@@ -470,8 +475,10 @@ class CommandDispatcher:
             if last is not None and now - last < command_info.cooldown:
                 remaining = math.ceil(command_info.cooldown - (now - last))
                 logger.info(
-                    f"Command '{command_name}' denied for {user.display_name}: "
-                    f"on cooldown ({remaining}s remaining)"
+                    "Command '%s' denied for %s: on cooldown (%ds remaining)",
+                    command_name,
+                    user.display_name,
+                    remaining,
                 )
                 await self._owncast_client.send_system_message_to_client(
                     event.client_id,
@@ -501,12 +508,14 @@ class CommandDispatcher:
                 )
             except TimeoutError:
                 logger.warning(
-                    f"Built-in command '{command_info.name}' "
-                    f"cancelled after {self._handler_timeout}s timeout."
+                    "Built-in command '%s' cancelled after %ss timeout.",
+                    command_info.name,
+                    self._handler_timeout,
                 )
-            except Exception as e:
+            except Exception:
                 logger.exception(
-                    f"Built-in command '{command_info.name}' raised exception: {e}"
+                    "Built-in command '%s' raised exception.",
+                    command_info.name,
                 )
             return
 
@@ -544,26 +553,25 @@ class CommandDispatcher:
             )
         except TimeoutError:
             logger.warning(
-                f"Command handler '{command_info.name}' "
-                f"from module '{command_info.module_name}' "
-                f"cancelled after "
-                f"{self._handler_timeout}s timeout."
+                "Command handler '%s' from module '%s' cancelled after %ss timeout.",
+                command_info.name,
+                command_info.module_name,
+                self._handler_timeout,
             )
-        except Exception as e:
+        except Exception:
             logger.exception(
-                f"Command handler '{command_info.name}' "
-                f"from module '{command_info.module_name}' "
-                f"raised exception: {e}"
+                "Command handler '%s' from module '%s' raised exception.",
+                command_info.name,
+                command_info.module_name,
             )
 
     def _register_builtin_commands(self) -> None:
         """Register all built-in commands."""
-        from .._version import __version__
-
         loaded_modules = self._loaded_modules
 
         async def about_with_modules(
-            event: ChatEvent, owncast_client: OwncastClient
+            event: ChatEvent,  # noqa: ARG001  # required by builtin handler signature
+            owncast_client: OwncastClient,
         ) -> None:
             module_count = len(loaded_modules)
             module_list = (
@@ -612,7 +620,7 @@ class ModuleCommands:
         aliases: list[str] | tuple[str, ...] | None = None,
         requires_authenticated: bool = False,
         requires_moderator: bool = False,
-        cooldown: int | float = 0,
+        cooldown: int = 0,
     ) -> None:
         """Register a command handler for this module.
 

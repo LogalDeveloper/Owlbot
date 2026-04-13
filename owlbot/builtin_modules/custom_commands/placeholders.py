@@ -204,6 +204,7 @@ def _parse_nodes(
     template: str,
     pos: int,
     depth: int,
+    *,
     inside_placeholder: bool,
     max_depth: int,
 ) -> tuple[list[Node], int, bool]:

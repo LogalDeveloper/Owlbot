@@ -33,9 +33,9 @@ This package provides all the APIs modules use to interact with Owlbot:
 
 # Event types and dataclasses (pure data).
 # Module-scoped service wrappers (re-exported from registries).
-from ..registries.commands import ModuleCommands
-from ..registries.events import ModuleEvents
-from ..registries.routes import ModuleRoutes
+from owlbot.registries.commands import ModuleCommands
+from owlbot.registries.events import ModuleEvents
+from owlbot.registries.routes import ModuleRoutes
 
 # Command system (module-facing).
 from .commands import (

@@ -26,9 +26,9 @@ import time
 from collections import defaultdict
 from typing import TYPE_CHECKING, NamedTuple, cast
 
-from ..api.context import EventContext, PropagationState
-from ..api.event_types import ChatEvent, Event, EventType, log_event
-from ..api.events import EventHandler, EventMark, Priority
+from owlbot.api.context import EventContext, PropagationState
+from owlbot.api.event_types import ChatEvent, Event, EventType, log_event
+from owlbot.api.events import EventHandler, EventMark, Priority
 
 
 class HandlerEntry(NamedTuple):
@@ -45,7 +45,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from types import ModuleType
 
-    from ..api.context import ModuleContext
+    from owlbot.api.context import ModuleContext
 
 logger = logging.getLogger("owlbot.events")
 
@@ -344,9 +344,7 @@ class EventDispatcher:
                     )
                     break
 
-                await self._call_handler(
-                    handler, event, event_type, module_name, propagation
-                )
+                await self._call_handler(handler, event, module_name, propagation)
         else:
             logger.debug("No handlers registered for event type: %s", event_type)
 
@@ -362,14 +360,13 @@ class EventDispatcher:
             else:
                 try:
                     await self._command_dispatch(event)
-                except Exception as e:
-                    logger.exception(f"Command dispatch failed: {e}")
+                except Exception:
+                    logger.exception("Command dispatch failed.")
 
     async def _call_handler(
         self,
         handler: EventHandler,
         event: Event,
-        event_type: EventType,
         module_name: str,
         propagation: PropagationState,
     ) -> None:
@@ -377,7 +374,6 @@ class EventDispatcher:
 
         :param handler: The handler function to call.
         :param event: The event to pass to the handler.
-        :param event_type: The type of event being dispatched.
         :param module_name: The module that owns this handler.
         :param propagation: Shared propagation state for this dispatch cycle.
         """
@@ -400,13 +396,16 @@ class EventDispatcher:
             logger.debug("Handler '%s' completed in %.1fms.", handler_name, elapsed)
         except TimeoutError:
             logger.warning(
-                f"Handler '{handler_name}' from module '{module_name}' "
-                f"cancelled after {self._handler_timeout}s timeout."
+                "Handler '%s' from module '%s' cancelled after %ss timeout.",
+                handler_name,
+                module_name,
+                self._handler_timeout,
             )
-        except Exception as e:
+        except Exception:
             logger.exception(
-                f"Handler '{handler_name}' from module "
-                f"'{module_name}' raised exception: {e}"
+                "Handler '%s' from module '%s' raised exception.",
+                handler_name,
+                module_name,
             )
 
 

@@ -63,7 +63,7 @@ class Config:
         self,
         config_path: str | Path = "config.yaml",
         overrides: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         """Initialize the configuration manager.
 
         :param config_path: Path to the YAML config file.
@@ -340,13 +340,13 @@ class Config:
             try:
                 with self.config_path.open() as f:
                     self._data = _yaml.load(f) or {}
-            except YAMLError as e:
-                logger.error(f"Failed to parse config file: {e}")
+            except YAMLError:
+                logger.exception("Failed to parse config file.")
                 raise
-            except OSError as e:
-                logger.error(f"Failed to read config file: {e}")
+            except OSError:
+                logger.exception("Failed to read config file.")
                 raise
-            logger.info(f"Configuration loaded from: {self.config_path.absolute()}")
+            logger.info("Configuration loaded from: %s", self.config_path.absolute())
         else:
             raise FileNotFoundError(f"Config file not found: {self.config_path}")
 
@@ -403,13 +403,13 @@ class Config:
         try:
             with self.config_path.open("w") as f:
                 _yaml.dump(self._data, f)
-        except YAMLError as e:
-            logger.error(f"Failed to serialize config data: {e}")
+        except YAMLError:
+            logger.exception("Failed to serialize config data.")
             raise
-        except OSError as e:
-            logger.error(f"Failed to write config file: {e}")
+        except OSError:
+            logger.exception("Failed to write config file.")
             raise
-        logger.info(f"Configuration saved to: {self.config_path.absolute()}")
+        logger.info("Configuration saved to: %s", self.config_path.absolute())
 
     def is_module_enabled(self, module_name: str) -> bool:
         """Check if a module is enabled.
@@ -505,7 +505,7 @@ class Config:
 class ModuleConfig:
     """Pre-scoped configuration for a specific module."""
 
-    def __init__(self, config: Config, module_name: str):
+    def __init__(self, config: Config, module_name: str) -> None:
         """Initialize a module-scoped configuration.
 
         :param config: The parent Config object.

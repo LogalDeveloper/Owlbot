@@ -30,9 +30,10 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from aiohttp import web
 
-    from ..registries.commands import ModuleCommands
-    from ..registries.events import ModuleEvents
-    from ..registries.routes import ModuleRoutes
+    from owlbot.registries.commands import ModuleCommands
+    from owlbot.registries.events import ModuleEvents
+    from owlbot.registries.routes import ModuleRoutes
+
     from .commands import CommandEvent
     from .config import ModuleConfig
     from .event_types import ChatEvent, User

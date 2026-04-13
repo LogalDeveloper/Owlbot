@@ -52,7 +52,7 @@ class _StubOwncastClient:
         self.sent: list[str] = []
         self._fail = fail
 
-    async def send_message(self, body: str, *, unsanitized: bool = False) -> str:
+    async def send_message(self, body: str, **_kwargs: bool) -> str:
         """Record *body* or raise if configured to fail."""
         if self._fail:
             raise RuntimeError("network error")

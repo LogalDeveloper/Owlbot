@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
@@ -52,7 +53,7 @@ def _extract_error(text: str) -> str:
 class OwncastError(Exception):
     """Raised when an Owncast API request fails."""
 
-    def __init__(self, status: int, message: str):
+    def __init__(self, status: int, message: str) -> None:
         """Initialize the error.
 
         :param status: HTTP status code from the failed request, or 0 if the
@@ -71,7 +72,9 @@ class OwncastClient:
     transport, with per-request Bearer token authentication.
     """
 
-    def __init__(self, base_url: str, access_token: str, http_client: HttpClient):
+    def __init__(
+        self, base_url: str, access_token: str, http_client: HttpClient
+    ) -> None:
         """Initialize the Owncast client.
 
         :param base_url: The Owncast server URL (e.g., "https://stream.logal.dev").
@@ -118,7 +121,7 @@ class OwncastClient:
         """
         if not unsanitized:
             body = str(_escape_html(body))
-        self._logger.info(f"Sending chat message: {body}")
+        self._logger.info("Sending chat message: %s", body)
         return await self._post("/api/integrations/chat/send", {"body": body})
 
     async def send_system_message(self, body: str, *, unsanitized: bool = False) -> str:
@@ -136,7 +139,7 @@ class OwncastClient:
         """
         if not unsanitized:
             body = str(_escape_html(body))
-        self._logger.info(f"Sending system message: {body}")
+        self._logger.info("Sending system message: %s", body)
         return await self._post("/api/integrations/chat/system", {"body": body})
 
     async def send_action(self, body: str, *, unsanitized: bool = False) -> str:
@@ -154,7 +157,7 @@ class OwncastClient:
         """
         if not unsanitized:
             body = str(_escape_html(body))
-        self._logger.info(f"Sending action: {body}")
+        self._logger.info("Sending action: %s", body)
         return await self._post("/api/integrations/chat/action", {"body": body})
 
     async def send_system_message_to_client(
@@ -175,13 +178,13 @@ class OwncastClient:
         """
         if not unsanitized:
             body = str(_escape_html(body))
-        self._logger.info(f"Sending system message to client {client_id}: {body}")
+        self._logger.info("Sending system message to client %d: %s", client_id, body)
         return await self._post(
             f"/api/integrations/chat/system/client/{client_id}", {"body": body}
         )
 
     async def set_message_visibility(
-        self, message_ids: list[str], visible: bool
+        self, message_ids: list[str], *, visible: bool
     ) -> str:
         """Hide or show chat messages (moderation).
 
@@ -194,7 +197,7 @@ class OwncastClient:
         """
         action = "Showing" if visible else "Hiding"
         ids = ", ".join(message_ids)
-        self._logger.info(f"{action} {len(message_ids)} message(s): {ids}")
+        self._logger.info("%s %d message(s): %s", action, len(message_ids), ids)
         return await self._post(
             "/api/integrations/chat/messagevisibility",
             {"idArray": message_ids, "visible": visible},
@@ -222,7 +225,7 @@ class OwncastClient:
         :param title: The new stream title.
         :return: Success message from the server.
         """
-        self._logger.info(f"Setting stream title: {title}")
+        self._logger.info("Setting stream title: %s", title)
         return await self._post("/api/integrations/streamtitle", {"value": title})
 
     async def _post(self, endpoint: str, data: dict[str, Any] | None = None) -> str:
@@ -246,11 +249,11 @@ class OwncastClient:
                 auth=self._auth,
                 allow_redirects=False,
             ) as response:
-                if response.status >= 400:
+                if response.status >= HTTPStatus.BAD_REQUEST:
                     text = await response.text()
                     message = _extract_error(text)
                     self._logger.error(
-                        f"Error {response.status} on POST {endpoint}: {message}"
+                        "Error %d on POST %s: %s", response.status, endpoint, message
                     )
                     raise OwncastError(response.status, message)
                 self._logger.debug("POST %s -> %d", endpoint, response.status)
@@ -259,32 +262,36 @@ class OwncastClient:
                         result = await response.json(loads=orjson.loads)
                     except (ValueError, ContentTypeError):
                         text = await response.text()
-                        self._logger.error(f"Invalid JSON on POST {endpoint}: {text}")
+                        self._logger.exception(
+                            "Invalid JSON on POST %s: %s", endpoint, text
+                        )
                         raise OwncastError(response.status, text) from None
                     if isinstance(result, dict):
                         # Is there an error field? Owncast returns
                         # {"error": "..."} for internal errors.
                         if "error" in result:
                             self._logger.error(
-                                f"Error on POST {endpoint}: {result['error']}"
+                                "Error on POST %s: %s", endpoint, result["error"]
                             )
                             raise OwncastError(response.status, result["error"])
                         # Does the success flag indicate failure?
                         if "success" in result and not result["success"]:
                             message = result.get("message", "unknown error")
-                            self._logger.error(f"Error on POST {endpoint}: {message}")
+                            self._logger.error(
+                                "Error on POST %s: %s", endpoint, message
+                            )
                             raise OwncastError(response.status, message)
                         # Is this a simple success response? Extract the message.
                         if "success" in result:
                             return str(result.get("message", ""))
                     # Unknown response shape from Owncast.
                     self._logger.warning(
-                        f"Unknown response on POST {endpoint}: {result}"
+                        "Unknown response on POST %s: %s", endpoint, result
                     )
                     return ""
                 return ""
         except aiohttp.ClientError as e:
-            self._logger.error(f"Connection error on POST {endpoint}: {e}")
+            self._logger.exception("Connection error on POST %s.", endpoint)
             raise OwncastError(0, str(e)) from e
 
     async def _get(self, endpoint: str, params: dict[str, Any] | None = None) -> Any:
@@ -305,11 +312,11 @@ class OwncastClient:
                 auth=self._auth,
                 allow_redirects=False,
             ) as response:
-                if response.status >= 400:
+                if response.status >= HTTPStatus.BAD_REQUEST:
                     text = await response.text()
                     message = _extract_error(text)
                     self._logger.error(
-                        f"Error {response.status} on GET {endpoint}: {message}"
+                        "Error %d on GET %s: %s", response.status, endpoint, message
                     )
                     raise OwncastError(response.status, message)
                 self._logger.debug("GET %s -> %d", endpoint, response.status)
@@ -317,14 +324,14 @@ class OwncastClient:
                     result = await response.json(loads=orjson.loads)
                 except (ValueError, ContentTypeError):
                     text = await response.text()
-                    self._logger.error(f"Invalid JSON on GET {endpoint}: {text}")
+                    self._logger.exception("Invalid JSON on GET %s: %s", endpoint, text)
                     raise OwncastError(response.status, text) from None
                 # Is there an error field? Owncast returns
                 # {"error": "..."} for internal errors.
                 if isinstance(result, dict) and "error" in result:
-                    self._logger.error(f"Error on GET {endpoint}: {result['error']}")
+                    self._logger.error("Error on GET %s: %s", endpoint, result["error"])
                     raise OwncastError(response.status, result["error"])
                 return result
         except aiohttp.ClientError as e:
-            self._logger.error(f"Connection error on GET {endpoint}: {e}")
+            self._logger.exception("Connection error on GET %s.", endpoint)
             raise OwncastError(0, str(e)) from e

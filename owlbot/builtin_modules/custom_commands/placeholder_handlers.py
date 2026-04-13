@@ -262,7 +262,7 @@ def _parse_placeholder_date(date_str: str) -> datetime | None:
     """
     # Split off the timezone abbreviation (last token).
     parts = date_str.rsplit(maxsplit=1)
-    if len(parts) != 2:
+    if len(parts) != 2:  # noqa: PLR2004  # just checking argument count
         return None
 
     date_part, tz_abbrev = parts
@@ -321,7 +321,7 @@ async def _evaluate_arg(
 
 
 async def _evaluate_user(
-    name: str,
+    name: str,  # noqa: ARG001  # required by placeholder handler signature
     args: list[str],
     ctx: PlaceholderContext,
 ) -> str:
@@ -332,7 +332,7 @@ async def _evaluate_user(
 
 
 async def _evaluate_count(
-    name: str,
+    name: str,  # noqa: ARG001  # required by placeholder handler signature
     args: list[str],
     ctx: PlaceholderContext,
 ) -> str:
@@ -350,7 +350,7 @@ async def _evaluate_count(
         )
     modifier_str = args[1] if len(args) > 1 else "+1"
 
-    if len(args) > 2:
+    if len(args) > 2:  # noqa: PLR2004  # just checking argument count
         raise PlaceholderError(
             "Invalid $(count): too many arguments, expected $(count name [modifier])"
         )
@@ -369,7 +369,7 @@ async def _evaluate_count(
 
 
 async def _evaluate_getcount(
-    name: str,
+    name: str,  # noqa: ARG001  # required by placeholder handler signature
     args: list[str],
     ctx: PlaceholderContext,
 ) -> str:
@@ -391,16 +391,16 @@ async def _evaluate_getcount(
 
 
 async def _evaluate_rand(
-    name: str,
+    name: str,  # noqa: ARG001  # required by placeholder handler signature
     args: list[str],
-    ctx: PlaceholderContext,
+    ctx: PlaceholderContext,  # noqa: ARG001  # required by placeholder handler signature
 ) -> str:
     """``$(rand start stop)`` -- random integer in range."""
-    if len(args) < 2:
+    if len(args) < 2:  # noqa: PLR2004  # just checking argument count
         raise PlaceholderError(
             "Invalid $(rand): too few arguments, expected $(rand start stop)"
         )
-    if len(args) > 2:
+    if len(args) > 2:  # noqa: PLR2004  # just checking argument count
         raise PlaceholderError(
             "Invalid $(rand): too many arguments, expected $(rand start stop)"
         )
@@ -411,13 +411,13 @@ async def _evaluate_rand(
         raise PlaceholderError(
             "Invalid $(rand): arguments must be integers, e.g., $(rand 1 100)"
         ) from e
-    return str(random.randint(min(start, stop), max(start, stop)))  # noqa: S311
+    return str(random.randint(min(start, stop), max(start, stop)))  # noqa: S311  # not security-sensitive; chat command RNG
 
 
 async def _evaluate_countdown(
     name: str,
     args: list[str],
-    ctx: PlaceholderContext,
+    ctx: PlaceholderContext,  # noqa: ARG001  # required by placeholder handler signature
 ) -> str:
     """``$(countdown date)`` / ``$(countup date)`` -- time delta."""
     date_str = " ".join(args)

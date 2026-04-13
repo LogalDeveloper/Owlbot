@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from . import builtin_modules
 from .api.config import Config, ModuleConfig
 from .api.context import ModuleContext
 from .api.owncast_admin_client import OwncastAdminClient
@@ -56,7 +57,7 @@ class ModuleLoader:
         modules_dir: str | Path,
         config: Config,
         http_client: HttpClient,
-    ):
+    ) -> None:
         """Initialize the module loader.
 
         :param modules_dir: Path to the user modules directory.
@@ -105,7 +106,8 @@ class ModuleLoader:
         self._core_template_dir = Path(__file__).resolve().parent / "templates"
 
         logger.debug(
-            f"ModuleLoader initialized (user modules directory: {self.modules_dir})"
+            "ModuleLoader initialized (user modules directory: %s)",
+            self.modules_dir,
         )
 
     def get_module_context(self, module_name: str) -> ModuleContext | None:
@@ -146,15 +148,16 @@ class ModuleLoader:
         reserved = user_names & RESERVED_MODULE_NAMES
         for name in sorted(reserved):
             logger.warning(
-                f"User module '{name}' uses a reserved name and will be skipped."
+                "User module '%s' uses a reserved name and will be skipped.", name
             )
         user_names -= reserved
 
         overrides = user_names & BUILTIN_MODULE_NAMES
         for name in sorted(overrides):
             logger.info(
-                f"User module '{name}' found; built-in module of "
-                f"the same name will be skipped."
+                "User module '%s' found; built-in module of "
+                "the same name will be skipped.",
+                name,
             )
 
         merged = BUILTIN_MODULE_NAMES | user_names
@@ -162,9 +165,11 @@ class ModuleLoader:
         builtin_count = len(BUILTIN_MODULE_NAMES - user_names)
         user_count = len(user_names)
         logger.info(
-            f"Discovered {len(modules)} module(s) "
-            f"({builtin_count} built-in, {user_count} user): "
-            f"{', '.join(modules) if modules else 'none'}"
+            "Discovered %d module(s) (%d built-in, %d user): %s",
+            len(modules),
+            builtin_count,
+            user_count,
+            ", ".join(modules) if modules else "none",
         )
         return modules
 
@@ -200,7 +205,7 @@ class ModuleLoader:
 
         if found:
             logger.debug(
-                f"Found {len(found)} user module(s): {', '.join(sorted(found))}"
+                "Found %d user module(s): %s", len(found), ", ".join(sorted(found))
             )
         return found
 
@@ -220,7 +225,7 @@ class ModuleLoader:
         :return: Names of successfully loaded modules.
         """
         discovered = self.discover_module_names()
-        logger.info(f"Loading {len(discovered)} module(s)...")
+        logger.info("Loading %d module(s)...", len(discovered))
 
         imported: list[str] = []
         loaded: list[str] = []
@@ -236,21 +241,21 @@ class ModuleLoader:
                 if "disabled in config" in str(e):
                     disabled_count += 1
                 else:
-                    logger.error(str(e))
+                    logger.exception("Module import failed.")
                     failed_count += 1
 
         # Phase 2: Run @on_setup hooks for each imported module.
         logger.debug(
-            f"Import phase complete ({len(imported)} imported). "
-            f"Running setup handlers..."
+            "Import phase complete (%d imported). Running setup handlers...",
+            len(imported),
         )
         for module_name in imported:
             try:
                 await self._run_module_setup(module_name)
                 loaded.append(module_name)
-                logger.info(f"Loaded module '{module_name}'.")
-            except ModuleLoadError as e:
-                logger.error(str(e))
+                logger.info("Loaded module '%s'.", module_name)
+            except ModuleLoadError:
+                logger.exception("Module setup failed.")
                 failed_count += 1
 
         parts = [f"{len(loaded)} loaded"]
@@ -258,7 +263,7 @@ class ModuleLoader:
             parts.append(f"{disabled_count} disabled")
         if failed_count:
             parts.append(f"{failed_count} failed")
-        logger.info(f"Module loading complete: {', '.join(parts)}")
+        logger.info("Module loading complete: %s", ", ".join(parts))
         return loaded
 
     async def load_module(self, module_name: str, *, _run_setup: bool = True) -> None:
@@ -346,7 +351,7 @@ class ModuleLoader:
 
             if _run_setup:
                 await self._run_module_setup(module_name)
-                logger.info(f"Loaded module '{module_name}'.")
+                logger.info("Loaded module '%s'.", module_name)
             else:
                 logger.debug("Imported module '%s' (setup deferred).", module_name)
 
@@ -357,11 +362,13 @@ class ModuleLoader:
             cleanup_ctx = self._module_contexts.get(module_name)
             if cleanup_ctx:
                 try:
-                    await cleanup_ctx.storage._close()
-                except Exception as close_err:
-                    logger.error(
-                        f"Failed to close storage for module '{module_name}' "
-                        f"during load error cleanup: {close_err}"
+                    # Framework lifecycle; private to module authors.
+                    await cleanup_ctx.storage._close()  # noqa: SLF001
+                except Exception:
+                    logger.exception(
+                        "Failed to close storage for module '%s' "
+                        "during load error cleanup.",
+                        module_name,
                     )
             self._cleanup_module(module_name)
             raise ModuleLoadError(f"Failed to load module '{module_name}': {e}") from e
@@ -374,7 +381,7 @@ class ModuleLoader:
         """
         logger.debug("Unloading module '%s'", module_name)
         if module_name not in self.loaded_modules:
-            logger.warning(f"Cannot unload '{module_name}': not loaded")
+            logger.warning("Cannot unload '%s': not loaded", module_name)
             return False
 
         module_ctx = self._module_contexts.get(module_name)
@@ -391,21 +398,22 @@ class ModuleLoader:
                     logger.debug("Running @on_teardown for module: %s", module_name)
                     await teardown_func(module_ctx)
                     logger.debug("Teardown completed for module: %s", module_name)
-                except Exception as e:
-                    logger.exception(f"Teardown failed for module '{module_name}': {e}")
+                except Exception:
+                    logger.exception("Teardown failed for module '%s'.", module_name)
         else:
             logger.debug("Module '%s' has no @on_teardown handlers.", module_name)
 
         if module_ctx:
             try:
-                await module_ctx.storage._close()
-            except Exception as e:
+                # Framework lifecycle; private to module authors.
+                await module_ctx.storage._close()  # noqa: SLF001
+            except Exception:
                 logger.exception(
-                    f"Failed to close storage for module '{module_name}': {e}"
+                    "Failed to close storage for module '%s'.", module_name
                 )
 
         self._cleanup_module(module_name)
-        logger.info(f"Unloaded module '{module_name}'.")
+        logger.info("Unloaded module '%s'.", module_name)
         return True
 
     async def unload_all_modules(self) -> None:
@@ -416,7 +424,7 @@ class ModuleLoader:
         if not self.loaded_modules:
             return
 
-        logger.info(f"Unloading {len(self.loaded_modules)} module(s)...")
+        logger.info("Unloading %d module(s)...", len(self.loaded_modules))
         for module_name in list(self.loaded_modules):
             await self.unload_module(module_name)
         logger.info("All module unload complete.")
@@ -446,7 +454,8 @@ class ModuleLoader:
                 await setup_func(module_ctx)
             logger.debug("Setup completed for module: %s", module_name)
         except Exception as e:
-            await module_ctx.storage._close()
+            # Framework lifecycle; private to module authors.
+            await module_ctx.storage._close()  # noqa: SLF001
             self._cleanup_module(module_name)
             raise ModuleLoadError(
                 f"Setup failed for module '{module_name}': {e}"
@@ -486,8 +495,6 @@ class ModuleLoader:
         :param module_name: Name of the built-in module.
         :return: Path to the module's ``__init__.py``.
         """
-        from . import builtin_modules
-
         return (
             Path(builtin_modules.__file__).resolve().parent
             / module_name

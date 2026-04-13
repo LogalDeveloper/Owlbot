@@ -229,7 +229,7 @@ class TestUser:
             pytest.param(["MOD", "MODERATOR"], True, id="moderator-among-others"),
         ],
     )
-    def test_is_moderator(self, scopes: list[str], expected: bool) -> None:
+    def test_is_moderator(self, scopes: list[str], *, expected: bool) -> None:
         """is_moderator reflects whether MODERATOR is in scopes."""
         user = User.from_dict({"scopes": scopes})
         assert user.is_moderator is expected

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import types
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -86,6 +87,7 @@ class TestOnRouteDecorator:
         self,
         path: str,
         methods: list[str] | None,
+        *,
         streaming: bool,
         expected_path: str,
         expected_methods: list[str] | None,
@@ -123,7 +125,7 @@ class TestRouteInfo:
             pytest.param(False, id="streaming-false"),
         ],
     )
-    def test_stores_streaming(self, streaming: bool) -> None:
+    def test_stores_streaming(self, *, streaming: bool) -> None:
         """RouteInfo stores the streaming flag."""
         info = RouteInfo(
             path="/x",
@@ -506,7 +508,7 @@ class TestRouteDispatcherDispatch:
         request.match_info["path"] = "api"
 
         response = await dispatcher.dispatch(request)
-        assert response.status == 200
+        assert response.status == HTTPStatus.OK
         assert response.content_type == "application/json"
 
     async def test_dispatch_web_response(self) -> None:
@@ -523,7 +525,7 @@ class TestRouteDispatcherDispatch:
         request.match_info["path"] = "page"
 
         response = await dispatcher.dispatch(request)
-        assert response.status == 201
+        assert response.status == HTTPStatus.CREATED
 
     async def test_dispatch_none_response(self) -> None:
         """Handler returning None produces 204 No Content."""
@@ -539,7 +541,7 @@ class TestRouteDispatcherDispatch:
         request.match_info["path"] = "hook"
 
         response = await dispatcher.dispatch(request)
-        assert response.status == 204
+        assert response.status == HTTPStatus.NO_CONTENT
 
     async def test_dispatch_404(self) -> None:
         """Dispatch to unregistered path returns 404."""
@@ -550,7 +552,7 @@ class TestRouteDispatcherDispatch:
         request.match_info["path"] = "nope"
 
         response = await dispatcher.dispatch(request)
-        assert response.status == 404
+        assert response.status == HTTPStatus.NOT_FOUND
 
     async def test_dispatch_405(self) -> None:
         """Dispatch with wrong method returns 405 with Allow header."""
@@ -562,7 +564,7 @@ class TestRouteDispatcherDispatch:
         request.match_info["path"] = "data"
 
         response = await dispatcher.dispatch(request)
-        assert response.status == 405
+        assert response.status == HTTPStatus.METHOD_NOT_ALLOWED
         assert "GET" in response.headers["Allow"]
 
     async def test_dispatch_handler_exception(self) -> None:
@@ -579,7 +581,7 @@ class TestRouteDispatcherDispatch:
         request.match_info["path"] = "bad"
 
         response = await dispatcher.dispatch(request)
-        assert response.status == 500
+        assert response.status == HTTPStatus.INTERNAL_SERVER_ERROR
 
     async def test_dispatch_unsupported_return_type(self) -> None:
         """Handler returning unsupported type produces 500."""
@@ -595,7 +597,7 @@ class TestRouteDispatcherDispatch:
         request.match_info["path"] = "bad"
 
         response = await dispatcher.dispatch(request)
-        assert response.status == 500
+        assert response.status == HTTPStatus.INTERNAL_SERVER_ERROR
 
     async def test_dispatch_timeout(self) -> None:
         """Non-streaming handler exceeding timeout returns 500."""
@@ -612,7 +614,7 @@ class TestRouteDispatcherDispatch:
         request.match_info["path"] = "slow"
 
         response = await dispatcher.dispatch(request)
-        assert response.status == 500
+        assert response.status == HTTPStatus.INTERNAL_SERVER_ERROR
 
     async def test_dispatch_streaming_bypasses_timeout(self) -> None:
         """Streaming handler exceeding timeout is not cancelled."""
@@ -629,7 +631,7 @@ class TestRouteDispatcherDispatch:
         request.match_info["path"] = "stream"
 
         response = await dispatcher.dispatch(request)
-        assert response.status == 200
+        assert response.status == HTTPStatus.OK
 
     async def test_dispatch_streaming_exception(self) -> None:
         """Streaming handler that raises returns 500."""
@@ -645,7 +647,7 @@ class TestRouteDispatcherDispatch:
         request.match_info["path"] = "bad"
 
         response = await dispatcher.dispatch(request)
-        assert response.status == 500
+        assert response.status == HTTPStatus.INTERNAL_SERVER_ERROR
 
     async def test_dispatch_streaming_normal_return(self) -> None:
         """Streaming handler returning dict produces JSON response."""
@@ -661,7 +663,7 @@ class TestRouteDispatcherDispatch:
         request.match_info["path"] = "fast"
 
         response = await dispatcher.dispatch(request)
-        assert response.status == 200
+        assert response.status == HTTPStatus.OK
 
     async def test_dispatch_path_params(self) -> None:
         """Path parameters are populated in RouteContext.match_info."""
@@ -695,7 +697,7 @@ class TestRouteDispatcherDispatch:
         request.match_info["path"] = ""
 
         response = await dispatcher.dispatch(request)
-        assert response.status == 200
+        assert response.status == HTTPStatus.OK
 
 
 class TestRouteDispatcherDrainHandlers:
@@ -1012,6 +1014,7 @@ class TestModuleRoutes:
     )
     def test_exists(
         self,
+        *,
         register: bool,
         check_method: str | None,
         expected: bool,
@@ -1084,7 +1087,7 @@ class TestRouteContext:
             pytest.param("templates", True, id="templates"),
         ],
     )
-    def test_property_proxying(self, prop: str, use_is: bool) -> None:
+    def test_property_proxying(self, prop: str, *, use_is: bool) -> None:
         """RouteContext properties proxy to the underlying ModuleContext."""
         ctx, module_ctx = self._make_route_context()
         ctx_val = getattr(ctx, prop)

@@ -540,7 +540,7 @@ class _StubModuleCommands:
         aliases: list[str] | tuple[str, ...] | None = None,
         requires_authenticated: bool = False,
         requires_moderator: bool = False,
-        cooldown: int | float = 0,
+        cooldown: int = 0,
     ) -> None:
         all_new = {name} | set(aliases or [])
         for trigger in all_new:
@@ -551,6 +551,7 @@ class _StubModuleCommands:
         self._registered[name] = {
             "handler": handler,
             "aliases": set(aliases or []),
+            "requires_authenticated": requires_authenticated,
             "requires_moderator": requires_moderator,
             "cooldown": cooldown,
         }
@@ -702,7 +703,7 @@ class TestManagerCreateCommand:
         cmd_ctx: ModuleContext,
         stub_commands: _StubModuleCommands,
     ) -> None:
-        """If DB insert fails, the registry registration is rolled back."""
+        """If DB insert fails, the command is not registered."""
         # Create a manager with a repo whose storage is closed.
         closed_storage = ModuleStorage(None, "closed")
         bad_repo = CommandRepository(closed_storage)

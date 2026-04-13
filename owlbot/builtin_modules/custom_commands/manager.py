@@ -127,16 +127,12 @@ class CommandManager:
             raise CommandAlreadyExistsError(name)
 
         default_cooldown: int = self._ctx.config.get("default_cooldown", 5)
+        command = await self._repo.create(name, response, default_cooldown)
         self._commands.register(
             name=name,
             handler=custom_command_handler,
             cooldown=default_cooldown,
         )
-        try:
-            command = await self._repo.create(name, response, default_cooldown)
-        except Exception:
-            self._commands.unregister(name)
-            raise
 
         self._ctx.logger.info("Custom command '%s' created.", name)
         return command
@@ -336,7 +332,7 @@ def get_manager(ctx: ModuleContext) -> CommandManager:
     """
     manager = ctx.state.get("manager")
     if not isinstance(manager, CommandManager):
-        raise RuntimeError("CommandManager is not initialized.")
+        raise RuntimeError("CommandManager is not initialized.")  # noqa: TRY004  # state error, not a type error
     return manager
 
 

@@ -116,6 +116,7 @@ class TestOnCommandDecorator:
         self,
         name: str,
         aliases: list[str] | None,
+        *,
         auth: bool,
         mod: bool,
         cooldown: int,
@@ -503,7 +504,7 @@ class TestCommandDispatcherDispatch:
         module_ctx = make_module_context(storage, module_name)
 
         dispatcher = CommandDispatcher(
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             owncast_client=stub,  # type: ignore[arg-type]
             handler_timeout=handler_timeout,
             loaded_modules=set(),
@@ -761,7 +762,7 @@ class TestCommandDispatcherDispatch:
         row = await storage.fetch_one("SELECT * FROM items WHERE id = ?", (1,))
         assert row is not None
         assert row["name"] == "apple"
-        assert "raised exception: boom" in caplog.text
+        assert "raised exception." in caplog.text
 
     async def test_timeout_is_logged(
         self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
@@ -854,7 +855,7 @@ class TestCommandDispatcherDispatch:
         with caplog.at_level(logging.ERROR, logger="owlbot.commands"):
             await dispatcher.dispatch(_make_chat_event(body="!test"))
 
-        assert "raised exception: builtin-fail" in caplog.text
+        assert "raised exception." in caplog.text
 
     async def test_builtin_command_timeout(
         self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
@@ -963,6 +964,7 @@ class TestModuleCommands:
         other_setup: str | None,
         call_module: str,
         trigger: str,
+        *,
         expected: bool,
     ) -> None:
         """ModuleCommands.unregister respects ownership."""
@@ -1059,7 +1061,7 @@ class TestCommandContext:
         ],
     )
     def test_property_proxying(
-        self, storage: ModuleStorage, prop: str, use_is: bool
+        self, storage: ModuleStorage, prop: str, *, use_is: bool
     ) -> None:
         """CommandContext properties proxy to the underlying ModuleContext."""
         cmd_ctx, module_ctx, _, _ = self._make_command_context(storage)

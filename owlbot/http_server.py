@@ -60,7 +60,7 @@ class HttpServer:
         config: Config,
         event_dispatch: WebhookCallback,
         route_dispatcher: RouteDispatcher,
-    ):
+    ) -> None:
         """Initialize the web server.
 
         :param config: Bot configuration.
@@ -112,11 +112,11 @@ class HttpServer:
         logger.debug("Binding web server to %s:%s...", host, port)
         try:
             await site.start()
-        except OSError as e:
-            logger.error(f"Failed to bind web server to {host}:{port}: {e}")
+        except OSError:
+            logger.exception("Failed to bind web server to %s:%s.", host, port)
             raise
 
-        logger.info(f"Web server started at: http://{host}:{port}")
+        logger.info("Web server started at: http://%s:%s", host, port)
 
     async def stop(self) -> None:
         """Stop the HTTP server."""
@@ -129,8 +129,8 @@ class HttpServer:
         """Wait for all pending webhook dispatch tasks to complete."""
         if self._pending_tasks:
             logger.info(
-                f"Waiting for {len(self._pending_tasks)} "
-                "pending event(s) to complete..."
+                "Waiting for %d pending event(s) to complete...",
+                len(self._pending_tasks),
             )
             await asyncio.gather(*self._pending_tasks)
             logger.debug("All pending events drained.")
@@ -146,7 +146,7 @@ class HttpServer:
         except ValueError as e:
             # Invalid JSON received. This shouldn't happen
             # with legitimate Owncast webhooks.
-            logger.warning(f"Failed to parse webhook JSON: {e}")
+            logger.warning("Failed to parse webhook JSON: %s", e)
             return web.Response(status=400)
 
         event_type = data.get("type", "unknown")
@@ -156,7 +156,9 @@ class HttpServer:
         if result is None:
             # Owncast may have added a new webhook we don't handle yet.
             logger.warning(
-                f"Owncast sent unrecognized event type: {event_type!r}. Payload: {data}"
+                "Owncast sent unrecognized event type: %r. Payload: %s",
+                event_type,
+                data,
             )
             return web.Response(status=400)
 

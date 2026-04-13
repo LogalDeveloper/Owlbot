@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 from ruamel.yaml.error import YAMLError
 
@@ -45,15 +45,16 @@ class Owlbot:
         self,
         config_path: str | Path = "config.yaml",
         overrides: dict[str, Any] | None = None,
+        *,
         skip_api_check: bool = False,
-    ):
+    ) -> None:
         """Initialize Owlbot.
 
         :param config_path: Path to the YAML config file.
         :param overrides: CLI overrides passed to the config manager.
         :param skip_api_check: Skip API accessibility checks during startup.
         """
-        logger.info(f"Owlbot v{__version__} - A logal.dev project")
+        logger.info("Owlbot v%s - A logal.dev project", __version__)
 
         self.skip_api_check = skip_api_check
 
@@ -66,8 +67,9 @@ class Owlbot:
         self.modules_dir = self.config.modules_dir
         if not self.modules_dir.exists():
             logger.info(
-                f"User modules directory not found: {self.modules_dir} "
-                f"(only built-in modules will be loaded)"
+                "User modules directory not found: %s "
+                "(only built-in modules will be loaded)",
+                self.modules_dir,
             )
 
         # Shared HTTP client (owns the aiohttp session lifecycle).
@@ -88,12 +90,12 @@ class Owlbot:
 
         logger.debug("Owlbot initialization complete.")
 
-    async def __aenter__(self) -> Owlbot:
+    async def __aenter__(self) -> Self:
         """Start the bot as an async context manager."""
         await self.start()
         return self
 
-    async def __aexit__(self, *exc_info: Any) -> None:
+    async def __aexit__(self, *exc_info: object) -> None:
         """Stop the bot when exiting the async context manager."""
         await self.stop()
 
@@ -114,7 +116,8 @@ class Owlbot:
 
         try:
             # Auth is handled per-request by each Owncast client.
-            await self.http_client._start()
+            # Framework lifecycle; private to module authors.
+            await self.http_client._start()  # noqa: SLF001
 
             if self.skip_api_check:
                 logger.info("Skipping startup connection tests.")
@@ -155,7 +158,8 @@ class Owlbot:
         await self.module_loader.unload_all_modules()
 
         # Close the shared HTTP client (safe to call if startup failed early).
-        await self.http_client._close()
+        # Framework lifecycle; private to module authors.
+        await self.http_client._close()  # noqa: SLF001
 
         logger.info("Owlbot shutdown complete.")
 
@@ -176,16 +180,19 @@ class Owlbot:
             status = await owncast_client.get_status()
         except OwncastError as e:
             if e.status == 0:
-                logger.error(
-                    "Startup connection test failed: "
-                    f"Could not connect to {base_url}: {e.message}"
+                logger.exception(
+                    "Startup connection test failed: Could not connect to %s: %s",
+                    base_url,
+                    e.message,
                 )
                 raise StartupError(
                     f"Could not connect to {base_url}: {e.message}"
                 ) from e
-            logger.error(
-                "Startup connection test failed: "
-                f"{base_url} returned HTTP {e.status}: {e.message}"
+            logger.exception(
+                "Startup connection test failed: %s returned HTTP %s: %s",
+                base_url,
+                e.status,
+                e.message,
             )
             raise StartupError(
                 "Owncast version check failed: "
@@ -195,9 +202,10 @@ class Owlbot:
         version = status.get("versionNumber") if isinstance(status, dict) else None
         if not version:
             logger.error(
-                f"Startup connection test failed: {base_url} "
+                "Startup connection test failed: %s "
                 "does not appear to be an Owncast instance "
-                "(no versionNumber in response)"
+                "(no versionNumber in response)",
+                base_url,
             )
             raise StartupError(
                 f"{base_url} does not appear to be an Owncast instance "
@@ -207,12 +215,15 @@ class Owlbot:
         # Warn on version mismatch but continue startup.
         if version != OWNCAST_TARGET_VERSION:
             logger.warning(
-                f"Owncast version {version} detected at {base_url}, "
-                f"but this build of Owlbot is designed for {OWNCAST_TARGET_VERSION}. "
-                "Startup will continue, but some things may not behave as expected."
+                "Owncast version %s detected at %s, "
+                "but this build of Owlbot is designed for %s. "
+                "Startup will continue, but some things may not behave as expected.",
+                version,
+                base_url,
+                OWNCAST_TARGET_VERSION,
             )
         else:
-            logger.info(f"Owncast version {version} detected at {base_url}.")
+            logger.info("Owncast version %s detected at %s.", version, base_url)
 
         logger.debug("Checking Owncast integrations API accessibility...")
         try:
@@ -220,17 +231,18 @@ class Owlbot:
             logger.debug("Owncast integrations API is accessible.")
         except OwncastError as e:
             if e.status == 0:
-                logger.error(
+                logger.exception(
                     "Startup connection test failed: Could not "
-                    f"connect to integrations API: {e.message}"
+                    "connect to integrations API: %s",
+                    e.message,
                 )
                 raise StartupError(
                     f"Could not connect to integrations API: {e.message}"
                 ) from e
-            logger.error(
-                "Startup connection test failed: "
-                "Integrations API returned "
-                f"HTTP {e.status}: {e.message}"
+            logger.exception(
+                "Startup connection test failed: Integrations API returned HTTP %s: %s",
+                e.status,
+                e.message,
             )
             raise StartupError(
                 "Owncast integrations API check failed: "
@@ -244,17 +256,18 @@ class Owlbot:
                 logger.info("Owncast admin API is enabled.")
             except OwncastError as e:
                 if e.status == 0:
-                    logger.error(
+                    logger.exception(
                         "Startup connection test failed: Could "
-                        f"not connect to admin API: {e.message}"
+                        "not connect to admin API: %s",
+                        e.message,
                     )
                     raise StartupError(
                         f"Could not connect to admin API: {e.message}"
                     ) from e
-                logger.error(
-                    "Startup connection test failed: "
-                    "Admin API returned "
-                    f"HTTP {e.status}: {e.message}"
+                logger.exception(
+                    "Startup connection test failed: Admin API returned HTTP %s: %s",
+                    e.status,
+                    e.message,
                 )
                 raise StartupError(
                     "Owncast admin API check failed: "

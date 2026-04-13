@@ -30,14 +30,14 @@ import orjson
 from aiohttp import web
 from aiohttp.web import DynamicResource
 
-from ..api.context import RouteContext
-from ..api.routes import RouteHandler, RouteInfo, RouteMark
+from owlbot.api.context import RouteContext
+from owlbot.api.routes import RouteHandler, RouteInfo, RouteMark
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from types import ModuleType
 
-    from ..api.context import ModuleContext
+    from owlbot.api.context import ModuleContext
 
 logger = logging.getLogger("owlbot.web")
 
@@ -270,7 +270,7 @@ class RouteRegistry:
         """
         method = method.upper()
         for group in self._groups:
-            match_dict = group.resource._match(full_path)  # no public API alternative
+            match_dict = group.resource._match(full_path)  # noqa: SLF001  # no public API alternative
             if match_dict is not None:
                 for handler in group.handlers:
                     if method in handler.methods:
@@ -615,20 +615,23 @@ class RouteDispatcher:
                 )
             # pragma: no branch — defensive against untyped handlers
             mod_logger.error(  # type: ignore[unreachable]
-                f"Route handler '{route_info.full_path}' returned "
-                f"unsupported type: {type(result).__name__}"
+                "Route handler '%s' returned unsupported type: %s",
+                route_info.full_path,
+                type(result).__name__,
             )
             return web.Response(status=500)
 
         except TimeoutError:
             mod_logger.warning(
-                f"Route handler '{route_info.full_path}' timed out "
-                f"after {self._handler_timeout}s."
+                "Route handler '%s' timed out after %ss.",
+                route_info.full_path,
+                self._handler_timeout,
             )
             return web.Response(status=500)
-        except Exception as e:
+        except Exception:
             mod_logger.exception(
-                f"Route handler '{route_info.full_path}' raised exception: {e}"
+                "Route handler '%s' raised exception.",
+                route_info.full_path,
             )
             return web.Response(status=500)
         finally:

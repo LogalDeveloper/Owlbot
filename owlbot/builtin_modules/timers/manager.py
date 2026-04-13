@@ -455,5 +455,5 @@ def get_manager(ctx: ModuleContext) -> TimerManager:
     """
     manager = ctx.state.get("manager")
     if not isinstance(manager, TimerManager):
-        raise RuntimeError("TimerManager is not initialized.")
+        raise RuntimeError("TimerManager is not initialized.")  # noqa: TRY004  # state error, not a type error
     return manager

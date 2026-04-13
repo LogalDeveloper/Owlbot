@@ -25,6 +25,8 @@ from typing import Any
 import aiohttp
 import orjson
 
+from owlbot._version import __version__
+
 logger = logging.getLogger("owlbot.http")
 
 
@@ -56,14 +58,7 @@ class HttpClient:
         return self._session
 
     async def _start(self) -> None:
-        """Create the underlying aiohttp session.
-
-        The User-Agent header is derived from the package version at
-        call time so the import is deferred until the bot is actually
-        starting up.
-        """
-        from .. import __version__
-
+        """Create the underlying aiohttp session."""
         connector = aiohttp.TCPConnector(keepalive_timeout=120)
         timeout = aiohttp.ClientTimeout(connect=10, sock_connect=10, sock_read=10)
         self._session = aiohttp.ClientSession(

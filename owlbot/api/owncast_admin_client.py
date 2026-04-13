@@ -185,7 +185,7 @@ class OwncastAdminClient(OwncastClient):
 
     def __init__(
         self, base_url: str, username: str, password: str, http_client: HttpClient
-    ):
+    ) -> None:
         """Initialize the admin client.
 
         :param base_url: The Owncast server URL (e.g., "https://stream.logal.dev").
@@ -198,7 +198,7 @@ class OwncastAdminClient(OwncastClient):
         self._headers = None
         self._auth = aiohttp.BasicAuth(username, password)
         self._logger.debug(
-            f"Owncast admin API client initialized for: {self._base_url}"
+            "Owncast admin API client initialized for: %s", self._base_url
         )
 
     async def get_status(self) -> dict[str, Any]:
@@ -265,7 +265,7 @@ class OwncastAdminClient(OwncastClient):
         return list(await self._get("/api/admin/chat/clients"))
 
     async def set_message_visibility(
-        self, message_ids: list[str], visible: bool
+        self, message_ids: list[str], *, visible: bool
     ) -> str:
         """Hide or show chat messages.
 
@@ -275,13 +275,13 @@ class OwncastAdminClient(OwncastClient):
         """
         action = "Showing" if visible else "Hiding"
         ids = ", ".join(message_ids)
-        self._logger.info(f"{action} {len(message_ids)} message(s): {ids}")
+        self._logger.info("%s %d message(s): %s", action, len(message_ids), ids)
         return await self._post(
             "/api/admin/chat/messagevisibility",
             {"idArray": message_ids, "visible": visible},
         )
 
-    async def set_user_enabled(self, user_id: str, enabled: bool) -> str:
+    async def set_user_enabled(self, user_id: str, *, enabled: bool) -> str:
         """Enable or disable a chat user.
 
         :param user_id: The user ID to modify.
@@ -289,7 +289,7 @@ class OwncastAdminClient(OwncastClient):
         :return: Success message from the server.
         """
         action = "Enabling" if enabled else "Disabling"
-        self._logger.info(f"{action} user {user_id}.")
+        self._logger.info("%s user %s.", action, user_id)
         return await self._post(
             "/api/admin/chat/users/setenabled",
             {"userId": user_id, "enabled": enabled},
@@ -302,7 +302,7 @@ class OwncastAdminClient(OwncastClient):
         """
         return list(await self._get("/api/admin/chat/users/disabled"))
 
-    async def set_user_moderator(self, user_id: str, is_mod: bool) -> str:
+    async def set_user_moderator(self, user_id: str, *, is_mod: bool) -> str:
         """Grant or revoke moderator status for a user.
 
         :param user_id: The user ID to modify.
@@ -310,7 +310,7 @@ class OwncastAdminClient(OwncastClient):
         :return: Success message from the server.
         """
         action = "Granting" if is_mod else "Revoking"
-        self._logger.info(f"{action} moderator status for user {user_id}.")
+        self._logger.info("%s moderator status for user %s.", action, user_id)
         return await self._post(
             "/api/admin/chat/users/setmoderator",
             {"userId": user_id, "isModerator": is_mod},
@@ -329,7 +329,7 @@ class OwncastAdminClient(OwncastClient):
         :param ip: The IP address to ban.
         :return: Success message from the server.
         """
-        self._logger.info(f"Banning IP address: {ip}")
+        self._logger.info("Banning IP address: %s", ip)
         return await self._post("/api/admin/chat/users/ipbans/create", {"value": ip})
 
     async def unban_ip_address(self, ip: str) -> str:
@@ -338,7 +338,7 @@ class OwncastAdminClient(OwncastClient):
         :param ip: The IP address to unban.
         :return: Success message from the server.
         """
-        self._logger.info(f"Unbanning IP address: {ip}")
+        self._logger.info("Unbanning IP address: %s", ip)
         return await self._post("/api/admin/chat/users/ipbans/remove", {"value": ip})
 
     async def get_ip_address_bans(self) -> list[dict[str, Any]]:
@@ -488,7 +488,7 @@ class OwncastAdminClient(OwncastClient):
             "/api/admin/config/video/codec", codec, "video codec"
         )
 
-    async def set_chat_disabled(self, disabled: bool) -> str:
+    async def set_chat_disabled(self, *, disabled: bool) -> str:
         """Enable or disable the chat.
 
         :param disabled: True to disable chat, False to enable it.
@@ -498,7 +498,7 @@ class OwncastAdminClient(OwncastClient):
             "/api/admin/config/chat/disable", disabled, "chat disabled"
         )
 
-    async def set_chat_join_messages_enabled(self, enabled: bool) -> str:
+    async def set_chat_join_messages_enabled(self, *, enabled: bool) -> str:
         """Enable or disable chat join messages.
 
         :param enabled: True to show join messages, False to hide them.
@@ -508,7 +508,7 @@ class OwncastAdminClient(OwncastClient):
             "/api/admin/config/chat/joinmessagesenabled", enabled, "chat join messages"
         )
 
-    async def set_chat_established_mode(self, enabled: bool) -> str:
+    async def set_chat_established_mode(self, *, enabled: bool) -> str:
         """Enable or disable established user mode for chat.
 
         :param enabled: True to enable established mode.
@@ -520,7 +520,7 @@ class OwncastAdminClient(OwncastClient):
             "chat established mode",
         )
 
-    async def set_chat_spam_protection(self, enabled: bool) -> str:
+    async def set_chat_spam_protection(self, *, enabled: bool) -> str:
         """Enable or disable chat spam protection.
 
         :param enabled: True to enable spam protection.
@@ -532,7 +532,7 @@ class OwncastAdminClient(OwncastClient):
             "chat spam protection",
         )
 
-    async def set_chat_slur_filter(self, enabled: bool) -> str:
+    async def set_chat_slur_filter(self, *, enabled: bool) -> str:
         """Enable or disable the chat slur filter.
 
         :param enabled: True to enable the slur filter.
@@ -542,7 +542,7 @@ class OwncastAdminClient(OwncastClient):
             "/api/admin/config/chat/slurfilterenabled", enabled, "chat slur filter"
         )
 
-    async def set_nsfw(self, nsfw: bool) -> str:
+    async def set_nsfw(self, *, nsfw: bool) -> str:
         """Set the NSFW flag for the server.
 
         :param nsfw: True to mark the server as NSFW.
@@ -550,7 +550,7 @@ class OwncastAdminClient(OwncastClient):
         """
         return await self._set_config_value("/api/admin/config/nsfw", nsfw, "NSFW flag")
 
-    async def set_directory_enabled(self, enabled: bool) -> str:
+    async def set_directory_enabled(self, *, enabled: bool) -> str:
         """Enable or disable listing in the Owncast directory.
 
         :param enabled: True to enable directory listing.
@@ -560,7 +560,7 @@ class OwncastAdminClient(OwncastClient):
             "/api/admin/config/directoryenabled", enabled, "directory enabled"
         )
 
-    async def set_hide_viewer_count(self, hide: bool) -> str:
+    async def set_hide_viewer_count(self, *, hide: bool) -> str:
         """Show or hide the viewer count.
 
         :param hide: True to hide the viewer count.
@@ -570,7 +570,7 @@ class OwncastAdminClient(OwncastClient):
             "/api/admin/config/hideviewercount", hide, "hide viewer count"
         )
 
-    async def set_disable_search_indexing(self, disabled: bool) -> str:
+    async def set_disable_search_indexing(self, *, disabled: bool) -> str:
         """Enable or disable search engine indexing.
 
         :param disabled: True to disable search indexing.
@@ -630,7 +630,7 @@ class OwncastAdminClient(OwncastClient):
         """
         return await self._set_config_value(
             "/api/admin/config/streamkeys",
-            [k._to_dict() for k in keys],
+            [k._to_dict() for k in keys],  # noqa: SLF001  # framework serialization; private to module authors
             "stream keys",
         )
 
@@ -642,7 +642,7 @@ class OwncastAdminClient(OwncastClient):
         """
         return await self._set_config_value(
             "/api/admin/config/video/streamoutputvariants",
-            [v._to_dict() for v in variants],
+            [v._to_dict() for v in variants],  # noqa: SLF001  # framework serialization; private to module authors
             "video variants",
         )
 
@@ -654,7 +654,7 @@ class OwncastAdminClient(OwncastClient):
         """
         return await self._set_config_value(
             "/api/admin/config/socialhandles",
-            [h._to_dict() for h in handles],
+            [h._to_dict() for h in handles],  # noqa: SLF001  # framework serialization; private to module authors
             "social handles",
         )
 
@@ -666,12 +666,13 @@ class OwncastAdminClient(OwncastClient):
         """
         return await self._set_config_value(
             "/api/admin/config/externalactions",
-            [a._to_dict() for a in actions],
+            [a._to_dict() for a in actions],  # noqa: SLF001  # framework serialization; private to module authors
             "external actions",
         )
 
     async def set_s3_config(
         self,
+        *,
         enabled: bool,
         endpoint: str,
         access_key: str,
@@ -704,6 +705,7 @@ class OwncastAdminClient(OwncastClient):
 
     async def set_discord_notifications(
         self,
+        *,
         enabled: bool,
         webhook: str,
         go_live_message: str,
@@ -727,6 +729,7 @@ class OwncastAdminClient(OwncastClient):
 
     async def set_browser_notifications(
         self,
+        *,
         enabled: bool,
         go_live_message: str,
     ) -> str:
@@ -795,7 +798,7 @@ class OwncastAdminClient(OwncastClient):
             "/api/admin/config/webserverip", ip, "web server IP"
         )
 
-    async def set_federation_enabled(self, enabled: bool) -> str:
+    async def set_federation_enabled(self, *, enabled: bool) -> str:
         """Enable or disable federation (ActivityPub).
 
         :param enabled: True to enable federation.
@@ -845,7 +848,7 @@ class OwncastAdminClient(OwncastClient):
         :param data_base64: Base64-encoded image data for the emoji.
         :return: Success message from the server.
         """
-        self._logger.info(f"Uploading emoji: {name}")
+        self._logger.info("Uploading emoji: %s", name)
         return await self._post(
             "/api/admin/emoji/upload", {"name": name, "data": data_base64}
         )
@@ -856,7 +859,7 @@ class OwncastAdminClient(OwncastClient):
         :param name: The emoji name to delete.
         :return: Success message from the server.
         """
-        self._logger.info(f"Deleting emoji: {name}")
+        self._logger.info("Deleting emoji: %s", name)
         return await self._post("/api/admin/emoji/delete", {"name": name})
 
     async def get_webhooks(self) -> list[dict[str, Any]]:
@@ -873,7 +876,7 @@ class OwncastAdminClient(OwncastClient):
         :param events: List of event type strings to subscribe to.
         :return: Success message from the server.
         """
-        self._logger.info(f"Creating webhook for {url} with events: {events}")
+        self._logger.info("Creating webhook for %s with events: %s", url, events)
         return await self._post(
             "/api/admin/webhooks/create", {"url": url, "events": events}
         )
@@ -884,7 +887,7 @@ class OwncastAdminClient(OwncastClient):
         :param webhook_id: The ID of the webhook to delete.
         :return: Success message from the server.
         """
-        self._logger.info(f"Deleting webhook: {webhook_id}")
+        self._logger.info("Deleting webhook: %d", webhook_id)
         return await self._post("/api/admin/webhooks/delete", {"id": webhook_id})
 
     async def get_access_tokens(self) -> list[dict[str, Any]]:
@@ -901,7 +904,7 @@ class OwncastAdminClient(OwncastClient):
         :param scopes: List of permission scope strings.
         :return: Success message from the server.
         """
-        self._logger.info(f"Creating access token: {name}")
+        self._logger.info("Creating access token: %s", name)
         return await self._post(
             "/api/admin/accesstokens/create", {"name": name, "scopes": scopes}
         )
@@ -912,7 +915,7 @@ class OwncastAdminClient(OwncastClient):
         :param token: The token string to delete.
         :return: Success message from the server.
         """
-        self._logger.info(f"Deleting access token ending in '...{token[-4:]}'.")
+        self._logger.info("Deleting access token ending in '...%s'.", token[-4:])
 
         return await self._post("/api/admin/accesstokens/delete", {"token": token})
 
@@ -943,7 +946,7 @@ class OwncastAdminClient(OwncastClient):
         """
         return list(await self._get("/api/admin/followers/blocked"))
 
-    async def approve_follower(self, actor_iri: str, approved: bool) -> str:
+    async def approve_follower(self, actor_iri: str, *, approved: bool) -> str:
         """Approve or reject a follow request.
 
         :param actor_iri: The ActivityPub actor IRI of the follower.
@@ -951,7 +954,7 @@ class OwncastAdminClient(OwncastClient):
         :return: Success message from the server.
         """
         action = "Approving" if approved else "Rejecting"
-        self._logger.info(f"{action} follower {actor_iri}.")
+        self._logger.info("%s follower %s.", action, actor_iri)
         return await self._post(
             "/api/admin/followers/approve",
             {"actorIRI": actor_iri, "approved": approved},
@@ -963,7 +966,7 @@ class OwncastAdminClient(OwncastClient):
         :param message: The message text to send.
         :return: Success message from the server.
         """
-        self._logger.info(f"Sending federated message: {message}")
+        self._logger.info("Sending federated message: %s", message)
         return await self._post("/api/admin/federation/send", {"value": message})
 
     async def get_logs(self) -> list[dict[str, Any]]:
@@ -998,5 +1001,5 @@ class OwncastAdminClient(OwncastClient):
         :return: Success message from the server.
         :raises OwncastError: If the request fails.
         """
-        self._logger.info(f"Setting config: {description}")
+        self._logger.info("Setting config: %s", description)
         return await self._post(endpoint, {"value": value})

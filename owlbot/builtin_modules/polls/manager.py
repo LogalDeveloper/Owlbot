@@ -36,6 +36,7 @@ from .types import (
     MAX_QUESTION_LENGTH,
     MIN_DURATION,
     MIN_OPTIONS,
+    REMINDER_THRESHOLD,
     RESULT_EXPIRY,
     STREAM_GRACE_PERIOD,
     ActivePoll,
@@ -256,10 +257,10 @@ class PollManager:
         # so clearing the creation reference has no effect on it.
         self.cancel_creation_token()
 
-        # Start auto-end timer task with 60-second reminder.
+        # Start auto-end timer task with reminder before expiry.
         async def _poll_timer() -> None:
-            if duration > 60:
-                await asyncio.sleep(duration - 60)
+            if duration > REMINDER_THRESHOLD:
+                await asyncio.sleep(duration - REMINDER_THRESHOLD)
                 if poll.allow_multiple:
                     instructions = "Use <strong>!vote</strong> to get a voting link."
                 else:
@@ -269,13 +270,13 @@ class PollManager:
 
                 escaped_question = escape(poll.question)
                 reminder = (
-                    f"<strong>60 seconds remaining:</strong>"
+                    f"<strong>{REMINDER_THRESHOLD} seconds remaining:</strong>"
                     f" {escaped_question}<br>{instructions}"
                 )
                 await self._ctx.owncast_client.send_system_message(
                     reminder, unsanitized=True
                 )
-                await asyncio.sleep(60)
+                await asyncio.sleep(REMINDER_THRESHOLD)
             else:
                 await asyncio.sleep(duration)
             await self.end()
@@ -283,7 +284,7 @@ class PollManager:
         poll.timer_task = asyncio.create_task(_poll_timer())
 
         # Announce in chat.
-        if duration >= 60:
+        if duration >= REMINDER_THRESHOLD:
             minutes = duration // 60
             time_str = f"{minutes} minute{'s' if minutes != 1 else ''}"
         else:
@@ -692,5 +693,5 @@ def get_manager(ctx: ModuleContext) -> PollManager:
     """
     manager = ctx.state.get("manager")
     if not isinstance(manager, PollManager):
-        raise RuntimeError("PollManager is not initialized.")
+        raise RuntimeError("PollManager is not initialized.")  # noqa: TRY004  # state error, not a type error
     return manager

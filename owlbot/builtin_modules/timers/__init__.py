@@ -82,7 +82,7 @@ async def setup(ctx: ModuleContext) -> None:
             ctx.logger.info("Stream is live. Timers started.")
         else:
             ctx.logger.info("Stream is offline. Timers will start on stream start.")
-    except Exception:
+    except Exception:  # noqa: BLE001  # best-effort; non-fatal if Owncast is unreachable during setup
         ctx.logger.warning(
             "Could not check stream status. Timers will start on stream start.",
             exc_info=True,

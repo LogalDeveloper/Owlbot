@@ -72,7 +72,7 @@ def _parse_timestamp(ts: str | None) -> datetime | None:
         return datetime.fromisoformat(ts)
     except ValueError:
         # Malformed timestamp. Return None rather than crashing.
-        logger.warning(f"Owncast API returned timestamp in unexpected format: {ts!r}")
+        logger.warning("Owncast API returned timestamp in unexpected format: %r", ts)
         return None
 
 
@@ -438,22 +438,24 @@ def log_event(event_type: EventType, event: Event) -> None:
     """
     match event:
         case ChatEvent(user=user, message_id=mid, body=body):
-            logger.info(f"[{event_type}] {user.display_name} ({mid}): {body}")
+            logger.info("[%s] %s (%s): %s", event_type, user.display_name, mid, body)
         case UserJoinedEvent(user=user):
-            logger.info(f"[{event_type}] {user.display_name} joined.")
+            logger.info("[%s] %s joined.", event_type, user.display_name)
         case UserPartedEvent(user=user):
-            logger.info(f"[{event_type}] {user.display_name} parted.")
+            logger.info("[%s] %s parted.", event_type, user.display_name)
         case NameChangedEvent(user=user, new_name=new_name):
             logger.info(
-                f"[{event_type}] {user.display_name} changed name to {new_name}."
+                "[%s] %s changed name to %s.", event_type, user.display_name, new_name
             )
         case StreamStartedEvent(stream_title=title):
-            logger.info(f'[{event_type}] Stream started: "{title}"')
+            logger.info('[%s] Stream started: "%s"', event_type, title)
         case StreamStoppedEvent():
-            logger.info(f"[{event_type}] Stream ended.")
+            logger.info("[%s] Stream ended.", event_type)
         case StreamTitleUpdatedEvent(stream_title=title):
-            logger.info(f'[{event_type}] Title changed to "{title}"')
+            logger.info('[%s] Title changed to "%s"', event_type, title)
         case VisibilityUpdateEvent(is_visible=visible, message_ids=ids):
             action = "shown" if visible else "hidden"
             id_list = ", ".join(ids)
-            logger.info(f"[{event_type}] {len(ids)} message(s) {action}: {id_list}")
+            logger.info(
+                "[%s] %d message(s) %s: %s", event_type, len(ids), action, id_list
+            )

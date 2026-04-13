@@ -92,5 +92,5 @@ def get_manager(ctx: ModuleContext) -> QuoteManager:
     """
     manager = ctx.state.get("manager")
     if not isinstance(manager, QuoteManager):
-        raise RuntimeError("QuoteManager is not initialized.")
+        raise RuntimeError("QuoteManager is not initialized.")  # noqa: TRY004  # state error, not a type error
     return manager

@@ -372,7 +372,7 @@ async def events_stream(ctx: RouteContext) -> web.StreamResponse | web.Response:
             await asyncio.sleep(15)
             try:
                 await response.write(b": keepalive\n\n")
-            except Exception:
+            except Exception:  # noqa: BLE001  # SSE disconnect; no single exception covers all transport failures
                 ctx.logger.debug("SSE keepalive failed, disconnecting client.")
                 break
     finally:
@@ -383,7 +383,7 @@ async def events_stream(ctx: RouteContext) -> web.StreamResponse | web.Response:
 
 
 @on_route("/static/wall.js", methods=["GET"])
-async def static_wall_js(ctx: RouteContext) -> web.FileResponse:
+async def static_wall_js(ctx: RouteContext) -> web.FileResponse:  # noqa: ARG001  # required by route handler signature
     """Serve the emoji wall JavaScript file.
 
     :param ctx: The route context.

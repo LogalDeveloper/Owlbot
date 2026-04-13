@@ -305,6 +305,7 @@ class TestEventRegistry:
     def test_unregister(
         self,
         setup_types: tuple[EventType, ...] | None,
+        *,
         expected_return: bool,
         expected_remaining: int,
     ) -> None:
@@ -437,7 +438,7 @@ class TestEventDispatcherDispatch:
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             handler_timeout=5.0,
         )
         dispatcher.register(handler, (EventType.CHAT,), "mod_a")
@@ -466,7 +467,7 @@ class TestEventDispatcherDispatch:
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             handler_timeout=5.0,
         )
         dispatcher.register(high_handler, (EventType.CHAT,), "mod_a", Priority.HIGH)
@@ -492,7 +493,7 @@ class TestEventDispatcherDispatch:
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             handler_timeout=5.0,
         )
         dispatcher.register(first, (EventType.CHAT,), "mod_a", Priority.NORMAL)
@@ -511,7 +512,7 @@ class TestEventDispatcherDispatch:
         module_ctx = make_module_context(storage, "mod_a")
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             handler_timeout=5.0,
         )
         with caplog.at_level(logging.DEBUG, logger="owlbot.events"):
@@ -539,7 +540,7 @@ class TestEventDispatcherDispatch:
         module_ctx = make_module_context(storage, "mod_a")
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             handler_timeout=5.0,
         )
         chat_event = _make_chat_event(body="hello")
@@ -567,7 +568,7 @@ class TestEventDispatcherDispatch:
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             handler_timeout=5.0,
         )
         dispatcher.register(handler_a, (EventType.CHAT,), "mod_a", Priority.HIGH)
@@ -593,7 +594,7 @@ class TestEventDispatcherDispatch:
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             handler_timeout=5.0,
         )
         dispatcher.register(handler_a, (EventType.CHAT,), "mod_a", Priority.HIGH)
@@ -624,7 +625,7 @@ class TestEventDispatcherDispatch:
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             handler_timeout=5.0,
         )
         dispatcher.register(stopper, (EventType.CHAT,), "mod_a", Priority.HIGH)
@@ -657,7 +658,7 @@ class TestEventDispatcherStorage:
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             handler_timeout=5.0,
         )
         dispatcher.register(handler, (EventType.CHAT,), "mod_a")
@@ -687,7 +688,7 @@ class TestEventDispatcherStorage:
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             handler_timeout=5.0,
         )
         dispatcher.register(handler, (EventType.CHAT,), "mod_a")
@@ -697,7 +698,7 @@ class TestEventDispatcherStorage:
         row = await storage.fetch_one("SELECT val FROM test_tbl")
         assert row is not None
         assert row[0] == "persisted"
-        assert any("raised exception: boom" in r.message for r in caplog.records)
+        assert any("raised exception." in r.message for r in caplog.records)
 
     async def test_exception_does_not_stop_next_handler(
         self, storage: ModuleStorage
@@ -719,7 +720,7 @@ class TestEventDispatcherStorage:
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             handler_timeout=5.0,
         )
         dispatcher.register(failing_handler, (EventType.CHAT,), "mod_a", Priority.HIGH)
@@ -742,7 +743,7 @@ class TestEventDispatcherStorage:
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             handler_timeout=0.05,
         )
         dispatcher.register(slow_handler, (EventType.CHAT,), "mod_a")
@@ -772,7 +773,7 @@ class TestEventDispatcherStorage:
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             handler_timeout=0.05,
         )
         dispatcher.register(slow_handler, (EventType.CHAT,), "mod_a")
@@ -802,7 +803,7 @@ class TestEventDispatcherStorage:
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             handler_timeout=0.05,
         )
         dispatcher.register(slow_handler, (EventType.CHAT,), "mod_a")
@@ -820,7 +821,7 @@ class TestCommandDispatchPhase:
         [
             pytest.param(
                 EventType.CHAT,
-                lambda: _make_chat_event(),
+                _make_chat_event,
                 1,
                 id="chat-triggers",
             ),
@@ -853,7 +854,7 @@ class TestCommandDispatchPhase:
         module_ctx = make_module_context(storage, "mod_a")
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             handler_timeout=5.0,
         )
         event = event_factory()
@@ -877,7 +878,7 @@ class TestCommandDispatchPhase:
         module_ctx = make_module_context(storage, "mod_a")
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             handler_timeout=5.0,
         )
         dispatcher.register(stopper, (EventType.CHAT,), "mod_a")
@@ -899,12 +900,12 @@ class TestCommandDispatchPhase:
         module_ctx = make_module_context(storage, "mod_a")
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda name: module_ctx,
+            get_module_context=lambda _name: module_ctx,
             handler_timeout=5.0,
         )
         with caplog.at_level(logging.ERROR, logger="owlbot.events"):
             await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
-        assert any("Command dispatch failed: fail" in r.message for r in caplog.records)
+        assert any("Command dispatch failed." in r.message for r in caplog.records)
 
 
 class TestModuleEvents:
@@ -974,7 +975,7 @@ class TestModuleEvents:
         ],
     )
     def test_unregister(
-        self, register_on: str | None, unregister_from: str, expected: bool
+        self, register_on: str | None, unregister_from: str, *, expected: bool
     ) -> None:
         """ModuleEvents.unregister() respects ownership checks."""
 
@@ -1061,7 +1062,7 @@ class TestEventContext:
         ],
     )
     def test_property_proxying(
-        self, storage: ModuleStorage, prop: str, use_is: bool
+        self, storage: ModuleStorage, prop: str, *, use_is: bool
     ) -> None:
         """EventContext properties proxy to the underlying ModuleContext."""
         module_ctx = make_module_context(storage, "mod_a")

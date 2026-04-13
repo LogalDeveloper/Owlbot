@@ -45,7 +45,7 @@ async def clip_command(ctx: CommandContext) -> None:
             "Not enough stream data is available yet. Please try again later."
         )
         return
-    except Exception:
+    except Exception:  # noqa: BLE001  # catch-all after specific exceptions; ffmpeg/IO failures are unpredictable
         await ctx.owncast_client.send_message(
             "Failed to create clip preview. Please try again."
         )

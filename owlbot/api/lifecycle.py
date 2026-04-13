@@ -46,7 +46,8 @@ def on_setup(func: LifecycleHandler) -> LifecycleHandler:
     :param func: The setup function to mark.
     :return: The same function, with ``_owlbot_setup`` attribute set.
     """
-    func._owlbot_setup = True  # type: ignore[attr-defined]
+    # Framework decorator marker; private to module authors.
+    func._owlbot_setup = True  # type: ignore[attr-defined]  # noqa: SLF001
     return func
 
 
@@ -65,5 +66,6 @@ def on_teardown(func: LifecycleHandler) -> LifecycleHandler:
     :param func: The teardown function to mark.
     :return: The same function, with ``_owlbot_teardown`` attribute set.
     """
-    func._owlbot_teardown = True  # type: ignore[attr-defined]
+    # Framework decorator marker; private to module authors.
+    func._owlbot_teardown = True  # type: ignore[attr-defined]  # noqa: SLF001
     return func

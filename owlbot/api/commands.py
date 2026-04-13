@@ -40,7 +40,7 @@ class CommandMark(TypedDict):
     aliases: list[str] | tuple[str, ...] | None
     requires_authenticated: bool
     requires_moderator: bool
-    cooldown: int | float
+    cooldown: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,7 +67,7 @@ class CommandInfo:
     aliases: frozenset[str] = field(default_factory=frozenset)
     requires_authenticated: bool = False
     requires_moderator: bool = False
-    cooldown: int | float = 0
+    cooldown: int = 0
     all_triggers: frozenset[str] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -81,7 +81,7 @@ def on_command(
     aliases: list[str] | tuple[str, ...] | None = None,
     requires_authenticated: bool = False,
     requires_moderator: bool = False,
-    cooldown: int | float = 0,
+    cooldown: int = 0,
 ) -> Callable[[CommandHandler], CommandHandler]:
     """Register a command handler.
 
@@ -97,7 +97,8 @@ def on_command(
     def decorator(func: CommandHandler) -> CommandHandler:
         # Mark the function with command info for deferred registration.
         # The module loader will scan for this attribute and register commands.
-        func._owlbot_command = CommandMark(  # type: ignore[attr-defined]
+        # Framework decorator marker; private to module authors.
+        func._owlbot_command = CommandMark(  # type: ignore[attr-defined]  # noqa: SLF001
             name=name,
             aliases=aliases,
             requires_authenticated=requires_authenticated,

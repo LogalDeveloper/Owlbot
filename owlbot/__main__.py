@@ -177,25 +177,27 @@ Examples:
 
     args = parser.parse_args()
 
-    overrides: dict[str, Any] = {}
-    if args.host is not None:
-        overrides["host"] = args.host
-    if args.port is not None:
-        overrides["port"] = args.port
-    if args.modules is not None:
-        overrides["modules_dir"] = args.modules
-    if args.storage_dir is not None:
-        overrides["storage_dir"] = args.storage_dir
-    if args.log_dir is not None:
-        overrides["log_dir"] = args.log_dir
+    _cli_override_map = {
+        "host": "host",
+        "port": "port",
+        "modules": "modules_dir",
+        "storage_dir": "storage_dir",
+        "log_dir": "log_dir",
+    }
+    overrides: dict[str, Any] = {
+        v: getattr(args, k)
+        for k, v in _cli_override_map.items()
+        if getattr(args, k) is not None
+    }
 
     if args.webhook_path:
         try:
             config = Config(args.config, overrides=overrides)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001  # CLI boundary; any config error should print and exit
             print(f"Error loading config: {e}", file=sys.stderr)
             sys.exit(1)
-        if config._data.get("owlbot", {}).get("public_base_url"):
+        # Framework-internal raw config check; private to module authors.
+        if config._data.get("owlbot", {}).get("public_base_url"):  # noqa: SLF001
             base = config.public_base_url
         else:
             base = f"http://{config.host}:{config.port}"
@@ -225,7 +227,7 @@ Examples:
 
     logger = logging.getLogger("owlbot")
 
-    logger.info(f"Log level: {logging.getLevelName(log_level)}")
+    logger.info("Log level: %s", logging.getLevelName(log_level))
 
     try:
         bot = Owlbot(
@@ -233,8 +235,8 @@ Examples:
             overrides=overrides,
             skip_api_check=args.skip_api_check,
         )
-    except StartupError as e:
-        logger.error(str(e))
+    except StartupError:
+        logger.exception("Bot initialization failed.")
         sys.exit(1)
 
     if bot.config.log_dir is not None:
@@ -249,9 +251,9 @@ Examples:
                 logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S"),
             )
             logging.getLogger().addHandler(file_handler)
-            logger.info(f"File logging enabled: {bot.config.log_dir / 'owlbot.log'}")
+            logger.info("File logging enabled: %s", bot.config.log_dir / "owlbot.log")
         except OSError as e:
-            logger.warning(f"Could not set up file logging: {e}")
+            logger.warning("Could not set up file logging: %s", e)
 
     async def _run() -> None:
         loop = asyncio.get_running_loop()
@@ -267,7 +269,7 @@ Examples:
             wd_task: asyncio.Task[None] | None = None
             if wd_interval is not None:
                 logger.info(
-                    f"systemd watchdog enabled (pinging every {wd_interval:.1f}s)."
+                    "systemd watchdog enabled (pinging every %.1fs).", wd_interval
                 )
                 wd_task = asyncio.create_task(
                     _watchdog_loop(wd_interval, stop_event),
@@ -285,8 +287,8 @@ Examples:
 
     try:
         uvloop.run(_run())
-    except StartupError as e:
-        logger.error(str(e))
+    except StartupError:
+        logger.exception("Startup failed.")
         sys.exit(1)
     except Exception:
         logger.exception("Unexpected error during Owlbot execution.")

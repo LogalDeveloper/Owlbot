@@ -67,7 +67,7 @@ async def settimermessage(ctx: CommandContext) -> None:
     :param ctx: The command context.
     """
     parts = ctx.args.split(maxsplit=1)
-    if len(parts) < 2 or not parts[1].strip():
+    if len(parts) < 2 or not parts[1].strip():  # noqa: PLR2004  # just checking argument count
         await ctx.owncast_client.send_message(
             "Usage: !settimermessage <id|name> <message>"
         )
@@ -95,7 +95,7 @@ async def settimerinterval(ctx: CommandContext) -> None:
     :param ctx: The command context.
     """
     parts = ctx.args.split(maxsplit=1)
-    if len(parts) < 2:
+    if len(parts) < 2:  # noqa: PLR2004  # just checking argument count
         await ctx.owncast_client.send_message(
             "Usage: !settimerinterval <id|name> <interval>"
         )
@@ -132,7 +132,7 @@ async def settimerlines(ctx: CommandContext) -> None:
     :param ctx: The command context.
     """
     args = ctx.args_list
-    if len(args) < 2:
+    if len(args) < 2:  # noqa: PLR2004  # just checking argument count
         await ctx.owncast_client.send_message("Usage: !settimerlines <id|name> <count>")
         return
 

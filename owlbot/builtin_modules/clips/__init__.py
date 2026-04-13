@@ -20,6 +20,7 @@ stream in real time and provides a browser-based clip editor.
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 from pathlib import Path
 
@@ -95,7 +96,7 @@ async def setup(ctx: ModuleContext) -> None:
     processor = VideoProcessor(ctx.logger)
 
     clips_dir = Path(str(ctx.config.get("clips_dir")))
-    clips_dir.mkdir(parents=True, exist_ok=True)  # noqa: ASYNC240
+    await asyncio.to_thread(clips_dir.mkdir, parents=True, exist_ok=True)
 
     manager = ClipManager(ctx, repo, processor, clips_dir)
     ctx.state["manager"] = manager
@@ -106,7 +107,7 @@ async def setup(ctx: ModuleContext) -> None:
         if status.get("online", False):
             ctx.logger.info("Stream is already live. Starting HLS cache.")
             await manager.start_caching()
-    except Exception:
+    except Exception:  # noqa: BLE001  # best-effort; non-fatal if Owncast is unreachable during setup
         ctx.logger.warning(
             "Could not check Owncast status during setup.", exc_info=True
         )

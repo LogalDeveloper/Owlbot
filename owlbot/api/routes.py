@@ -79,7 +79,8 @@ def on_route(
     def decorator(func: RouteHandler) -> RouteHandler:
         # Mark the function with route info for deferred registration.
         # methods=None is resolved to ["GET"] by RouteRegistry.register().
-        func._owlbot_route = RouteMark(  # type: ignore[attr-defined]
+        # Framework decorator marker; private to module authors.
+        func._owlbot_route = RouteMark(  # type: ignore[attr-defined]  # noqa: SLF001
             path=path, methods=methods, streaming=streaming
         )
         return func

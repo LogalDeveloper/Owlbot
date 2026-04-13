@@ -339,7 +339,7 @@ async def events_stream(ctx: RouteContext) -> web.StreamResponse | web.Response:
                 remaining = poll.time_remaining
                 payload = sse_payload(SSEEvent.KEEPALIVE, {"time_remaining": remaining})
                 await response.write(payload)
-            except Exception:
+            except Exception:  # noqa: BLE001  # SSE disconnect; no single exception covers all transport failures
                 ctx.logger.debug("SSE keepalive failed for %s...", token[:8])
                 break
     finally:
@@ -439,7 +439,7 @@ async def results_page(ctx: RouteContext) -> web.Response:
 
 
 @on_route("/static/polls.css", methods=["GET"])
-async def static_polls_css(ctx: RouteContext) -> web.StreamResponse:
+async def static_polls_css(ctx: RouteContext) -> web.StreamResponse:  # noqa: ARG001  # required by route handler signature
     """Serve the polls stylesheet.
 
     :param ctx: The route context.
@@ -452,7 +452,7 @@ async def static_polls_css(ctx: RouteContext) -> web.StreamResponse:
 
 
 @on_route("/static/polls.js", methods=["GET"])
-async def static_polls_js(ctx: RouteContext) -> web.StreamResponse:
+async def static_polls_js(ctx: RouteContext) -> web.StreamResponse:  # noqa: ARG001  # required by route handler signature
     """Serve the polls JavaScript file.
 
     :param ctx: The route context.
@@ -465,7 +465,7 @@ async def static_polls_js(ctx: RouteContext) -> web.StreamResponse:
 
 
 @on_route("/static/create.js", methods=["GET"])
-async def static_create_js(ctx: RouteContext) -> web.StreamResponse:
+async def static_create_js(ctx: RouteContext) -> web.StreamResponse:  # noqa: ARG001  # required by route handler signature
     """Serve the create form JavaScript file.
 
     :param ctx: The route context.

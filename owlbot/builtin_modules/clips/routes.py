@@ -113,7 +113,7 @@ async def editor_preview_video(ctx: RouteContext) -> web.StreamResponse:
 
 
 @on_route("/static/editor.js", methods=["GET"])
-async def editor_js(ctx: RouteContext) -> web.StreamResponse:
+async def editor_js(ctx: RouteContext) -> web.StreamResponse:  # noqa: ARG001  # required by route handler signature
     """Serve the clip editor JavaScript.
 
     :param ctx: The route context.
@@ -155,7 +155,7 @@ async def editor_submit(ctx: RouteContext) -> web.Response:
     except InvalidClipParamsError as e:
         return _error_page(ctx, 400, e.reason)
     except Exception:
-        ctx.logger.error("Failed to create clip.", exc_info=True)
+        ctx.logger.exception("Failed to create clip.")
         return _error_page(ctx, 500, "Clip processing failed.")
 
     clip_url = ctx.routes.url_for(f"/view/{clip.id}")

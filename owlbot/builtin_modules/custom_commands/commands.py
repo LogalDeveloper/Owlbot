@@ -45,7 +45,7 @@ async def addcommand(ctx: CommandContext) -> None:
     """
     prefix = ctx.commands.prefix
     args = ctx.args_list
-    if len(args) < 2:
+    if len(args) < 2:  # noqa: PLR2004  # just checking argument count
         await ctx.owncast_client.send_message(
             f"Usage: {prefix}addcommand {prefix}<name> <response text>"
         )
@@ -53,7 +53,7 @@ async def addcommand(ctx: CommandContext) -> None:
 
     name = _clean_name(args[0], prefix)
     parts = ctx.args.split(maxsplit=1)
-    if len(parts) < 2:
+    if len(parts) < 2:  # noqa: PLR2004  # just checking argument count
         await ctx.owncast_client.send_message(
             f"Usage: {prefix}addcommand {prefix}<name> <response text>"
         )
@@ -87,7 +87,7 @@ async def editcommand(ctx: CommandContext) -> None:
     """
     prefix = ctx.commands.prefix
     args = ctx.args_list
-    if len(args) < 2:
+    if len(args) < 2:  # noqa: PLR2004  # just checking argument count
         await ctx.owncast_client.send_message(
             f"Usage: {prefix}editcommand {prefix}<name> <new response>"
         )
@@ -95,7 +95,7 @@ async def editcommand(ctx: CommandContext) -> None:
 
     name = _clean_name(args[0], prefix)
     parts = ctx.args.split(maxsplit=1)
-    if len(parts) < 2:
+    if len(parts) < 2:  # noqa: PLR2004  # just checking argument count
         await ctx.owncast_client.send_message(
             f"Usage: {prefix}editcommand {prefix}<name> <new response>"
         )
@@ -166,7 +166,7 @@ async def commandmodonly(ctx: CommandContext) -> None:
     """
     prefix = ctx.commands.prefix
     args = ctx.args_list
-    if len(args) < 2:
+    if len(args) < 2:  # noqa: PLR2004  # just checking argument count
         await ctx.owncast_client.send_message(
             f"Usage: {prefix}commandmodonly {prefix}<name> <on|off>"
         )
@@ -241,7 +241,7 @@ async def editcounter(ctx: CommandContext) -> None:
     """
     prefix = ctx.commands.prefix
     args = ctx.args_list
-    if len(args) != 2:
+    if len(args) != 2:  # noqa: PLR2004  # just checking argument count
         await ctx.owncast_client.send_message(
             f"Usage: {prefix}editcounter <name> <value>"
         )
@@ -291,7 +291,7 @@ async def commandcooldown(ctx: CommandContext) -> None:
     """
     prefix = ctx.commands.prefix
     args = ctx.args_list
-    if len(args) < 2:
+    if len(args) < 2:  # noqa: PLR2004  # just checking argument count
         await ctx.owncast_client.send_message(
             f"Usage: {prefix}commandcooldown {prefix}<name> <seconds>"
         )
@@ -344,7 +344,7 @@ async def addalias(ctx: CommandContext) -> None:
     """
     prefix = ctx.commands.prefix
     args = ctx.args_list
-    if len(args) < 2:
+    if len(args) < 2:  # noqa: PLR2004  # just checking argument count
         await ctx.owncast_client.send_message(
             f"Usage: {prefix}addalias {prefix}<command> {prefix}<alias>"
         )
