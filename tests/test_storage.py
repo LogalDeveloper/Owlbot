@@ -279,6 +279,68 @@ class TestTransaction:
         assert row is None
 
 
+class TestConcurrency:
+    """Storage serializes concurrent operations on the shared connection."""
+
+    async def test_concurrent_ops_do_not_race(
+        self, storage_with_table: ModuleStorage
+    ) -> None:
+        """Concurrent writers and readers do not trip sqlite's 'in progress' guard.
+
+        Without serialization, one task's commit can run while another task's
+        cursor is still open on the shared connection, raising OperationalError.
+        """
+        await storage_with_table.execute(
+            "INSERT INTO items (id, name, value) VALUES (?, ?, ?)", (1, "a", 0)
+        )
+
+        async def updater() -> None:
+            await storage_with_table.execute(
+                "UPDATE items SET value = 1 WHERE id = 1"
+            )
+
+        async def returner() -> None:
+            row = await storage_with_table.fetch_one(
+                "UPDATE items SET value = 2 WHERE id = 1 RETURNING value"
+            )
+            assert row is not None
+
+        await asyncio.gather(updater(), returner())
+
+    async def test_transaction_blocks_concurrent_ops(
+        self, storage_with_table: ModuleStorage
+    ) -> None:
+        """A held transaction serializes non-transactional ops from other tasks."""
+        gate = asyncio.Event()
+        released = asyncio.Event()
+
+        async def holder() -> None:
+            async with storage_with_table.transaction():
+                await storage_with_table.execute(
+                    "INSERT INTO items (id, name, value) VALUES (?, ?, ?)",
+                    (1, "a", 1),
+                )
+                gate.set()
+                await released.wait()
+
+        async def waiter() -> None:
+            await gate.wait()
+            await storage_with_table.execute(
+                "INSERT INTO items (id, name, value) VALUES (?, ?, ?)", (2, "b", 2)
+            )
+
+        holder_task = asyncio.create_task(holder())
+        waiter_task = asyncio.create_task(waiter())
+        await gate.wait()
+        await asyncio.sleep(0.01)
+        assert not waiter_task.done()
+        released.set()
+        await asyncio.gather(holder_task, waiter_task)
+
+        rows = await storage_with_table.fetch_all("SELECT id FROM items ORDER BY id")
+        assert [r["id"] for r in rows] == [1, 2]
+
+
 class TestStorageError:
     """Invalid SQL raises StorageError wrapping the underlying error."""
 

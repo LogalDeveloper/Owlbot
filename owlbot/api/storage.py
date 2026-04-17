@@ -66,6 +66,7 @@ class ModuleStorage:
         self._module_name = module_name
         self._conn: aiosqlite.Connection | None = None
         self._closed = False
+        self._lock = asyncio.Lock()
         self._txn_conn: contextvars.ContextVar[aiosqlite.Connection | None] = (
             contextvars.ContextVar(f"_txn_conn_{module_name}", default=None)
         )
@@ -114,19 +115,20 @@ class ModuleStorage:
             raise RuntimeError(
                 "transaction() cannot be nested. Already inside an active transaction."
             )
-        conn = await self._ensure_connection()
-        token = self._txn_conn.set(conn)
-        self._logger.debug("Explicit transaction started.")
-        try:
-            yield self
-            await conn.commit()
-            self._logger.debug("Transaction committed.")
-        except BaseException:
-            await conn.rollback()
-            self._logger.debug("Transaction rolled back.")
-            raise
-        finally:
-            self._txn_conn.reset(token)
+        async with self._lock:
+            conn = await self._ensure_connection()
+            token = self._txn_conn.set(conn)
+            self._logger.debug("Explicit transaction started.")
+            try:
+                yield self
+                await conn.commit()
+                self._logger.debug("Transaction committed.")
+            except BaseException:
+                await conn.rollback()
+                self._logger.debug("Transaction rolled back.")
+                raise
+            finally:
+                self._txn_conn.reset(token)
 
     async def execute(
         self,
@@ -273,13 +275,14 @@ class ModuleStorage:
             yield existing
             return
 
-        conn = await self._ensure_connection()
-        try:
-            yield conn
-            await conn.commit()
-        except BaseException:
-            await conn.rollback()
-            raise
+        async with self._lock:
+            conn = await self._ensure_connection()
+            try:
+                yield conn
+                await conn.commit()
+            except BaseException:
+                await conn.rollback()
+                raise
 
     async def _close(self) -> None:
         """Close the connection (internal use by bot)."""
