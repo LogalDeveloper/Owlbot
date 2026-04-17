@@ -295,9 +295,7 @@ class TestConcurrency:
         )
 
         async def updater() -> None:
-            await storage_with_table.execute(
-                "UPDATE items SET value = 1 WHERE id = 1"
-            )
+            await storage_with_table.execute("UPDATE items SET value = 1 WHERE id = 1")
 
         async def returner() -> None:
             row = await storage_with_table.fetch_one(
