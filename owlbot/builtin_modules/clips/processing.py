@@ -20,6 +20,7 @@ Serializes ffmpeg/ffprobe execution via semaphores.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import TYPE_CHECKING
 
 import orjson
@@ -189,13 +190,17 @@ class VideoProcessor:
                 proc.communicate(), timeout=time_limit
             )
         except TimeoutError:
-            proc.kill()
-            await proc.wait()
+            if proc.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
+                await proc.wait()
             msg = f"{args[0]} timed out after {time_limit}s"
             raise RuntimeError(msg) from None
         except asyncio.CancelledError:
-            proc.kill()
-            await proc.wait()
+            if proc.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
+                await proc.wait()
             raise
 
         if proc.returncode != 0:
