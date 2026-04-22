@@ -24,9 +24,9 @@ from ruamel.yaml.error import YAMLError
 from . import OWNCAST_TARGET_VERSION, __version__
 from .api.config import Config
 from .api.http_client import HttpClient
-from .api.owncast_client import OwncastError
 from .http_server import HttpServer
 from .module_loader import ModuleLoader
+from .owncast_http import OwncastError
 
 if TYPE_CHECKING:
     from pathlib import Path

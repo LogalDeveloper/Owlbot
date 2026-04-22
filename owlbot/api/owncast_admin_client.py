@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
-from .owncast_client import OwncastClient
+from owlbot.owncast_http import get_json, post_with_envelope
 
 if TYPE_CHECKING:
     from .http_client import HttpClient
@@ -173,14 +173,14 @@ class ExternalAction:
         }
 
 
-class OwncastAdminClient(OwncastClient):
+class OwncastAdminClient:
     """Async client for the Owncast Admin API.
 
     Uses HTTP Basic Authentication to access admin endpoints.
-    All methods raise :class:`~owlbot.api.owncast_client.OwncastError` on HTTP errors.
+    All methods raise :class:`~owlbot.api.OwncastError` on HTTP errors.
 
     Uses a shared :class:`~owlbot.api.http_client.HttpClient` for HTTP
-    transport (inherited from :class:`OwncastClient`).
+    transport.
     """
 
     def __init__(
@@ -193,13 +193,18 @@ class OwncastAdminClient(OwncastClient):
         :param password: Admin password.
         :param http_client: Shared HTTP client for making requests.
         """
-        super().__init__(base_url, access_token="", http_client=http_client)
+        self._base_url = base_url.rstrip("/")
+        self._http = http_client
         self._logger = logging.getLogger("owlbot.owncast_admin_client")
-        self._headers = None
         self._auth = aiohttp.BasicAuth(username, password)
         self._logger.debug(
             "Owncast admin API client initialized for: %s", self._base_url
         )
+
+    @property
+    def base_url(self) -> str:
+        """The Owncast server base URL (e.g., "https://stream.logal.dev")."""
+        return self._base_url
 
     async def get_status(self) -> dict[str, Any]:
         """Get the current server status including stream info and viewer count.
@@ -1003,3 +1008,31 @@ class OwncastAdminClient(OwncastClient):
         """
         self._logger.info("Setting config: %s", description)
         return await self._post(endpoint, {"value": value})
+
+    async def _post(self, endpoint: str, data: dict[str, Any] | None = None) -> str:
+        """Send a POST request to the Owncast Admin API.
+
+        :raises OwncastError: If the request fails.
+        """
+        return await post_with_envelope(
+            self._http,
+            self._base_url,
+            endpoint,
+            data,
+            logger=self._logger,
+            auth=self._auth,
+        )
+
+    async def _get(self, endpoint: str, params: dict[str, Any] | None = None) -> Any:
+        """Send a GET request to the Owncast Admin API.
+
+        :raises OwncastError: If the request fails.
+        """
+        return await get_json(
+            self._http,
+            self._base_url,
+            endpoint,
+            params,
+            logger=self._logger,
+            auth=self._auth,
+        )

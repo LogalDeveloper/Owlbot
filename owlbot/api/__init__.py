@@ -31,8 +31,8 @@ This package provides all the APIs modules use to interact with Owlbot:
   (re-exported from registries)
 """
 
-# Event types and dataclasses (pure data).
 # Module-scoped service wrappers (re-exported from registries).
+from owlbot.owncast_http import OwncastError
 from owlbot.registries.commands import ModuleCommands
 from owlbot.registries.events import ModuleEvents
 from owlbot.registries.routes import ModuleRoutes
@@ -97,7 +97,7 @@ from .owncast_admin_client import (
 )
 
 # Owncast client.
-from .owncast_client import OwncastClient, OwncastError
+from .owncast_client import OwncastClient
 
 # HTTP routes (module-facing).
 from .routes import (

@@ -17,52 +17,16 @@
 from __future__ import annotations
 
 import logging
-from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
-import aiohttp
-import orjson
-from aiohttp import ContentTypeError
 from markupsafe import escape as _escape_html
 
+from owlbot.owncast_http import get_json, post_with_envelope
+
 if TYPE_CHECKING:
+    import aiohttp
+
     from .http_client import HttpClient
-
-
-def _extract_error(text: str) -> str:
-    """Extract a human-readable error from a response body.
-
-    Owncast may return ``{"error": "..."}`` or ``{"success": false, "message": "..."}``,
-    or plain text.  This helper unwraps the JSON envelope when present.
-
-    :param text: Raw response body.
-    :return: The extracted error string.
-    """
-    try:
-        data = orjson.loads(text)
-    except (ValueError, TypeError):
-        return text
-    if isinstance(data, dict):
-        if "error" in data:
-            return str(data["error"])
-        if "message" in data:
-            return str(data["message"])
-    return text
-
-
-class OwncastError(Exception):
-    """Raised when an Owncast API request fails."""
-
-    def __init__(self, status: int, message: str) -> None:
-        """Initialize the error.
-
-        :param status: HTTP status code from the failed request, or 0 if the
-            request failed due to a connection error before receiving a response.
-        :param message: Error message or response body from the server.
-        """
-        self.status = status
-        self.message = message
-        super().__init__(f"Owncast error {status}: {message}")
 
 
 class OwncastClient:
@@ -231,107 +195,29 @@ class OwncastClient:
     async def _post(self, endpoint: str, data: dict[str, Any] | None = None) -> str:
         """Send a POST request to the Owncast API.
 
-        Owncast POST endpoints return ``{"success": true, "message": "..."}``.
-        This method validates the response and returns just the message string.
-
-        :param endpoint: The API endpoint path.
-        :param data: Optional JSON body to send.
-        :return: The success message string from the response.
         :raises OwncastError: If the request fails.
         """
-        url = f"{self._base_url}{endpoint}"
-        self._logger.debug("POST %s", endpoint)
-        try:
-            async with self._http.session.post(
-                url,
-                json=data,
-                headers=self._headers,
-                auth=self._auth,
-                allow_redirects=False,
-            ) as response:
-                if response.status >= HTTPStatus.BAD_REQUEST:
-                    text = await response.text()
-                    message = _extract_error(text)
-                    self._logger.error(
-                        "Error %d on POST %s: %s", response.status, endpoint, message
-                    )
-                    raise OwncastError(response.status, message)
-                self._logger.debug("POST %s -> %d", endpoint, response.status)
-                if response.content_type == "application/json":
-                    try:
-                        result = await response.json(loads=orjson.loads)
-                    except (ValueError, ContentTypeError):
-                        text = await response.text()
-                        self._logger.exception(
-                            "Invalid JSON on POST %s: %s", endpoint, text
-                        )
-                        raise OwncastError(response.status, text) from None
-                    if isinstance(result, dict):
-                        # Is there an error field? Owncast returns
-                        # {"error": "..."} for internal errors.
-                        if "error" in result:
-                            self._logger.error(
-                                "Error on POST %s: %s", endpoint, result["error"]
-                            )
-                            raise OwncastError(response.status, result["error"])
-                        # Does the success flag indicate failure?
-                        if "success" in result and not result["success"]:
-                            message = result.get("message", "unknown error")
-                            self._logger.error(
-                                "Error on POST %s: %s", endpoint, message
-                            )
-                            raise OwncastError(response.status, message)
-                        # Is this a simple success response? Extract the message.
-                        if "success" in result:
-                            return str(result.get("message", ""))
-                    # Unknown response shape from Owncast.
-                    self._logger.warning(
-                        "Unknown response on POST %s: %s", endpoint, result
-                    )
-                    return ""
-                return ""
-        except aiohttp.ClientError as e:
-            self._logger.exception("Connection error on POST %s.", endpoint)
-            raise OwncastError(0, str(e)) from e
+        return await post_with_envelope(
+            self._http,
+            self._base_url,
+            endpoint,
+            data,
+            logger=self._logger,
+            headers=self._headers,
+            auth=self._auth,
+        )
 
     async def _get(self, endpoint: str, params: dict[str, Any] | None = None) -> Any:
         """Send a GET request to the Owncast API.
 
-        :param endpoint: The API endpoint path.
-        :param params: Optional query parameters.
-        :return: The JSON response.
         :raises OwncastError: If the request fails.
         """
-        url = f"{self._base_url}{endpoint}"
-        self._logger.debug("GET %s", endpoint)
-        try:
-            async with self._http.session.get(
-                url,
-                params=params,
-                headers=self._headers,
-                auth=self._auth,
-                allow_redirects=False,
-            ) as response:
-                if response.status >= HTTPStatus.BAD_REQUEST:
-                    text = await response.text()
-                    message = _extract_error(text)
-                    self._logger.error(
-                        "Error %d on GET %s: %s", response.status, endpoint, message
-                    )
-                    raise OwncastError(response.status, message)
-                self._logger.debug("GET %s -> %d", endpoint, response.status)
-                try:
-                    result = await response.json(loads=orjson.loads)
-                except (ValueError, ContentTypeError):
-                    text = await response.text()
-                    self._logger.exception("Invalid JSON on GET %s: %s", endpoint, text)
-                    raise OwncastError(response.status, text) from None
-                # Is there an error field? Owncast returns
-                # {"error": "..."} for internal errors.
-                if isinstance(result, dict) and "error" in result:
-                    self._logger.error("Error on GET %s: %s", endpoint, result["error"])
-                    raise OwncastError(response.status, result["error"])
-                return result
-        except aiohttp.ClientError as e:
-            self._logger.exception("Connection error on GET %s.", endpoint)
-            raise OwncastError(0, str(e)) from e
+        return await get_json(
+            self._http,
+            self._base_url,
+            endpoint,
+            params,
+            logger=self._logger,
+            headers=self._headers,
+            auth=self._auth,
+        )
