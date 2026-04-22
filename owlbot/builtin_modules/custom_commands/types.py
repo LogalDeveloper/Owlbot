@@ -181,3 +181,15 @@ class CannotDeleteByAliasError(CommandError):
         self.alias = alias
         self.canonical = canonical
         super().__init__(f"cannot delete alias {alias}, belongs to {canonical}")
+
+
+class InactiveCommandError(CommandError):
+    """The command exists in the database but is not registered."""
+
+    def __init__(self, name: str) -> None:
+        """Initialize with the inactive command name.
+
+        :param name: The name of the inactive command.
+        """
+        self.name = name
+        super().__init__(f"command is inactive: {name}")

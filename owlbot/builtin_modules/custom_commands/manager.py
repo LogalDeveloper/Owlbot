@@ -31,6 +31,7 @@ from .types import (
     CannotDeleteByAliasError,
     CommandAlreadyExistsError,
     CommandNotFoundError,
+    InactiveCommandError,
     InvalidNameError,
     NotCustomCommandError,
 )
@@ -73,11 +74,47 @@ class CommandManager:
                 raise NotCustomCommandError(name) from err
             raise
 
-    def _reregister(self, command: Command) -> None:
-        """Unregister and re-register a command with current snapshot settings.
+    async def _resolve_active(self, name: str) -> Command:
+        """Resolve a name/alias and refuse if the command is inactive.
 
-        Both operations are synchronous, preventing interleaved state.
+        A command is inactive when its canonical name is not currently owned
+        by this module in the registry, typically because another module
+        holds the same name. If the conflict has cleared since startup,
+        attempts to re-register with the current snapshot before giving up.
+
+        :param name: Command name or alias.
+        :return: The resolved Command snapshot.
+        :raises InactiveCommandError: If the command is inactive and cannot
+            be reactivated.
         """
+        command = await self._resolve(name)
+        if self._commands.get(command.name) is not None:
+            return command
+        try:
+            self._commands.register(
+                name=command.name,
+                handler=custom_command_handler,
+                aliases=list(command.aliases),
+                requires_moderator=command.requires_moderator,
+                cooldown=command.cooldown,
+            )
+        except ValueError:
+            raise InactiveCommandError(command.name) from None
+        self._ctx.logger.info(
+            "Custom command '%s' reactivated after conflict cleared.",
+            command.name,
+        )
+        return command
+
+    def _reregister(self, command: Command) -> None:
+        """Unregister and re-register a command when owned by this module.
+
+        No-op when another module currently holds the name, so mutation
+        paths (for example ``remove_alias``) can still keep the database
+        in sync without disturbing the active registration.
+        """
+        if self._commands.get(command.name) is None:
+            return
         self._commands.unregister(command.name)
         self._commands.register(
             name=command.name,
@@ -144,7 +181,7 @@ class CommandManager:
         :param response: New response template.
         :return: Updated command snapshot.
         """
-        command = await self._resolve(name)
+        command = await self._resolve_active(name)
         updated = await self._repo.update_response(command.name, response)
         self._ctx.logger.info("Custom command '%s' updated.", command.name)
         return updated
@@ -171,7 +208,7 @@ class CommandManager:
         :param enabled: True for moderator-only, False for public.
         :return: Updated command snapshot.
         """
-        command = await self._resolve(name)
+        command = await self._resolve_active(name)
         updated = await self._repo.update_moderator_flag(command.name, enabled=enabled)
         self._reregister(updated)
         self._ctx.logger.info(
@@ -188,7 +225,7 @@ class CommandManager:
         :param seconds: Cooldown in seconds (0 to disable).
         :return: Updated command snapshot.
         """
-        command = await self._resolve(name)
+        command = await self._resolve_active(name)
         updated = await self._repo.update_cooldown(command.name, seconds=seconds)
         self._reregister(updated)
         self._ctx.logger.info(
@@ -204,7 +241,7 @@ class CommandManager:
         :param name: Command name or alias.
         :return: Updated command snapshot.
         """
-        command = await self._resolve(name)
+        command = await self._resolve_active(name)
         reset = await self._repo.reset_use_count(command.name)
         self._ctx.logger.info("Custom command '%s' counter reset.", command.name)
         return reset
@@ -218,7 +255,7 @@ class CommandManager:
         """
         if not NAME_RE.match(alias):
             raise InvalidNameError(alias)
-        command = await self._resolve(command_name)
+        command = await self._resolve_active(command_name)
         if alias == command.name:
             raise AliasIsCanonicalNameError(alias)
         if self._commands.exists(alias):

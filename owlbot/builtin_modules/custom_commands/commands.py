@@ -25,6 +25,7 @@ from .types import (
     CannotDeleteByAliasError,
     CommandAlreadyExistsError,
     CommandNotFoundError,
+    InactiveCommandError,
     InvalidNameError,
     NotCustomCommandError,
 )
@@ -112,6 +113,12 @@ async def editcommand(ctx: CommandContext) -> None:
             "That command is not a custom command and cannot be modified."
         )
         return
+    except InactiveCommandError as e:
+        await ctx.owncast_client.send_message(
+            f"Custom command {prefix}{e.name} is disabled because another module "
+            f"registered the same name. Delete it or resolve the conflict to re-enable."
+        )
+        return
 
     await ctx.owncast_client.send_message(f"Command {prefix}{cmd.name} updated.")
 
@@ -192,6 +199,12 @@ async def commandmodonly(ctx: CommandContext) -> None:
             "That command is not a custom command and cannot be modified."
         )
         return
+    except InactiveCommandError as e:
+        await ctx.owncast_client.send_message(
+            f"Custom command {prefix}{e.name} is disabled because another module "
+            f"registered the same name. Delete it or resolve the conflict to re-enable."
+        )
+        return
 
     status = "moderator-only" if cmd.requires_moderator else "public"
     await ctx.owncast_client.send_message(
@@ -225,6 +238,12 @@ async def resetcommand(ctx: CommandContext) -> None:
     except NotCustomCommandError:
         await ctx.owncast_client.send_message(
             "That command is not a custom command and cannot be modified."
+        )
+        return
+    except InactiveCommandError as e:
+        await ctx.owncast_client.send_message(
+            f"Custom command {prefix}{e.name} is disabled because another module "
+            f"registered the same name. Delete it or resolve the conflict to re-enable."
         )
         return
 
@@ -323,6 +342,12 @@ async def commandcooldown(ctx: CommandContext) -> None:
             "That command is not a custom command and cannot be modified."
         )
         return
+    except InactiveCommandError as e:
+        await ctx.owncast_client.send_message(
+            f"Custom command {prefix}{e.name} is disabled because another module "
+            f"registered the same name. Delete it or resolve the conflict to re-enable."
+        )
+        return
 
     if cmd.cooldown == 0:
         await ctx.owncast_client.send_message(
@@ -361,6 +386,12 @@ async def addalias(ctx: CommandContext) -> None:
     except NotCustomCommandError:
         await ctx.owncast_client.send_message(
             "That command is not a custom command and cannot be modified."
+        )
+        return
+    except InactiveCommandError as e:
+        await ctx.owncast_client.send_message(
+            f"Custom command {prefix}{e.name} is disabled because another module "
+            f"registered the same name. Delete it or resolve the conflict to re-enable."
         )
         return
     except InvalidNameError:
