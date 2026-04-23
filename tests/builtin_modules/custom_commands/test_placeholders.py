@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from freezegun import freeze_time
+import time_machine
 
 from owlbot.builtin_modules.custom_commands.placeholder_handlers import _format_duration
 from owlbot.builtin_modules.custom_commands.placeholders import process_placeholders
@@ -612,7 +612,7 @@ class TestCountdownCountup:
         self, placeholder_storage: ModuleStorage
     ) -> None:
         """$(countdown) with a future date returns the formatted duration."""
-        with freeze_time("2026-06-15 12:00:00", tz_offset=0):
+        with time_machine.travel("2026-06-15 12:00:00+00:00", tick=False):
             now = datetime.now(UTC)
             # Dec 25 2099 00:00:00 EST = Dec 25 2099 05:00:00 UTC
             target = datetime(2099, 12, 25, 5, 0, 0, tzinfo=UTC)
@@ -624,7 +624,7 @@ class TestCountdownCountup:
 
     async def test_countup_past_date(self, placeholder_storage: ModuleStorage) -> None:
         """$(countup) with a past date returns the formatted elapsed duration."""
-        with freeze_time("2026-06-15 12:00:00", tz_offset=0):
+        with time_machine.travel("2026-06-15 12:00:00+00:00", tick=False):
             now = datetime.now(UTC)
             target = datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
             expected = _format_duration(int((now - target).total_seconds()))
@@ -673,7 +673,7 @@ class TestCountdownCountup:
         self, placeholder_storage: ModuleStorage
     ) -> None:
         """Fractional offset like IST (+5:30) is applied."""  # codespell:ignore ist
-        with freeze_time("2026-06-15 12:00:00", tz_offset=0):
+        with time_machine.travel("2026-06-15 12:00:00+00:00", tick=False):
             now = datetime.now(UTC)
             # IST = Dec 31 2019 18:30:00 UTC  # codespell:ignore ist
             target = datetime(2019, 12, 31, 18, 30, 0, tzinfo=UTC)
@@ -939,7 +939,7 @@ class TestCaseInsensitivity:
         self, placeholder_storage: ModuleStorage
     ) -> None:
         """$(COUNTUP) resolves the same as $(countup)."""
-        with freeze_time("2026-06-15 12:00:00", tz_offset=0):
+        with time_machine.travel("2026-06-15 12:00:00+00:00", tick=False):
             now = datetime.now(UTC)
             target = datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
             expected = _format_duration(int((now - target).total_seconds()))

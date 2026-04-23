@@ -34,18 +34,18 @@ from aiohttp.test_utils import make_mocked_request
 from owlbot.api.context import RouteContext
 from owlbot.api.routes import RouteInfo, RouteMark, on_route
 from owlbot.registries.routes import ModuleRoutes, RouteDispatcher, RouteRegistry
-from tests.conftest import make_module_context
 
 if TYPE_CHECKING:
     from owlbot.api.context import ModuleContext
 
 
 def _make_dispatcher(
+    module_context: ModuleContext,
     handler_timeout: float = 0.1,
 ) -> RouteDispatcher:
-    """Build a RouteDispatcher with a controllable timeout."""
+    """Build a RouteDispatcher wired to the given ModuleContext."""
     return RouteDispatcher(
-        get_module_context=lambda name: make_module_context(module_name=name),
+        get_module_context=lambda _name: module_context,
         handler_timeout=handler_timeout,
     )
 
@@ -494,13 +494,13 @@ class TestRouteRegistry:
 class TestRouteDispatcherDispatch:
     """Tests RouteDispatcher.dispatch() from owlbot.registries.routes."""
 
-    async def test_dispatch_dict_response(self) -> None:
+    async def test_dispatch_dict_response(self, module_context: ModuleContext) -> None:
         """Handler returning dict produces JSON 200 response."""
 
         async def handler(ctx: RouteContext) -> dict[str, str]:
             return {"status": "ok"}
 
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/api", handler, module_name="mod")
 
         request = make_mocked_request("GET", "/owlbot/mod/api")
@@ -511,13 +511,13 @@ class TestRouteDispatcherDispatch:
         assert response.status == HTTPStatus.OK
         assert response.content_type == "application/json"
 
-    async def test_dispatch_web_response(self) -> None:
+    async def test_dispatch_web_response(self, module_context: ModuleContext) -> None:
         """Handler returning web.Response is passed through."""
 
         async def handler(ctx: RouteContext) -> web.Response:
             return web.Response(text="hello", status=201)
 
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/page", handler, module_name="mod")
 
         request = make_mocked_request("GET", "/owlbot/mod/page")
@@ -527,13 +527,13 @@ class TestRouteDispatcherDispatch:
         response = await dispatcher.dispatch(request)
         assert response.status == HTTPStatus.CREATED
 
-    async def test_dispatch_none_response(self) -> None:
+    async def test_dispatch_none_response(self, module_context: ModuleContext) -> None:
         """Handler returning None produces 204 No Content."""
 
         async def handler(ctx: RouteContext) -> None:
             pass
 
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/hook", handler, methods=["POST"], module_name="mod")
 
         request = make_mocked_request("POST", "/owlbot/mod/hook")
@@ -543,9 +543,9 @@ class TestRouteDispatcherDispatch:
         response = await dispatcher.dispatch(request)
         assert response.status == HTTPStatus.NO_CONTENT
 
-    async def test_dispatch_404(self) -> None:
+    async def test_dispatch_404(self, module_context: ModuleContext) -> None:
         """Dispatch to unregistered path returns 404."""
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
 
         request = make_mocked_request("GET", "/owlbot/mod/nope")
         request.match_info["module_name"] = "mod"
@@ -554,9 +554,9 @@ class TestRouteDispatcherDispatch:
         response = await dispatcher.dispatch(request)
         assert response.status == HTTPStatus.NOT_FOUND
 
-    async def test_dispatch_405(self) -> None:
+    async def test_dispatch_405(self, module_context: ModuleContext) -> None:
         """Dispatch with wrong method returns 405 with Allow header."""
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/data", _noop, methods=["GET"], module_name="mod")
 
         request = make_mocked_request("POST", "/owlbot/mod/data")
@@ -567,13 +567,15 @@ class TestRouteDispatcherDispatch:
         assert response.status == HTTPStatus.METHOD_NOT_ALLOWED
         assert "GET" in response.headers["Allow"]
 
-    async def test_dispatch_handler_exception(self) -> None:
+    async def test_dispatch_handler_exception(
+        self, module_context: ModuleContext
+    ) -> None:
         """Handler that raises returns 500."""
 
         async def bad_handler(ctx: RouteContext) -> web.Response:
             raise RuntimeError("boom")
 
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/bad", bad_handler, module_name="mod")
 
         request = make_mocked_request("GET", "/owlbot/mod/bad")
@@ -583,13 +585,15 @@ class TestRouteDispatcherDispatch:
         response = await dispatcher.dispatch(request)
         assert response.status == HTTPStatus.INTERNAL_SERVER_ERROR
 
-    async def test_dispatch_unsupported_return_type(self) -> None:
+    async def test_dispatch_unsupported_return_type(
+        self, module_context: ModuleContext
+    ) -> None:
         """Handler returning unsupported type produces 500."""
 
         async def bad_return(ctx: RouteContext) -> str:
             return "not a valid return type"
 
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/bad", bad_return, module_name="mod")  # type: ignore[arg-type]
 
         request = make_mocked_request("GET", "/owlbot/mod/bad")
@@ -599,14 +603,14 @@ class TestRouteDispatcherDispatch:
         response = await dispatcher.dispatch(request)
         assert response.status == HTTPStatus.INTERNAL_SERVER_ERROR
 
-    async def test_dispatch_timeout(self) -> None:
+    async def test_dispatch_timeout(self, module_context: ModuleContext) -> None:
         """Non-streaming handler exceeding timeout returns 500."""
 
         async def slow(ctx: RouteContext) -> web.Response:
             await asyncio.sleep(0.3)
             return web.Response(text="done")
 
-        dispatcher = _make_dispatcher(handler_timeout=0.1)
+        dispatcher = _make_dispatcher(module_context, handler_timeout=0.1)
         dispatcher.register("/slow", slow, module_name="mod")
 
         request = make_mocked_request("GET", "/owlbot/mod/slow")
@@ -616,14 +620,16 @@ class TestRouteDispatcherDispatch:
         response = await dispatcher.dispatch(request)
         assert response.status == HTTPStatus.INTERNAL_SERVER_ERROR
 
-    async def test_dispatch_streaming_bypasses_timeout(self) -> None:
+    async def test_dispatch_streaming_bypasses_timeout(
+        self, module_context: ModuleContext
+    ) -> None:
         """Streaming handler exceeding timeout is not cancelled."""
 
         async def slow_stream(ctx: RouteContext) -> web.Response:
             await asyncio.sleep(0.3)
             return web.Response(text="done")
 
-        dispatcher = _make_dispatcher(handler_timeout=0.1)
+        dispatcher = _make_dispatcher(module_context, handler_timeout=0.1)
         dispatcher.register("/stream", slow_stream, module_name="mod", streaming=True)
 
         request = make_mocked_request("GET", "/owlbot/mod/stream")
@@ -633,13 +639,15 @@ class TestRouteDispatcherDispatch:
         response = await dispatcher.dispatch(request)
         assert response.status == HTTPStatus.OK
 
-    async def test_dispatch_streaming_exception(self) -> None:
+    async def test_dispatch_streaming_exception(
+        self, module_context: ModuleContext
+    ) -> None:
         """Streaming handler that raises returns 500."""
 
         async def bad_stream(ctx: RouteContext) -> web.Response:
             raise RuntimeError("stream broke")
 
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/bad", bad_stream, module_name="mod", streaming=True)
 
         request = make_mocked_request("GET", "/owlbot/mod/bad")
@@ -649,13 +657,15 @@ class TestRouteDispatcherDispatch:
         response = await dispatcher.dispatch(request)
         assert response.status == HTTPStatus.INTERNAL_SERVER_ERROR
 
-    async def test_dispatch_streaming_normal_return(self) -> None:
+    async def test_dispatch_streaming_normal_return(
+        self, module_context: ModuleContext
+    ) -> None:
         """Streaming handler returning dict produces JSON response."""
 
         async def fast_stream(ctx: RouteContext) -> dict[str, str]:
             return {"status": "ok"}
 
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/fast", fast_stream, module_name="mod", streaming=True)
 
         request = make_mocked_request("GET", "/owlbot/mod/fast")
@@ -665,14 +675,14 @@ class TestRouteDispatcherDispatch:
         response = await dispatcher.dispatch(request)
         assert response.status == HTTPStatus.OK
 
-    async def test_dispatch_path_params(self) -> None:
+    async def test_dispatch_path_params(self, module_context: ModuleContext) -> None:
         """Path parameters are populated in RouteContext.match_info."""
         captured: list[dict[str, str]] = []
 
         async def handler(ctx: RouteContext) -> None:
             captured.append(dict(ctx.match_info))
 
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/users/{id}", handler, module_name="mod")
 
         request = make_mocked_request("GET", "/owlbot/mod/users/42")
@@ -683,13 +693,13 @@ class TestRouteDispatcherDispatch:
         assert len(captured) == 1
         assert captured[0]["id"] == "42"
 
-    async def test_dispatch_root_path(self) -> None:
+    async def test_dispatch_root_path(self, module_context: ModuleContext) -> None:
         """Dispatch to module root (no path segment) works."""
 
         async def handler(ctx: RouteContext) -> dict[str, str]:
             return {"root": "yes"}
 
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/", handler, module_name="mod")
 
         request = make_mocked_request("GET", "/owlbot/mod/")
@@ -703,7 +713,9 @@ class TestRouteDispatcherDispatch:
 class TestRouteDispatcherDrainHandlers:
     """Tests RouteDispatcher.drain_handlers() from owlbot.registries.routes."""
 
-    async def test_drain_handlers_cancels_active_handler(self) -> None:
+    async def test_drain_handlers_cancels_active_handler(
+        self, module_context: ModuleContext
+    ) -> None:
         """drain_handlers() cancels a running streaming handler."""
         entered = asyncio.Event()
 
@@ -712,7 +724,7 @@ class TestRouteDispatcherDrainHandlers:
             await asyncio.sleep(3600)
             return web.Response(text="done")
 
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register(
             "/stream", forever_stream, module_name="mod", streaming=True
         )
@@ -733,19 +745,23 @@ class TestRouteDispatcherDrainHandlers:
         with pytest.raises(asyncio.CancelledError):
             await task
 
-    async def test_drain_handlers_noop_when_empty(self) -> None:
+    async def test_drain_handlers_noop_when_empty(
+        self, module_context: ModuleContext
+    ) -> None:
         """drain_handlers() with no active handlers completes immediately."""
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         await dispatcher.drain_handlers()
         assert len(dispatcher._streaming_tasks) == 0
 
-    async def test_streaming_task_cleaned_up_on_normal_return(self) -> None:
+    async def test_streaming_task_cleaned_up_on_normal_return(
+        self, module_context: ModuleContext
+    ) -> None:
         """Streaming task is removed from tracking after normal completion."""
 
         async def quick_stream(ctx: RouteContext) -> dict[str, str]:
             return {"ok": "true"}
 
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/quick", quick_stream, module_name="mod", streaming=True)
 
         request = make_mocked_request("GET", "/owlbot/mod/quick")
@@ -755,13 +771,15 @@ class TestRouteDispatcherDrainHandlers:
         await dispatcher.dispatch(request)
         assert len(dispatcher._streaming_tasks) == 0
 
-    async def test_streaming_task_cleaned_up_on_exception(self) -> None:
+    async def test_streaming_task_cleaned_up_on_exception(
+        self, module_context: ModuleContext
+    ) -> None:
         """Streaming task is removed from tracking after handler exception."""
 
         async def bad_stream(ctx: RouteContext) -> web.Response:
             raise RuntimeError("boom")
 
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/bad", bad_stream, module_name="mod", streaming=True)
 
         request = make_mocked_request("GET", "/owlbot/mod/bad")
@@ -771,7 +789,9 @@ class TestRouteDispatcherDrainHandlers:
         await dispatcher.dispatch(request)
         assert len(dispatcher._streaming_tasks) == 0
 
-    async def test_drain_handlers_multiple_handlers(self) -> None:
+    async def test_drain_handlers_multiple_handlers(
+        self, module_context: ModuleContext
+    ) -> None:
         """drain_handlers() cancels all active streaming handlers."""
         entered = asyncio.Event()
         count = 0
@@ -784,7 +804,7 @@ class TestRouteDispatcherDrainHandlers:
             await asyncio.sleep(3600)
             return web.Response(text="done")
 
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/s1", forever_stream, module_name="mod", streaming=True)
         dispatcher.register("/s2", forever_stream, module_name="mod", streaming=True)
 
@@ -808,13 +828,15 @@ class TestRouteDispatcherDrainHandlers:
         with pytest.raises(asyncio.CancelledError):
             await task2
 
-    async def test_nonstreaming_task_tracked_and_cleaned_up(self) -> None:
+    async def test_nonstreaming_task_tracked_and_cleaned_up(
+        self, module_context: ModuleContext
+    ) -> None:
         """Non-streaming handler tasks are tracked and cleaned up."""
 
         async def handler(ctx: RouteContext) -> dict[str, str]:
             return {"ok": "true"}
 
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/api", handler, module_name="mod")
 
         request = make_mocked_request("GET", "/owlbot/mod/api")
@@ -824,7 +846,9 @@ class TestRouteDispatcherDrainHandlers:
         await dispatcher.dispatch(request)
         assert len(dispatcher._handler_tasks) == 0
 
-    async def test_drain_handlers_waits_for_nonstreaming_first(self) -> None:
+    async def test_drain_handlers_waits_for_nonstreaming_first(
+        self, module_context: ModuleContext
+    ) -> None:
         """drain_handlers() waits for non-streaming handlers before cancelling."""
         order: list[str] = []
         handler_entered = asyncio.Event()
@@ -845,7 +869,7 @@ class TestRouteDispatcherDrainHandlers:
                 raise
             return web.Response(text="done")
 
-        dispatcher = _make_dispatcher(handler_timeout=5.0)
+        dispatcher = _make_dispatcher(module_context, handler_timeout=5.0)
         dispatcher.register("/api", slow_handler, module_name="mod")
         dispatcher.register(
             "/stream", forever_stream, module_name="mod", streaming=True
@@ -875,37 +899,37 @@ class TestRouteDispatcherDrainHandlers:
 class TestRouteDispatcherDelegation:
     """Tests RouteDispatcher delegation methods from owlbot.registries.routes."""
 
-    def test_unregister(self) -> None:
+    def test_unregister(self, module_context: ModuleContext) -> None:
         """RouteDispatcher.unregister() delegates to registry."""
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/x", _noop, module_name="mod")
         assert dispatcher.unregister("/owlbot/mod/x") is True
         assert dispatcher.unregister("/owlbot/mod/x") is False
 
-    def test_get_no_method(self) -> None:
+    def test_get_no_method(self, module_context: ModuleContext) -> None:
         """RouteDispatcher.get() without method returns list."""
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/x", _noop, module_name="mod")
         result = dispatcher.get("/owlbot/mod/x")
         assert isinstance(result, list)
         assert len(result) == 1
 
-    def test_get_with_method(self) -> None:
+    def test_get_with_method(self, module_context: ModuleContext) -> None:
         """RouteDispatcher.get() with method returns RouteInfo or None."""
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/x", _noop, module_name="mod")
         assert dispatcher.get("/owlbot/mod/x", method="GET") is not None
         assert dispatcher.get("/owlbot/mod/x", method="POST") is None
 
-    def test_get_by_module(self) -> None:
+    def test_get_by_module(self, module_context: ModuleContext) -> None:
         """RouteDispatcher.get_by_module() delegates to registry."""
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/a", _noop, module_name="mod_a")
         dispatcher.register("/b", _noop, module_name="mod_b")
         result = dispatcher.get_by_module("mod_a")
         assert len(result) == 1
 
-    def test_register_from_module(self) -> None:
+    def test_register_from_module(self, module_context: ModuleContext) -> None:
         """RouteDispatcher.register_from_module() delegates to registry."""
 
         @on_route("/scan")
@@ -915,13 +939,13 @@ class TestRouteDispatcherDelegation:
         mod = types.ModuleType("fake")
         mod.handler = handler  # type: ignore[attr-defined]
 
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register_from_module(mod, "fake")
         assert len(dispatcher.get_by_module("fake")) == 1
 
-    def test_unregister_by_module(self) -> None:
+    def test_unregister_by_module(self, module_context: ModuleContext) -> None:
         """RouteDispatcher.unregister_by_module() delegates to registry."""
-        dispatcher = _make_dispatcher()
+        dispatcher = _make_dispatcher(module_context)
         dispatcher.register("/a", _noop, module_name="mod")
         dispatcher.register("/b", _noop, module_name="mod")
         assert dispatcher.unregister_by_module("mod") == 2
@@ -932,75 +956,77 @@ class TestModuleRoutes:
     """Tests ModuleRoutes from owlbot.registries.routes."""
 
     def _make_mod_routes(
-        self, *module_names: str
+        self, module_context: ModuleContext, *module_names: str
     ) -> tuple[RouteDispatcher, dict[str, ModuleRoutes]]:
         """Build a dispatcher and ModuleRoutes wrappers for given modules."""
-        dispatcher = _make_dispatcher(handler_timeout=5.0)
+        dispatcher = _make_dispatcher(module_context, handler_timeout=5.0)
         mod_routes = {
             name: ModuleRoutes(dispatcher, name, "https://example.com")
             for name in module_names
         }
         return dispatcher, mod_routes
 
-    def test_register_auto_supplies_module_name(self) -> None:
+    def test_register_auto_supplies_module_name(
+        self, module_context: ModuleContext
+    ) -> None:
         """ModuleRoutes.register() auto-supplies module_name."""
-        _, mod_routes = self._make_mod_routes("mod_a")
+        _, mod_routes = self._make_mod_routes(module_context, "mod_a")
         info = mod_routes["mod_a"].register("/stats", _noop)
         assert info.module_name == "mod_a"
         assert info.full_path == "/owlbot/mod_a/stats"
 
-    def test_register_streaming(self) -> None:
+    def test_register_streaming(self, module_context: ModuleContext) -> None:
         """ModuleRoutes.register() passes streaming through."""
-        _, mod_routes = self._make_mod_routes("mod_a")
+        _, mod_routes = self._make_mod_routes(module_context, "mod_a")
         info = mod_routes["mod_a"].register("/sse", _noop, streaming=True)
         assert info.streaming is True
 
-    def test_register_methods(self) -> None:
+    def test_register_methods(self, module_context: ModuleContext) -> None:
         """ModuleRoutes.register() passes methods through."""
-        _, mod_routes = self._make_mod_routes("mod_a")
+        _, mod_routes = self._make_mod_routes(module_context, "mod_a")
         info = mod_routes["mod_a"].register("/data", _noop, methods=["GET", "POST"])
         assert info.methods == frozenset({"GET", "POST"})
 
-    def test_unregister_by_path(self) -> None:
+    def test_unregister_by_path(self, module_context: ModuleContext) -> None:
         """ModuleRoutes.unregister() removes all handlers at path."""
-        _, mod_routes = self._make_mod_routes("mod_a")
+        _, mod_routes = self._make_mod_routes(module_context, "mod_a")
         mod_routes["mod_a"].register("/stats", _noop)
         assert mod_routes["mod_a"].unregister("/stats") is True
         assert mod_routes["mod_a"].get("/stats") == []
 
-    def test_unregister_by_method(self) -> None:
+    def test_unregister_by_method(self, module_context: ModuleContext) -> None:
         """ModuleRoutes.unregister() with method removes only that handler."""
-        _, mod_routes = self._make_mod_routes("mod_a")
+        _, mod_routes = self._make_mod_routes(module_context, "mod_a")
         mod_routes["mod_a"].register("/data", _noop, methods=["GET"])
         mod_routes["mod_a"].register("/data", _noop, methods=["POST"])
         assert mod_routes["mod_a"].unregister("/data", method="GET") is True
         remaining = mod_routes["mod_a"].get("/data")
         assert len(remaining) == 1
 
-    def test_unregister_unknown(self) -> None:
+    def test_unregister_unknown(self, module_context: ModuleContext) -> None:
         """ModuleRoutes.unregister() returns False for unknown path."""
-        _, mod_routes = self._make_mod_routes("mod_a")
+        _, mod_routes = self._make_mod_routes(module_context, "mod_a")
         assert mod_routes["mod_a"].unregister("/nope") is False
 
-    def test_get_no_method(self) -> None:
+    def test_get_no_method(self, module_context: ModuleContext) -> None:
         """ModuleRoutes.get() without method returns list."""
-        _, mod_routes = self._make_mod_routes("mod_a")
+        _, mod_routes = self._make_mod_routes(module_context, "mod_a")
         mod_routes["mod_a"].register("/data", _noop, methods=["GET"])
         mod_routes["mod_a"].register("/data", _noop, methods=["POST"])
         result = mod_routes["mod_a"].get("/data")
         assert isinstance(result, list)
         assert len(result) == 2
 
-    def test_get_with_method(self) -> None:
+    def test_get_with_method(self, module_context: ModuleContext) -> None:
         """ModuleRoutes.get() with method returns RouteInfo or None."""
-        _, mod_routes = self._make_mod_routes("mod_a")
+        _, mod_routes = self._make_mod_routes(module_context, "mod_a")
         mod_routes["mod_a"].register("/data", _noop, methods=["GET"])
         assert mod_routes["mod_a"].get("/data", method="GET") is not None
         assert mod_routes["mod_a"].get("/data", method="POST") is None
 
-    def test_get_unknown_path(self) -> None:
+    def test_get_unknown_path(self, module_context: ModuleContext) -> None:
         """ModuleRoutes.get() for unknown path returns empty list."""
-        _, mod_routes = self._make_mod_routes("mod_a")
+        _, mod_routes = self._make_mod_routes(module_context, "mod_a")
         assert mod_routes["mod_a"].get("/nope") == []
 
     @pytest.mark.parametrize(
@@ -1014,13 +1040,14 @@ class TestModuleRoutes:
     )
     def test_exists(
         self,
+        module_context: ModuleContext,
         *,
         register: bool,
         check_method: str | None,
         expected: bool,
     ) -> None:
         """ModuleRoutes.exists() checks for route presence."""
-        _, mod_routes = self._make_mod_routes("mod_a")
+        _, mod_routes = self._make_mod_routes(module_context, "mod_a")
         if register:
             mod_routes["mod_a"].register("/data", _noop)
         if check_method is not None:
@@ -1028,30 +1055,30 @@ class TestModuleRoutes:
         else:
             assert mod_routes["mod_a"].exists("/data") is expected
 
-    def test_url_for(self) -> None:
+    def test_url_for(self, module_context: ModuleContext) -> None:
         """ModuleRoutes.url_for() builds correct public URL."""
-        _, mod_routes = self._make_mod_routes("mod_a")
+        _, mod_routes = self._make_mod_routes(module_context, "mod_a")
         url = mod_routes["mod_a"].url_for("/list")
         assert url == "https://example.com/owlbot/mod_a/list"
 
-    def test_url_for_normalizes_path(self) -> None:
+    def test_url_for_normalizes_path(self, module_context: ModuleContext) -> None:
         """ModuleRoutes.url_for() adds leading slash if missing."""
-        _, mod_routes = self._make_mod_routes("mod_a")
+        _, mod_routes = self._make_mod_routes(module_context, "mod_a")
         url = mod_routes["mod_a"].url_for("list")
         assert url == "https://example.com/owlbot/mod_a/list"
 
-    def test_module_routes_property(self) -> None:
+    def test_module_routes_property(self, module_context: ModuleContext) -> None:
         """module_routes returns only this module's routes."""
-        _, mod_routes = self._make_mod_routes("mod_a", "mod_b")
+        _, mod_routes = self._make_mod_routes(module_context, "mod_a", "mod_b")
         mod_routes["mod_a"].register("/a", _noop)
         mod_routes["mod_b"].register("/b", _noop)
         routes = mod_routes["mod_a"].module_routes
         assert len(routes) == 1
         assert routes[0].module_name == "mod_a"
 
-    def test_module_routes_property_empty(self) -> None:
+    def test_module_routes_property_empty(self, module_context: ModuleContext) -> None:
         """module_routes returns empty list when nothing registered."""
-        _, mod_routes = self._make_mod_routes("mod_a")
+        _, mod_routes = self._make_mod_routes(module_context, "mod_a")
         assert mod_routes["mod_a"].module_routes == []
 
 
@@ -1060,16 +1087,15 @@ class TestRouteContext:
 
     def _make_route_context(
         self,
-    ) -> tuple[RouteContext, ModuleContext]:
-        """Build a RouteContext with stub parts."""
-        module_ctx = make_module_context(module_name="mod_a")
-        request = make_mocked_request("GET", "/owlbot/mod_a/test")
-        ctx = RouteContext(
+        module_ctx: ModuleContext,
+    ) -> RouteContext:
+        """Build a RouteContext wrapping the given ModuleContext."""
+        request = make_mocked_request("GET", f"/owlbot/{module_ctx.module_name}/test")
+        return RouteContext(
             request=request,
             module=module_ctx,
             match_info={"id": "42"},
         )
-        return ctx, module_ctx
 
     @pytest.mark.parametrize(
         ("prop", "use_is"),
@@ -1087,30 +1113,33 @@ class TestRouteContext:
             pytest.param("templates", True, id="templates"),
         ],
     )
-    def test_property_proxying(self, prop: str, *, use_is: bool) -> None:
+    def test_property_proxying(
+        self, module_context: ModuleContext, prop: str, *, use_is: bool
+    ) -> None:
         """RouteContext properties proxy to the underlying ModuleContext."""
-        ctx, module_ctx = self._make_route_context()
+        ctx = self._make_route_context(module_context)
         ctx_val = getattr(ctx, prop)
-        mod_val = getattr(module_ctx, prop)
+        mod_val = getattr(module_context, prop)
         if use_is:
             assert ctx_val is mod_val
         else:
             assert ctx_val == mod_val
 
-    def test_request_accessible(self) -> None:
+    def test_request_accessible(self, module_context: ModuleContext) -> None:
         """RouteContext.request is the aiohttp Request."""
-        ctx, _ = self._make_route_context()
+        ctx = self._make_route_context(module_context)
         assert ctx.request is not None
         assert ctx.request.method == "GET"
 
-    def test_match_info_accessible(self) -> None:
+    def test_match_info_accessible(self, module_context: ModuleContext) -> None:
         """RouteContext.match_info contains path parameters."""
-        ctx, _ = self._make_route_context()
+        ctx = self._make_route_context(module_context)
         assert ctx.match_info == {"id": "42"}
 
-    def test_match_info_defaults_empty(self) -> None:
+    def test_match_info_defaults_empty(self, module_context: ModuleContext) -> None:
         """RouteContext.match_info defaults to empty dict."""
-        module_ctx = make_module_context(module_name="mod_a")
-        request = make_mocked_request("GET", "/owlbot/mod_a/test")
-        ctx = RouteContext(request=request, module=module_ctx)
+        request = make_mocked_request(
+            "GET", f"/owlbot/{module_context.module_name}/test"
+        )
+        ctx = RouteContext(request=request, module=module_context)
         assert ctx.match_info == {}

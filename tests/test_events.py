@@ -33,8 +33,6 @@ from owlbot.api.context import EventContext, PropagationState
 from owlbot.api.event_types import (
     ChatEvent,
     EventType,
-    User,
-    UserJoinedEvent,
 )
 from owlbot.api.events import EventMark, Priority, on_event
 from owlbot.registries.events import (
@@ -43,47 +41,11 @@ from owlbot.registries.events import (
     HandlerEntry,
     ModuleEvents,
 )
-from tests.conftest import make_module_context
+from owlbot.testing import make_chat_event, make_user_joined_event
 
 if TYPE_CHECKING:
     from owlbot.api.context import ModuleContext
     from owlbot.api.storage import ModuleStorage
-
-
-def _make_user(
-    *,
-    user_id: str = "user-1",
-    display_name: str = "TestUser",
-) -> User:
-    """Build a minimal User for test events."""
-    return User(
-        id=user_id,
-        display_name=display_name,
-        display_color=0,
-        created_at=None,
-        previous_names=[],
-        name_changed_at=None,
-        is_bot=False,
-        is_authenticated=False,
-        scopes=frozenset(),
-    )
-
-
-def _make_chat_event(
-    *,
-    body: str = "hello",
-    user: User | None = None,
-) -> ChatEvent:
-    """Build a minimal ChatEvent for test dispatches."""
-    return ChatEvent(
-        user=user or _make_user(),
-        client_id=1,
-        body=body,
-        raw_body=f"<p>{body}</p>",
-        message_id="msg-001",
-        is_visible=True,
-        timestamp=None,
-    )
 
 
 def _unused_get_module_context(name: str) -> ModuleContext:
@@ -424,30 +386,28 @@ class TestEventRegistry:
 class TestEventDispatcherDispatch:
     """Tests dispatch() from EventDispatcher."""
 
-    async def test_calls_handler(self, storage: ModuleStorage) -> None:
+    async def test_calls_handler(self, module_context: ModuleContext) -> None:
         """Handler receives an EventContext where ctx.event is the dispatched event."""
         received: list[Any] = []
 
         async def handler(ctx: EventContext[Any]) -> None:
             received.append(ctx.event)
 
-        module_ctx = make_module_context(storage, "mod_a")
-
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda _name: module_ctx,
+            get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
         )
         dispatcher.register(handler, (EventType.CHAT,), "mod_a")
-        event = _make_chat_event()
+        event = make_chat_event()
         await dispatcher.dispatch(EventType.CHAT, event)
         assert len(received) == 1
         assert received[0] is event
 
-    async def test_priority_order(self, storage: ModuleStorage) -> None:
+    async def test_priority_order(self, module_context: ModuleContext) -> None:
         """Handlers execute in priority order: HIGH before NORMAL before LOW."""
         call_order: list[str] = []
 
@@ -460,23 +420,23 @@ class TestEventDispatcherDispatch:
         async def low_handler(ctx: EventContext[Any]) -> None:
             call_order.append("low")
 
-        module_ctx = make_module_context(storage, "mod_a")
-
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda _name: module_ctx,
+            get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
         )
         dispatcher.register(high_handler, (EventType.CHAT,), "mod_a", Priority.HIGH)
         dispatcher.register(normal_handler, (EventType.CHAT,), "mod_a", Priority.NORMAL)
         dispatcher.register(low_handler, (EventType.CHAT,), "mod_a", Priority.LOW)
-        await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
+        await dispatcher.dispatch(EventType.CHAT, make_chat_event())
         assert call_order == ["high", "normal", "low"]
 
-    async def test_stable_order_same_priority(self, storage: ModuleStorage) -> None:
+    async def test_stable_order_same_priority(
+        self, module_context: ModuleContext
+    ) -> None:
         """Handlers at the same priority run in registration order."""
         call_order: list[str] = []
 
@@ -486,71 +446,64 @@ class TestEventDispatcherDispatch:
         async def second(ctx: EventContext[Any]) -> None:
             call_order.append("second")
 
-        module_ctx = make_module_context(storage, "mod_a")
-
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda _name: module_ctx,
+            get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
         )
         dispatcher.register(first, (EventType.CHAT,), "mod_a", Priority.NORMAL)
         dispatcher.register(second, (EventType.CHAT,), "mod_a", Priority.NORMAL)
-        await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
+        await dispatcher.dispatch(EventType.CHAT, make_chat_event())
         assert call_order == ["first", "second"]
 
     async def test_no_handlers(
-        self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
+        self, module_context: ModuleContext, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Dispatch with no handlers does not raise; debug log emitted."""
 
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        module_ctx = make_module_context(storage, "mod_a")
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda _name: module_ctx,
+            get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
         )
         with caplog.at_level(logging.DEBUG, logger="owlbot.events"):
             await dispatcher.dispatch(
                 EventType.USER_JOINED,
-                UserJoinedEvent(
-                    user=_make_user(),
-                    client_id=1,
-                    event_id="evt-001",
-                    timestamp=None,
-                ),
+                make_user_joined_event(client_id=1, event_id="evt-001"),
             )
         assert any(
             "No handlers registered for event type" in r.message for r in caplog.records
         )
 
     async def test_logs_event(
-        self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
+        self, module_context: ModuleContext, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Dispatch logs the event via log_event() at INFO level."""
 
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        module_ctx = make_module_context(storage, "mod_a")
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda _name: module_ctx,
+            get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
         )
-        chat_event = _make_chat_event(body="hello")
+        chat_event = make_chat_event(raw_body="hello")
         with caplog.at_level(logging.INFO, logger="owlbot.events"):
             await dispatcher.dispatch(EventType.CHAT, chat_event)
         assert any(
-            r.message == "[CHAT] TestUser (msg-001): hello" for r in caplog.records
+            r.message == "[CHAT] TestUser (test-msg-id): hello" for r in caplog.records
         )
 
-    async def test_propagation_stops_remaining(self, storage: ModuleStorage) -> None:
+    async def test_propagation_stops_remaining(
+        self, module_context: ModuleContext
+    ) -> None:
         """Handler A stops propagation; handler B is never called."""
         call_order: list[str] = []
 
@@ -561,23 +514,21 @@ class TestEventDispatcherDispatch:
         async def handler_b(ctx: EventContext[Any]) -> None:
             call_order.append("b")
 
-        module_ctx = make_module_context(storage, "mod_a")
-
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda _name: module_ctx,
+            get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
         )
         dispatcher.register(handler_a, (EventType.CHAT,), "mod_a", Priority.HIGH)
         dispatcher.register(handler_b, (EventType.CHAT,), "mod_a", Priority.NORMAL)
-        await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
+        await dispatcher.dispatch(EventType.CHAT, make_chat_event())
         assert call_order == ["a"]
 
     async def test_propagation_reason_logged(
-        self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
+        self, module_context: ModuleContext, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Propagation stop reason appears in debug log."""
 
@@ -587,23 +538,21 @@ class TestEventDispatcherDispatch:
         async def handler_b(ctx: EventContext[Any]) -> None:
             pass
 
-        module_ctx = make_module_context(storage, "mod_a")
-
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda _name: module_ctx,
+            get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
         )
         dispatcher.register(handler_a, (EventType.CHAT,), "mod_a", Priority.HIGH)
         dispatcher.register(handler_b, (EventType.CHAT,), "mod_a", Priority.NORMAL)
         with caplog.at_level(logging.DEBUG, logger="owlbot.events"):
-            await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
+            await dispatcher.dispatch(EventType.CHAT, make_chat_event())
         assert any("Propagation stopped: blocked" in r.message for r in caplog.records)
 
-    async def test_independent_dispatches(self, storage: ModuleStorage) -> None:
+    async def test_independent_dispatches(self, module_context: ModuleContext) -> None:
         """Stop propagation in first dispatch; second dispatch runs all."""
         call_order: list[str] = []
         stop_once = True
@@ -618,31 +567,31 @@ class TestEventDispatcherDispatch:
         async def follower(ctx: EventContext[Any]) -> None:
             call_order.append("follower")
 
-        module_ctx = make_module_context(storage, "mod_a")
-
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda _name: module_ctx,
+            get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
         )
         dispatcher.register(stopper, (EventType.CHAT,), "mod_a", Priority.HIGH)
         dispatcher.register(follower, (EventType.CHAT,), "mod_a", Priority.NORMAL)
 
-        await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
+        await dispatcher.dispatch(EventType.CHAT, make_chat_event())
         assert call_order == ["stopper"]
 
         call_order.clear()
-        await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
+        await dispatcher.dispatch(EventType.CHAT, make_chat_event())
         assert call_order == ["stopper", "follower"]
 
 
 class TestEventDispatcherStorage:
-    """Tests _call_handler() storage behaviour in EventDispatcher."""
+    """Tests _call_handler() storage behavior in EventDispatcher."""
 
-    async def test_success_commits(self, storage: ModuleStorage) -> None:
+    async def test_success_commits(
+        self, module_context: ModuleContext, storage: ModuleStorage
+    ) -> None:
         """A successful handler's database changes are committed."""
 
         async def handler(ctx: EventContext[Any]) -> None:
@@ -651,25 +600,26 @@ class TestEventDispatcherStorage:
                 "INSERT INTO test_tbl (val) VALUES (?)", ("committed",)
             )
 
-        module_ctx = make_module_context(storage, "mod_a")
-
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda _name: module_ctx,
+            get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
         )
         dispatcher.register(handler, (EventType.CHAT,), "mod_a")
-        await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
+        await dispatcher.dispatch(EventType.CHAT, make_chat_event())
 
         row = await storage.fetch_one("SELECT val FROM test_tbl")
         assert row is not None
         assert row[0] == "committed"
 
     async def test_exception_does_not_roll_back_committed_writes(
-        self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
+        self,
+        module_context: ModuleContext,
+        storage: ModuleStorage,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """A handler that raises does not undo already-committed writes."""
         # Pre-create the table outside the handler.
@@ -681,19 +631,17 @@ class TestEventDispatcherStorage:
             )
             raise RuntimeError("boom")
 
-        module_ctx = make_module_context(storage, "mod_a")
-
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda _name: module_ctx,
+            get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
         )
         dispatcher.register(handler, (EventType.CHAT,), "mod_a")
         with caplog.at_level(logging.ERROR, logger="owlbot.events"):
-            await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
+            await dispatcher.dispatch(EventType.CHAT, make_chat_event())
 
         row = await storage.fetch_one("SELECT val FROM test_tbl")
         assert row is not None
@@ -701,7 +649,7 @@ class TestEventDispatcherStorage:
         assert any("raised exception." in r.message for r in caplog.records)
 
     async def test_exception_does_not_stop_next_handler(
-        self, storage: ModuleStorage
+        self, module_context: ModuleContext
     ) -> None:
         """A handler that raises does not prevent subsequent handlers from running."""
         call_order: list[str] = []
@@ -713,49 +661,45 @@ class TestEventDispatcherStorage:
         async def second_handler(ctx: EventContext[Any]) -> None:
             call_order.append("second")
 
-        module_ctx = make_module_context(storage, "mod_a")
-
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda _name: module_ctx,
+            get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
         )
         dispatcher.register(failing_handler, (EventType.CHAT,), "mod_a", Priority.HIGH)
         dispatcher.register(second_handler, (EventType.CHAT,), "mod_a", Priority.NORMAL)
-        await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
+        await dispatcher.dispatch(EventType.CHAT, make_chat_event())
         assert call_order == ["failing", "second"]
 
     async def test_timeout_is_logged(
-        self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
+        self, module_context: ModuleContext, caplog: pytest.LogCaptureFixture
     ) -> None:
         """A handler that exceeds the timeout is cancelled and logged."""
 
         async def slow_handler(ctx: EventContext[Any]) -> None:
             await asyncio.sleep(10)
 
-        module_ctx = make_module_context(storage, "mod_a")
-
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda _name: module_ctx,
+            get_module_context=lambda _name: module_context,
             handler_timeout=0.05,
         )
         dispatcher.register(slow_handler, (EventType.CHAT,), "mod_a")
         with caplog.at_level(logging.WARNING, logger="owlbot.events"):
-            await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
+            await dispatcher.dispatch(EventType.CHAT, make_chat_event())
         assert any(
             "cancelled after" in r.message and "0.05s timeout" in r.message
             for r in caplog.records
         )
 
     async def test_timeout_does_not_roll_back_committed_writes(
-        self, storage: ModuleStorage
+        self, module_context: ModuleContext, storage: ModuleStorage
     ) -> None:
         """A timed-out handler's already-committed writes persist."""
         await storage.execute("CREATE TABLE IF NOT EXISTS test_tbl (val TEXT)")
@@ -766,25 +710,23 @@ class TestEventDispatcherStorage:
             )
             await asyncio.sleep(10)
 
-        module_ctx = make_module_context(storage, "mod_a")
-
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda _name: module_ctx,
+            get_module_context=lambda _name: module_context,
             handler_timeout=0.05,
         )
         dispatcher.register(slow_handler, (EventType.CHAT,), "mod_a")
-        await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
+        await dispatcher.dispatch(EventType.CHAT, make_chat_event())
 
         row = await storage.fetch_one("SELECT val FROM test_tbl")
         assert row is not None
         assert row[0] == "persisted"
 
     async def test_timeout_rolls_back_explicit_transaction(
-        self, storage: ModuleStorage
+        self, module_context: ModuleContext, storage: ModuleStorage
     ) -> None:
         """A timed-out handler's uncommitted transaction is rolled back."""
         await storage.execute("CREATE TABLE IF NOT EXISTS test_tbl (val TEXT)")
@@ -796,18 +738,16 @@ class TestEventDispatcherStorage:
                 )
                 await asyncio.sleep(10)
 
-        module_ctx = make_module_context(storage, "mod_a")
-
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda _name: module_ctx,
+            get_module_context=lambda _name: module_context,
             handler_timeout=0.05,
         )
         dispatcher.register(slow_handler, (EventType.CHAT,), "mod_a")
-        await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
+        await dispatcher.dispatch(EventType.CHAT, make_chat_event())
 
         row = await storage.fetch_one("SELECT val FROM test_tbl")
         assert row is None
@@ -821,18 +761,13 @@ class TestCommandDispatchPhase:
         [
             pytest.param(
                 EventType.CHAT,
-                _make_chat_event,
+                make_chat_event,
                 1,
                 id="chat-triggers",
             ),
             pytest.param(
                 EventType.USER_JOINED,
-                lambda: UserJoinedEvent(
-                    user=_make_user(),
-                    client_id=1,
-                    event_id="evt-001",
-                    timestamp=None,
-                ),
+                lambda: make_user_joined_event(client_id=1, event_id="evt-001"),
                 0,
                 id="non-chat-skips",
             ),
@@ -840,7 +775,7 @@ class TestCommandDispatchPhase:
     )
     async def test_command_dispatch_trigger(
         self,
-        storage: ModuleStorage,
+        module_context: ModuleContext,
         event_type: EventType,
         event_factory: Any,
         expected_calls: int,
@@ -851,10 +786,9 @@ class TestCommandDispatchPhase:
         async def command_dispatch(event: ChatEvent) -> None:
             command_calls.append(event)
 
-        module_ctx = make_module_context(storage, "mod_a")
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda _name: module_ctx,
+            get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
         )
         event = event_factory()
@@ -864,7 +798,7 @@ class TestCommandDispatchPhase:
             assert command_calls[0] is event
 
     async def test_propagation_skips_commands(
-        self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
+        self, module_context: ModuleContext, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Stopped propagation skips command dispatch."""
         command_calls: list[Any] = []
@@ -875,36 +809,34 @@ class TestCommandDispatchPhase:
         async def stopper(ctx: EventContext[Any]) -> None:
             ctx.stop_propagation("spam")
 
-        module_ctx = make_module_context(storage, "mod_a")
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda _name: module_ctx,
+            get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
         )
         dispatcher.register(stopper, (EventType.CHAT,), "mod_a")
         with caplog.at_level(logging.DEBUG, logger="owlbot.events"):
-            await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
+            await dispatcher.dispatch(EventType.CHAT, make_chat_event())
         assert command_calls == []
         assert any(
             "Command dispatch skipped: spam" in r.message for r in caplog.records
         )
 
     async def test_command_dispatch_exception_caught(
-        self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
+        self, module_context: ModuleContext, caplog: pytest.LogCaptureFixture
     ) -> None:
         """An exception in command_dispatch is caught and logged, not propagated."""
 
         async def command_dispatch(event: ChatEvent) -> None:
             raise RuntimeError("fail")
 
-        module_ctx = make_module_context(storage, "mod_a")
         dispatcher = EventDispatcher(
             command_dispatch=command_dispatch,
-            get_module_context=lambda _name: module_ctx,
+            get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
         )
         with caplog.at_level(logging.ERROR, logger="owlbot.events"):
-            await dispatcher.dispatch(EventType.CHAT, _make_chat_event())
+            await dispatcher.dispatch(EventType.CHAT, make_chat_event())
         assert any("Command dispatch failed." in r.message for r in caplog.records)
 
 
@@ -1062,80 +994,76 @@ class TestEventContext:
         ],
     )
     def test_property_proxying(
-        self, storage: ModuleStorage, prop: str, *, use_is: bool
+        self, module_context: ModuleContext, prop: str, *, use_is: bool
     ) -> None:
         """EventContext properties proxy to the underlying ModuleContext."""
-        module_ctx = make_module_context(storage, "mod_a")
-        event = _make_chat_event()
-        ctx: EventContext[ChatEvent] = EventContext(event=event, module=module_ctx)
+        event = make_chat_event()
+        ctx: EventContext[ChatEvent] = EventContext(event=event, module=module_context)
         ctx_val = getattr(ctx, prop)
-        mod_val = getattr(module_ctx, prop)
+        mod_val = getattr(module_context, prop)
         if use_is:
             assert ctx_val is mod_val
         else:
             assert ctx_val == mod_val
 
-    def test_event_attribute(self) -> None:
+    def test_event_attribute(self, module_context: ModuleContext) -> None:
         """ctx.event is the event object passed at construction."""
-        module_ctx = make_module_context(None, "mod_a")
-        event = _make_chat_event()
-        ctx: EventContext[ChatEvent] = EventContext(event=event, module=module_ctx)
+        event = make_chat_event()
+        ctx: EventContext[ChatEvent] = EventContext(event=event, module=module_context)
         assert ctx.event is event
 
-    def test_propagation_stopped_default(self) -> None:
+    def test_propagation_stopped_default(self, module_context: ModuleContext) -> None:
         """propagation_stopped is False by default."""
-        module_ctx = make_module_context(None, "mod_a")
         ctx: EventContext[ChatEvent] = EventContext(
-            event=_make_chat_event(), module=module_ctx
+            event=make_chat_event(), module=module_context
         )
         assert ctx.propagation_stopped is False
 
-    def test_stop_propagation(self) -> None:
+    def test_stop_propagation(self, module_context: ModuleContext) -> None:
         """After stop_propagation(), propagation_stopped is True."""
-        module_ctx = make_module_context(None, "mod_a")
         ctx: EventContext[ChatEvent] = EventContext(
-            event=_make_chat_event(), module=module_ctx
+            event=make_chat_event(), module=module_context
         )
         ctx.stop_propagation()
         assert ctx.propagation_stopped is True
 
-    def test_stop_propagation_stores_reason(self) -> None:
+    def test_stop_propagation_stores_reason(
+        self, module_context: ModuleContext
+    ) -> None:
         """stop_propagation() stores the reason string."""
-        module_ctx = make_module_context(None, "mod_a")
         ctx: EventContext[ChatEvent] = EventContext(
-            event=_make_chat_event(), module=module_ctx
+            event=make_chat_event(), module=module_context
         )
         ctx.stop_propagation("blocked")
         assert ctx._propagation.reason == "blocked"
 
-    def test_first_reason_wins(self) -> None:
+    def test_first_reason_wins(self, module_context: ModuleContext) -> None:
         """Only the first non-empty reason is stored."""
-        module_ctx = make_module_context(None, "mod_a")
         ctx: EventContext[ChatEvent] = EventContext(
-            event=_make_chat_event(), module=module_ctx
+            event=make_chat_event(), module=module_context
         )
         ctx.stop_propagation("first")
         ctx.stop_propagation("second")
         assert ctx._propagation.reason == "first"
 
-    def test_none_reason_leaves_empty(self) -> None:
+    def test_none_reason_leaves_empty(self, module_context: ModuleContext) -> None:
         """stop_propagation(None) leaves reason as empty string."""
-        module_ctx = make_module_context(None, "mod_a")
         ctx: EventContext[ChatEvent] = EventContext(
-            event=_make_chat_event(), module=module_ctx
+            event=make_chat_event(), module=module_context
         )
         ctx.stop_propagation(None)
         assert ctx._propagation.reason == ""
 
-    def test_shared_propagation_across_contexts(self) -> None:
+    def test_shared_propagation_across_contexts(
+        self, module_context: ModuleContext
+    ) -> None:
         """Two contexts sharing a PropagationState see each other's mutations."""
-        module_ctx = make_module_context(None, "mod_a")
         propagation = PropagationState()
         ctx_a: EventContext[ChatEvent] = EventContext(
-            event=_make_chat_event(), module=module_ctx, _propagation=propagation
+            event=make_chat_event(), module=module_context, _propagation=propagation
         )
         ctx_b: EventContext[ChatEvent] = EventContext(
-            event=_make_chat_event(), module=module_ctx, _propagation=propagation
+            event=make_chat_event(), module=module_context, _propagation=propagation
         )
         ctx_a.stop_propagation("blocked")
         assert ctx_b.propagation_stopped is True

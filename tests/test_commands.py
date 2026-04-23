@@ -32,70 +32,17 @@ import pytest
 
 from owlbot.api.commands import CommandEvent, CommandInfo, CommandMark, on_command
 from owlbot.api.context import CommandContext, EventContext
-from owlbot.api.event_types import ChatEvent, User
 from owlbot.registries.commands import (
     CommandDispatcher,
     CommandRegistry,
     ModuleCommands,
 )
-from tests.conftest import make_module_context
+from owlbot.testing import RecordingOwncastClient, make_chat_event, make_user
 
 if TYPE_CHECKING:
     from owlbot.api.context import ModuleContext
+    from owlbot.api.event_types import ChatEvent
     from owlbot.api.storage import ModuleStorage
-
-
-def _make_user(
-    *,
-    user_id: str = "user-1",
-    display_name: str = "Alice",
-    is_authenticated: bool = False,
-    scopes: frozenset[str] | None = None,
-) -> User:
-    """Build a minimal User for test events."""
-    return User(
-        id=user_id,
-        display_name=display_name,
-        display_color=0,
-        created_at=None,
-        previous_names=[],
-        name_changed_at=None,
-        is_bot=False,
-        is_authenticated=is_authenticated,
-        scopes=scopes or frozenset(),
-    )
-
-
-def _make_chat_event(
-    *,
-    body: str = "hello",
-    user: User | None = None,
-    client_id: int = 42,
-) -> ChatEvent:
-    """Build a minimal ChatEvent for test dispatches."""
-    return ChatEvent(
-        user=user or _make_user(),
-        client_id=client_id,
-        body=body,
-        raw_body=body,
-        message_id="msg-001",
-        is_visible=True,
-        timestamp=None,
-    )
-
-
-class _StubOwncastClient:
-    """Recording stub for OwncastClient used in dispatcher tests."""
-
-    def __init__(self) -> None:
-        self.system_messages: list[tuple[int, str]] = []
-        self.messages: list[str] = []
-
-    async def send_system_message_to_client(self, client_id: int, body: str) -> None:
-        self.system_messages.append((client_id, body))
-
-    async def send_message(self, body: str) -> None:
-        self.messages.append(body)
 
 
 class TestOnCommandDecorator:
@@ -155,7 +102,7 @@ class TestCommandEvent:
 
     def test_fields_accessible(self) -> None:
         """Construct with known values; assert each field matches."""
-        event = _make_chat_event()
+        event = make_chat_event(client_id=42)
         cmd_event = CommandEvent(
             command="greet",
             args="hello world",
@@ -492,36 +439,33 @@ class TestCommandDispatcherDispatch:
 
     def _make_dispatcher(
         self,
-        storage: ModuleStorage,
+        module_context: ModuleContext,
         *,
-        owncast_client: _StubOwncastClient | None = None,
+        owncast_client: RecordingOwncastClient | None = None,
         handler_timeout: float = 5.0,
         command_prefix: str = "!",
-        module_name: str = "mod_a",
-    ) -> tuple[CommandDispatcher, ModuleContext, _StubOwncastClient]:
-        """Build a CommandDispatcher with a real storage-backed ModuleContext."""
-        stub = owncast_client or _StubOwncastClient()
-        module_ctx = make_module_context(storage, module_name)
-
+    ) -> tuple[CommandDispatcher, ModuleContext, RecordingOwncastClient]:
+        """Build a CommandDispatcher wired to the given ModuleContext."""
+        stub = owncast_client or RecordingOwncastClient()
         dispatcher = CommandDispatcher(
-            get_module_context=lambda _name: module_ctx,
-            owncast_client=stub,  # type: ignore[arg-type]
+            get_module_context=lambda _name: module_context,
+            owncast_client=stub,
             handler_timeout=handler_timeout,
             loaded_modules=set(),
             command_prefix=command_prefix,
         )
-        return dispatcher, module_ctx, stub
+        return dispatcher, module_context, stub
 
-    async def test_dispatches_command(self, storage: ModuleStorage) -> None:
+    async def test_dispatches_command(self, module_context: ModuleContext) -> None:
         """Handler receives a CommandContext with correct command and chat_event."""
         captured: list[CommandContext] = []
 
         async def handler(ctx: CommandContext) -> None:
             captured.append(ctx)
 
-        dispatcher, _, _ = self._make_dispatcher(storage)
+        dispatcher, _, _ = self._make_dispatcher(module_context)
         dispatcher.register("ping", handler, module_name="mod_a")
-        event = _make_chat_event(body="!ping")
+        event = make_chat_event(client_id=42, raw_body="!ping")
         await dispatcher.dispatch(event)
 
         assert len(captured) == 1
@@ -529,34 +473,38 @@ class TestCommandDispatcherDispatch:
         assert captured[0].args == ""
         assert captured[0].chat_event is event
 
-    async def test_dispatches_with_args(self, storage: ModuleStorage) -> None:
+    async def test_dispatches_with_args(self, module_context: ModuleContext) -> None:
         """Handler receives parsed args and args_list."""
         captured: list[CommandContext] = []
 
         async def handler(ctx: CommandContext) -> None:
             captured.append(ctx)
 
-        dispatcher, _, _ = self._make_dispatcher(storage)
+        dispatcher, _, _ = self._make_dispatcher(module_context)
         dispatcher.register("greet", handler, module_name="mod_a")
-        await dispatcher.dispatch(_make_chat_event(body="!greet hello world"))
+        await dispatcher.dispatch(
+            make_chat_event(client_id=42, raw_body="!greet hello world")
+        )
 
         assert captured[0].args == "hello world"
         assert captured[0].args_list == ["hello", "world"]
 
-    async def test_dispatches_via_alias(self, storage: ModuleStorage) -> None:
+    async def test_dispatches_via_alias(self, module_context: ModuleContext) -> None:
         """Alias resolves to canonical name in ctx.command."""
         captured: list[CommandContext] = []
 
         async def handler(ctx: CommandContext) -> None:
             captured.append(ctx)
 
-        dispatcher, _, _ = self._make_dispatcher(storage)
+        dispatcher, _, _ = self._make_dispatcher(module_context)
         dispatcher.register("ping", handler, aliases=["p"], module_name="mod_a")
-        await dispatcher.dispatch(_make_chat_event(body="!p"))
+        await dispatcher.dispatch(make_chat_event(client_id=42, raw_body="!p"))
 
         assert captured[0].command == "ping"
 
-    async def test_non_command_message_ignored(self, storage: ModuleStorage) -> None:
+    async def test_non_command_message_ignored(
+        self, module_context: ModuleContext
+    ) -> None:
         """A regular message does not invoke the handler."""
         called = False
 
@@ -564,14 +512,16 @@ class TestCommandDispatcherDispatch:
             nonlocal called
             called = True
 
-        dispatcher, _, _ = self._make_dispatcher(storage)
+        dispatcher, _, _ = self._make_dispatcher(module_context)
         dispatcher.register("ping", handler, module_name="mod_a")
-        await dispatcher.dispatch(_make_chat_event(body="hello everyone"))
+        await dispatcher.dispatch(
+            make_chat_event(client_id=42, raw_body="hello everyone")
+        )
 
         assert called is False
 
     async def test_unknown_command_ignored(
-        self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
+        self, module_context: ModuleContext, caplog: pytest.LogCaptureFixture
     ) -> None:
         """An unknown command is ignored and logged at DEBUG level."""
         called = False
@@ -580,15 +530,19 @@ class TestCommandDispatcherDispatch:
             nonlocal called
             called = True
 
-        dispatcher, _, _ = self._make_dispatcher(storage)
+        dispatcher, _, _ = self._make_dispatcher(module_context)
         dispatcher.register("ping", handler, module_name="mod_a")
         with caplog.at_level(logging.DEBUG, logger="owlbot.commands"):
-            await dispatcher.dispatch(_make_chat_event(body="!nonexistent"))
+            await dispatcher.dispatch(
+                make_chat_event(client_id=42, raw_body="!nonexistent")
+            )
 
         assert called is False
         assert "Unknown command: nonexistent" in caplog.text
 
-    async def test_requires_authenticated_allowed(self, storage: ModuleStorage) -> None:
+    async def test_requires_authenticated_allowed(
+        self, module_context: ModuleContext
+    ) -> None:
         """Authenticated user can invoke a requires_authenticated command."""
         called = False
 
@@ -596,17 +550,19 @@ class TestCommandDispatcherDispatch:
             nonlocal called
             called = True
 
-        dispatcher, _, _ = self._make_dispatcher(storage)
+        dispatcher, _, _ = self._make_dispatcher(module_context)
         dispatcher.register(
             "ping", handler, requires_authenticated=True, module_name="mod_a"
         )
-        user = _make_user(is_authenticated=True)
-        await dispatcher.dispatch(_make_chat_event(body="!ping", user=user))
+        user = make_user(is_authenticated=True)
+        await dispatcher.dispatch(
+            make_chat_event(client_id=42, raw_body="!ping", user=user)
+        )
 
         assert called is True
 
     async def test_requires_authenticated_denied(
-        self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
+        self, module_context: ModuleContext, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Unauthenticated user is denied and gets a system message."""
         called = False
@@ -615,22 +571,30 @@ class TestCommandDispatcherDispatch:
             nonlocal called
             called = True
 
-        dispatcher, _, stub = self._make_dispatcher(storage)
+        dispatcher, _, stub = self._make_dispatcher(module_context)
         dispatcher.register(
             "ping", handler, requires_authenticated=True, module_name="mod_a"
         )
-        user = _make_user(is_authenticated=False)
+        user = make_user(display_name="Alice", is_authenticated=False)
         with caplog.at_level(logging.INFO, logger="owlbot.commands"):
-            await dispatcher.dispatch(_make_chat_event(body="!ping", user=user))
+            await dispatcher.dispatch(
+                make_chat_event(client_id=42, raw_body="!ping", user=user)
+            )
 
         assert called is False
-        assert stub.system_messages[0] == (
-            42,
-            "You must be authenticated to use !ping.",
+        assert stub.calls[0] == (
+            "send_system_message_to_client",
+            {
+                "client_id": 42,
+                "body": "You must be authenticated to use !ping.",
+                "unsanitized": False,
+            },
         )
         assert "Command 'ping' denied for Alice: authentication required" in caplog.text
 
-    async def test_requires_moderator_allowed(self, storage: ModuleStorage) -> None:
+    async def test_requires_moderator_allowed(
+        self, module_context: ModuleContext
+    ) -> None:
         """Moderator user can invoke a requires_moderator command."""
         called = False
 
@@ -638,17 +602,19 @@ class TestCommandDispatcherDispatch:
             nonlocal called
             called = True
 
-        dispatcher, _, _ = self._make_dispatcher(storage)
+        dispatcher, _, _ = self._make_dispatcher(module_context)
         dispatcher.register(
             "ban", handler, requires_moderator=True, module_name="mod_a"
         )
-        user = _make_user(scopes=frozenset({"MODERATOR"}))
-        await dispatcher.dispatch(_make_chat_event(body="!ban", user=user))
+        user = make_user(scopes=frozenset({"MODERATOR"}))
+        await dispatcher.dispatch(
+            make_chat_event(client_id=42, raw_body="!ban", user=user)
+        )
 
         assert called is True
 
     async def test_requires_moderator_denied(
-        self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
+        self, module_context: ModuleContext, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Non-moderator user is denied and gets a system message."""
         called = False
@@ -657,19 +623,30 @@ class TestCommandDispatcherDispatch:
             nonlocal called
             called = True
 
-        dispatcher, _, stub = self._make_dispatcher(storage)
+        dispatcher, _, stub = self._make_dispatcher(module_context)
         dispatcher.register(
             "ping", handler, requires_moderator=True, module_name="mod_a"
         )
-        user = _make_user(scopes=frozenset())
+        user = make_user(display_name="Alice", scopes=frozenset())
         with caplog.at_level(logging.INFO, logger="owlbot.commands"):
-            await dispatcher.dispatch(_make_chat_event(body="!ping", user=user))
+            await dispatcher.dispatch(
+                make_chat_event(client_id=42, raw_body="!ping", user=user)
+            )
 
         assert called is False
-        assert stub.system_messages[0] == (42, "Only moderators can use !ping.")
+        assert stub.calls[0] == (
+            "send_system_message_to_client",
+            {
+                "client_id": 42,
+                "body": "Only moderators can use !ping.",
+                "unsanitized": False,
+            },
+        )
         assert "Command 'ping' denied for Alice: moderator required" in caplog.text
 
-    async def test_cooldown_allows_first_call(self, storage: ModuleStorage) -> None:
+    async def test_cooldown_allows_first_call(
+        self, module_context: ModuleContext
+    ) -> None:
         """First invocation of a command with cooldown is allowed."""
         called = False
 
@@ -677,14 +654,14 @@ class TestCommandDispatcherDispatch:
             nonlocal called
             called = True
 
-        dispatcher, _, _ = self._make_dispatcher(storage)
+        dispatcher, _, _ = self._make_dispatcher(module_context)
         dispatcher.register("ping", handler, cooldown=60, module_name="mod_a")
-        await dispatcher.dispatch(_make_chat_event(body="!ping"))
+        await dispatcher.dispatch(make_chat_event(client_id=42, raw_body="!ping"))
 
         assert called is True
 
     async def test_cooldown_blocks_second_call(
-        self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
+        self, module_context: ModuleContext, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Second invocation within cooldown is blocked with a message."""
         call_count = 0
@@ -693,19 +670,22 @@ class TestCommandDispatcherDispatch:
             nonlocal call_count
             call_count += 1
 
-        dispatcher, _, stub = self._make_dispatcher(storage)
+        dispatcher, _, stub = self._make_dispatcher(module_context)
         dispatcher.register("ping", handler, cooldown=60, module_name="mod_a")
 
-        await dispatcher.dispatch(_make_chat_event(body="!ping"))
+        await dispatcher.dispatch(make_chat_event(client_id=42, raw_body="!ping"))
         with caplog.at_level(logging.INFO, logger="owlbot.commands"):
-            await dispatcher.dispatch(_make_chat_event(body="!ping"))
+            await dispatcher.dispatch(make_chat_event(client_id=42, raw_body="!ping"))
 
         assert call_count == 1
-        assert len(stub.system_messages) == 1
-        assert "!ping can be used every 60s" in stub.system_messages[0][1]
+        assert len(stub.calls) == 1
+        assert stub.calls[0].name == "send_system_message_to_client"
+        assert "!ping can be used every 60s" in stub.calls[0].kwargs["body"]
         assert "on cooldown" in caplog.text
 
-    async def test_cooldown_zero_no_throttle(self, storage: ModuleStorage) -> None:
+    async def test_cooldown_zero_no_throttle(
+        self, module_context: ModuleContext
+    ) -> None:
         """Commands with cooldown=0 are never throttled."""
         call_count = 0
 
@@ -713,15 +693,17 @@ class TestCommandDispatcherDispatch:
             nonlocal call_count
             call_count += 1
 
-        dispatcher, _, _ = self._make_dispatcher(storage)
+        dispatcher, _, _ = self._make_dispatcher(module_context)
         dispatcher.register("ping", handler, cooldown=0, module_name="mod_a")
 
-        await dispatcher.dispatch(_make_chat_event(body="!ping"))
-        await dispatcher.dispatch(_make_chat_event(body="!ping"))
+        await dispatcher.dispatch(make_chat_event(client_id=42, raw_body="!ping"))
+        await dispatcher.dispatch(make_chat_event(client_id=42, raw_body="!ping"))
 
         assert call_count == 2
 
-    async def test_success_commits(self, storage: ModuleStorage) -> None:
+    async def test_success_commits(
+        self, module_context: ModuleContext, storage: ModuleStorage
+    ) -> None:
         """A successful handler's database changes are committed."""
 
         async def handler(ctx: CommandContext) -> None:
@@ -732,16 +714,19 @@ class TestCommandDispatcherDispatch:
                 "INSERT INTO items (id, name) VALUES (?, ?)", (1, "apple")
             )
 
-        dispatcher, _, _ = self._make_dispatcher(storage)
+        dispatcher, _, _ = self._make_dispatcher(module_context)
         dispatcher.register("add", handler, module_name="mod_a")
-        await dispatcher.dispatch(_make_chat_event(body="!add"))
+        await dispatcher.dispatch(make_chat_event(client_id=42, raw_body="!add"))
 
         row = await storage.fetch_one("SELECT * FROM items WHERE id = ?", (1,))
         assert row is not None
         assert row["name"] == "apple"
 
     async def test_exception_does_not_roll_back_committed_writes(
-        self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
+        self,
+        module_context: ModuleContext,
+        storage: ModuleStorage,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """A handler that raises does not undo already-committed writes."""
         await storage.execute(
@@ -754,10 +739,10 @@ class TestCommandDispatcherDispatch:
             )
             raise RuntimeError("boom")
 
-        dispatcher, _, _ = self._make_dispatcher(storage)
+        dispatcher, _, _ = self._make_dispatcher(module_context)
         dispatcher.register("add", handler, module_name="mod_a")
         with caplog.at_level(logging.ERROR, logger="owlbot.commands"):
-            await dispatcher.dispatch(_make_chat_event(body="!add"))
+            await dispatcher.dispatch(make_chat_event(client_id=42, raw_body="!add"))
 
         row = await storage.fetch_one("SELECT * FROM items WHERE id = ?", (1,))
         assert row is not None
@@ -765,17 +750,17 @@ class TestCommandDispatcherDispatch:
         assert "raised exception." in caplog.text
 
     async def test_timeout_is_logged(
-        self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
+        self, module_context: ModuleContext, caplog: pytest.LogCaptureFixture
     ) -> None:
         """A timed-out handler is cancelled and logged."""
 
         async def handler(ctx: CommandContext) -> None:
             await asyncio.sleep(10)
 
-        dispatcher, _, _ = self._make_dispatcher(storage, handler_timeout=0.05)
+        dispatcher, _, _ = self._make_dispatcher(module_context, handler_timeout=0.05)
         dispatcher.register("slow", handler, module_name="mod_a")
         with caplog.at_level(logging.WARNING, logger="owlbot.commands"):
-            await dispatcher.dispatch(_make_chat_event(body="!slow"))
+            await dispatcher.dispatch(make_chat_event(client_id=42, raw_body="!slow"))
 
         assert any(
             "cancelled after" in r.message and "timeout" in r.message
@@ -783,7 +768,7 @@ class TestCommandDispatcherDispatch:
         )
 
     async def test_timeout_does_not_roll_back_committed_writes(
-        self, storage: ModuleStorage
+        self, module_context: ModuleContext, storage: ModuleStorage
     ) -> None:
         """A timed-out handler's already-committed writes persist."""
         await storage.execute(
@@ -796,16 +781,16 @@ class TestCommandDispatcherDispatch:
             )
             await asyncio.sleep(10)
 
-        dispatcher, _, _ = self._make_dispatcher(storage, handler_timeout=0.05)
+        dispatcher, _, _ = self._make_dispatcher(module_context, handler_timeout=0.05)
         dispatcher.register("slow", handler, module_name="mod_a")
-        await dispatcher.dispatch(_make_chat_event(body="!slow"))
+        await dispatcher.dispatch(make_chat_event(client_id=42, raw_body="!slow"))
 
         row = await storage.fetch_one("SELECT * FROM items WHERE id = ?", (1,))
         assert row is not None
         assert row["name"] == "apple"
 
     async def test_timeout_rolls_back_explicit_transaction(
-        self, storage: ModuleStorage
+        self, module_context: ModuleContext, storage: ModuleStorage
     ) -> None:
         """A timed-out handler's uncommitted transaction is rolled back."""
         await storage.execute(
@@ -819,23 +804,25 @@ class TestCommandDispatcherDispatch:
                 )
                 await asyncio.sleep(10)
 
-        dispatcher, _, _ = self._make_dispatcher(storage, handler_timeout=0.05)
+        dispatcher, _, _ = self._make_dispatcher(module_context, handler_timeout=0.05)
         dispatcher.register("slow", handler, module_name="mod_a")
-        await dispatcher.dispatch(_make_chat_event(body="!slow"))
+        await dispatcher.dispatch(make_chat_event(client_id=42, raw_body="!slow"))
 
         row = await storage.fetch_one("SELECT * FROM items WHERE id = ?", (1,))
         assert row is None
 
-    async def test_builtin_command_dispatched(self, storage: ModuleStorage) -> None:
+    async def test_builtin_command_dispatched(
+        self, module_context: ModuleContext
+    ) -> None:
         """A built-in command receives (event, owncast_client)."""
         captured: list[tuple[Any, Any]] = []
 
         async def handler(event: ChatEvent, owncast_client: Any) -> None:
             captured.append((event, owncast_client))
 
-        dispatcher, _, stub = self._make_dispatcher(storage)
+        dispatcher, _, stub = self._make_dispatcher(module_context)
         dispatcher.register_builtin("test", handler)
-        event = _make_chat_event(body="!test")
+        event = make_chat_event(client_id=42, raw_body="!test")
         await dispatcher.dispatch(event)
 
         assert len(captured) == 1
@@ -843,48 +830,48 @@ class TestCommandDispatcherDispatch:
         assert captured[0][1] is stub
 
     async def test_builtin_command_exception_caught(
-        self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
+        self, module_context: ModuleContext, caplog: pytest.LogCaptureFixture
     ) -> None:
         """A built-in handler that raises does not propagate the exception."""
 
         async def handler(event: ChatEvent, owncast_client: Any) -> None:
             raise RuntimeError("builtin-fail")
 
-        dispatcher, _, _ = self._make_dispatcher(storage)
+        dispatcher, _, _ = self._make_dispatcher(module_context)
         dispatcher.register_builtin("test", handler)
         with caplog.at_level(logging.ERROR, logger="owlbot.commands"):
-            await dispatcher.dispatch(_make_chat_event(body="!test"))
+            await dispatcher.dispatch(make_chat_event(client_id=42, raw_body="!test"))
 
         assert "raised exception." in caplog.text
 
     async def test_builtin_command_timeout(
-        self, storage: ModuleStorage, caplog: pytest.LogCaptureFixture
+        self, module_context: ModuleContext, caplog: pytest.LogCaptureFixture
     ) -> None:
         """A built-in handler that times out is cancelled and logged."""
 
         async def handler(event: ChatEvent, owncast_client: Any) -> None:
             await asyncio.sleep(10)
 
-        dispatcher, _, _ = self._make_dispatcher(storage, handler_timeout=0.05)
+        dispatcher, _, _ = self._make_dispatcher(module_context, handler_timeout=0.05)
         dispatcher.register_builtin("test", handler)
         with caplog.at_level(logging.WARNING, logger="owlbot.commands"):
-            await dispatcher.dispatch(_make_chat_event(body="!test"))
+            await dispatcher.dispatch(make_chat_event(client_id=42, raw_body="!test"))
 
         assert any(
             "cancelled after" in r.message and "timeout" in r.message
             for r in caplog.records
         )
 
-    async def test_command_event_fields(self, storage: ModuleStorage) -> None:
+    async def test_command_event_fields(self, module_context: ModuleContext) -> None:
         """Dispatched CommandContext carries correct CommandEvent fields."""
         captured: list[CommandContext] = []
 
         async def handler(ctx: CommandContext) -> None:
             captured.append(ctx)
 
-        dispatcher, _, _ = self._make_dispatcher(storage)
+        dispatcher, _, _ = self._make_dispatcher(module_context)
         dispatcher.register("greet", handler, module_name="mod_a")
-        event = _make_chat_event(body="!greet world")
+        event = make_chat_event(client_id=42, raw_body="!greet world")
         await dispatcher.dispatch(event)
 
         assert captured[0].command_event.command == "greet"
@@ -899,43 +886,53 @@ class TestModuleCommands:
 
     def _make_dispatcher_and_mod_cmds(
         self,
+        module_context: ModuleContext,
         *module_names: str,
     ) -> tuple[CommandDispatcher, dict[str, ModuleCommands]]:
-        """Build a dispatcher and ModuleCommands wrappers for given modules."""
-        stub = _StubOwncastClient()
+        """Build a dispatcher and ModuleCommands wrappers for given modules.
+
+        These tests exercise registration and ownership only; commands are
+        never dispatched, so a single ``module_context`` is reused for every
+        lookup.
+        """
+        stub = RecordingOwncastClient()
         dispatcher = CommandDispatcher(
-            get_module_context=lambda name: make_module_context(None, name),
-            owncast_client=stub,  # type: ignore[arg-type]
+            get_module_context=lambda _name: module_context,
+            owncast_client=stub,
             handler_timeout=5.0,
             loaded_modules=set(),
         )
         mod_cmds = {name: ModuleCommands(dispatcher, name) for name in module_names}
         return dispatcher, mod_cmds
 
-    def test_register_auto_supplies_module_name(self) -> None:
+    def test_register_auto_supplies_module_name(
+        self, module_context: ModuleContext
+    ) -> None:
         """ModuleCommands.register auto-supplies module_name."""
 
         async def handler(ctx: CommandContext) -> None:
             pass
 
-        dispatcher, mod_cmds = self._make_dispatcher_and_mod_cmds("mod_a")
+        dispatcher, mod_cmds = self._make_dispatcher_and_mod_cmds(
+            module_context, "mod_a"
+        )
         mod_cmds["mod_a"].register("ping", handler)
         info = dispatcher.get("ping")
         assert info is not None
         assert info.module_name == "mod_a"
 
-    def test_prefix_property(self) -> None:
+    def test_prefix_property(self, module_context: ModuleContext) -> None:
         """ModuleCommands.prefix delegates to the dispatcher's prefix."""
-        _, mod_cmds = self._make_dispatcher_and_mod_cmds("mod_a")
+        _, mod_cmds = self._make_dispatcher_and_mod_cmds(module_context, "mod_a")
         assert mod_cmds["mod_a"].prefix == "!"
 
-    def test_module_commands_property(self) -> None:
+    def test_module_commands_property(self, module_context: ModuleContext) -> None:
         """module_commands returns dict with both registered commands."""
 
         async def handler(ctx: CommandContext) -> None:
             pass
 
-        _, mod_cmds = self._make_dispatcher_and_mod_cmds("mod_a")
+        _, mod_cmds = self._make_dispatcher_and_mod_cmds(module_context, "mod_a")
         mod_cmds["mod_a"].register("ping", handler)
         mod_cmds["mod_a"].register("pong", handler)
         result = mod_cmds["mod_a"].module_commands
@@ -943,9 +940,11 @@ class TestModuleCommands:
         assert "pong" in result
         assert len(result) == 2
 
-    def test_module_commands_property_empty(self) -> None:
+    def test_module_commands_property_empty(
+        self, module_context: ModuleContext
+    ) -> None:
         """module_commands returns empty dict when nothing registered."""
-        _, mod_cmds = self._make_dispatcher_and_mod_cmds("mod_a")
+        _, mod_cmds = self._make_dispatcher_and_mod_cmds(module_context, "mod_a")
         assert mod_cmds["mod_a"].module_commands == {}
 
     @pytest.mark.parametrize(
@@ -960,6 +959,7 @@ class TestModuleCommands:
     )
     def test_unregister(
         self,
+        module_context: ModuleContext,
         owner: str,
         other_setup: str | None,
         call_module: str,
@@ -975,7 +975,7 @@ class TestModuleCommands:
         modules = [owner]
         if other_setup:
             modules.append(other_setup)
-        _, mod_cmds = self._make_dispatcher_and_mod_cmds(*modules)
+        _, mod_cmds = self._make_dispatcher_and_mod_cmds(module_context, *modules)
 
         mod_cmds[owner].register("ping", handler)
         if other_setup:
@@ -983,40 +983,44 @@ class TestModuleCommands:
 
         assert mod_cmds[call_module].unregister(trigger) is expected
 
-    def test_get_own_command(self) -> None:
+    def test_get_own_command(self, module_context: ModuleContext) -> None:
         """get() returns CommandInfo for own commands."""
 
         async def handler(ctx: CommandContext) -> None:
             pass
 
-        _, mod_cmds = self._make_dispatcher_and_mod_cmds("mod_a")
+        _, mod_cmds = self._make_dispatcher_and_mod_cmds(module_context, "mod_a")
         mod_cmds["mod_a"].register("ping", handler)
         info = mod_cmds["mod_a"].get("ping")
         assert info is not None
         assert info.name == "ping"
 
-    def test_get_other_modules_command(self) -> None:
+    def test_get_other_modules_command(self, module_context: ModuleContext) -> None:
         """get() returns None for another module's command."""
 
         async def handler(ctx: CommandContext) -> None:
             pass
 
-        _, mod_cmds = self._make_dispatcher_and_mod_cmds("mod_a", "mod_b")
+        _, mod_cmds = self._make_dispatcher_and_mod_cmds(
+            module_context, "mod_a", "mod_b"
+        )
         mod_cmds["mod_b"].register("quote", handler)
         assert mod_cmds["mod_a"].get("quote") is None
 
-    def test_get_unknown(self) -> None:
+    def test_get_unknown(self, module_context: ModuleContext) -> None:
         """get() returns None for unknown commands."""
-        _, mod_cmds = self._make_dispatcher_and_mod_cmds("mod_a")
+        _, mod_cmds = self._make_dispatcher_and_mod_cmds(module_context, "mod_a")
         assert mod_cmds["mod_a"].get("nope") is None
 
-    def test_exists_sees_all_modules(self) -> None:
+    def test_exists_sees_all_modules(self, module_context: ModuleContext) -> None:
         """exists() checks across all modules, not scoped to own."""
 
         async def handler(ctx: CommandContext) -> None:
             pass
 
-        _, mod_cmds = self._make_dispatcher_and_mod_cmds("mod_a", "mod_b")
+        _, mod_cmds = self._make_dispatcher_and_mod_cmds(
+            module_context, "mod_a", "mod_b"
+        )
         mod_cmds["mod_b"].register("quote", handler)
         assert mod_cmds["mod_a"].exists("quote") is True
 
@@ -1026,11 +1030,10 @@ class TestCommandContext:
 
     def _make_command_context(
         self,
-        storage: ModuleStorage,
-    ) -> tuple[CommandContext, ModuleContext, CommandEvent, EventContext[ChatEvent]]:
-        """Build a CommandContext with all stub parts."""
-        module_ctx = make_module_context(storage, "mod_a")
-        event = _make_chat_event(body="!greet world")
+        module_ctx: ModuleContext,
+    ) -> tuple[CommandContext, CommandEvent, EventContext[ChatEvent]]:
+        """Build a CommandContext wrapping the given ModuleContext."""
+        event = make_chat_event(client_id=42, raw_body="!greet world")
         cmd_event = CommandEvent(
             command="greet",
             args="world",
@@ -1046,7 +1049,7 @@ class TestCommandContext:
             event_context=event_ctx,
             module=module_ctx,
         )
-        return cmd_ctx, module_ctx, cmd_event, event_ctx
+        return cmd_ctx, cmd_event, event_ctx
 
     @pytest.mark.parametrize(
         ("prop", "use_is"),
@@ -1061,48 +1064,48 @@ class TestCommandContext:
         ],
     )
     def test_property_proxying(
-        self, storage: ModuleStorage, prop: str, *, use_is: bool
+        self, module_context: ModuleContext, prop: str, *, use_is: bool
     ) -> None:
         """CommandContext properties proxy to the underlying ModuleContext."""
-        cmd_ctx, module_ctx, _, _ = self._make_command_context(storage)
+        cmd_ctx, _, _ = self._make_command_context(module_context)
         ctx_val = getattr(cmd_ctx, prop)
-        mod_val = getattr(module_ctx, prop)
+        mod_val = getattr(module_context, prop)
         if use_is:
             assert ctx_val is mod_val
         else:
             assert ctx_val == mod_val
 
-    def test_command_property(self, storage: ModuleStorage) -> None:
+    def test_command_property(self, module_context: ModuleContext) -> None:
         """ctx.command matches the CommandEvent's command."""
-        cmd_ctx, _, cmd_event, _ = self._make_command_context(storage)
+        cmd_ctx, cmd_event, _ = self._make_command_context(module_context)
         assert cmd_ctx.command == cmd_event.command
 
-    def test_args_property(self, storage: ModuleStorage) -> None:
+    def test_args_property(self, module_context: ModuleContext) -> None:
         """ctx.args matches the CommandEvent's args."""
-        cmd_ctx, _, cmd_event, _ = self._make_command_context(storage)
+        cmd_ctx, cmd_event, _ = self._make_command_context(module_context)
         assert cmd_ctx.args == cmd_event.args
 
-    def test_args_list_property(self, storage: ModuleStorage) -> None:
+    def test_args_list_property(self, module_context: ModuleContext) -> None:
         """ctx.args_list matches the CommandEvent's args_list."""
-        cmd_ctx, _, cmd_event, _ = self._make_command_context(storage)
+        cmd_ctx, cmd_event, _ = self._make_command_context(module_context)
         assert cmd_ctx.args_list == cmd_event.args_list
 
-    def test_prefix_property(self, storage: ModuleStorage) -> None:
+    def test_prefix_property(self, module_context: ModuleContext) -> None:
         """ctx.prefix matches the CommandEvent's prefix."""
-        cmd_ctx, _, cmd_event, _ = self._make_command_context(storage)
+        cmd_ctx, cmd_event, _ = self._make_command_context(module_context)
         assert cmd_ctx.prefix == cmd_event.prefix
 
-    def test_chat_event_property(self, storage: ModuleStorage) -> None:
+    def test_chat_event_property(self, module_context: ModuleContext) -> None:
         """ctx.chat_event is the CommandEvent's chat_event."""
-        cmd_ctx, _, cmd_event, _ = self._make_command_context(storage)
+        cmd_ctx, cmd_event, _ = self._make_command_context(module_context)
         assert cmd_ctx.chat_event is cmd_event.chat_event
 
-    def test_user_property(self, storage: ModuleStorage) -> None:
+    def test_user_property(self, module_context: ModuleContext) -> None:
         """ctx.user is the chat_event's user."""
-        cmd_ctx, _, cmd_event, _ = self._make_command_context(storage)
+        cmd_ctx, cmd_event, _ = self._make_command_context(module_context)
         assert cmd_ctx.user is cmd_event.chat_event.user
 
-    def test_event_context_attribute(self, storage: ModuleStorage) -> None:
+    def test_event_context_attribute(self, module_context: ModuleContext) -> None:
         """ctx.event_context is the EventContext passed at construction."""
-        cmd_ctx, _, _, event_ctx = self._make_command_context(storage)
+        cmd_ctx, _, event_ctx = self._make_command_context(module_context)
         assert cmd_ctx.event_context is event_ctx
