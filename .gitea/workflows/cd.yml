@@ -4,6 +4,10 @@ on:
   push:
     tags: ["v*"]
 
+permissions:
+  contents: read
+  # packages: write  # not yet supported by Gitea
+
 jobs:
   publish-package:
     name: Publish Package
