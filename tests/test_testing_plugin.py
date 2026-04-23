@@ -218,7 +218,7 @@ class TestFixturesValidateConfiguration:
         self, pytester: pytest.Pytester, body: str, *, asyncio_mode: bool = False
     ) -> pytest.RunResult:
         """Run a one-test pytester session that loads the Owlbot testing plugin."""
-        ini = "[pytest]\n"
+        ini = "[pytest]\nasyncio_default_fixture_loop_scope = function\n"
         if asyncio_mode:
             ini += "asyncio_mode = auto\n"
         pytester.makeini(ini)
