@@ -17,7 +17,8 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, get_origin, get_type_hints
+import types
+from typing import Any, Union, get_args, get_origin, get_type_hints
 
 import pytest
 
@@ -47,6 +48,10 @@ def _synthesize_value(param_name: str, annotation: Any) -> Any:
     originally-passed kwargs.
     """
     origin = get_origin(annotation)
+    if origin in (types.UnionType, Union):
+        non_none = [arg for arg in get_args(annotation) if arg is not type(None)]
+        if len(non_none) == 1:
+            return _synthesize_value(param_name, non_none[0])
     if origin is list:
         return []
     if origin is dict:

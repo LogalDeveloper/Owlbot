@@ -20,4 +20,33 @@ loaded via ``pytest_plugins`` below.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
 pytest_plugins = ["owlbot.testing.plugin", "pytester"]
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register ``--run-integration`` for the integration-test opt-in flag."""
+    parser.addoption(
+        "--run-integration",
+        action="store_true",
+        default=False,
+        help="Run integration tests that require downloading Owncast",
+    )
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: Iterable[pytest.Item]
+) -> None:
+    """Skip tests marked ``integration`` unless ``--run-integration`` is passed."""
+    if config.getoption("--run-integration"):
+        return
+    skip = pytest.mark.skip(reason="requires --run-integration")
+    for item in items:
+        if "integration" in item.keywords:
+            item.add_marker(skip)

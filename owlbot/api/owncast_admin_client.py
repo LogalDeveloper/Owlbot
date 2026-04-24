@@ -16,13 +16,14 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
-from owlbot.owncast_http import get_json, post_with_envelope
+from owlbot.owncast_http import get_json, get_text, request_with_envelope
 
 if TYPE_CHECKING:
     from .http_client import HttpClient
@@ -39,11 +40,6 @@ class StreamKey:
     key: str
     comment: str
 
-    @classmethod
-    def _from_dict(cls, data: dict[str, Any]) -> StreamKey:
-        """Deserialize from the Owncast API format."""
-        return cls(key=data["key"], comment=data.get("comment", ""))
-
     def _to_dict(self) -> dict[str, Any]:
         """Serialize to the Owncast API format."""
         return {"key": self.key, "comment": self.comment}
@@ -59,7 +55,8 @@ class VideoVariant:
     :param scaled_width: Output width in pixels.
     :param scaled_height: Output height in pixels.
     :param framerate: Output framerate.
-    :param cpu_usage_level: CPU usage level (1-5, higher = better quality).
+    :param cpu_usage_level: CPU usage level; higher values use more CPU for
+        better quality.
     :param is_audio_passthrough: Whether to pass audio through without re-encoding.
     :param is_video_passthrough: Whether to pass video through without re-encoding.
     """
@@ -73,30 +70,6 @@ class VideoVariant:
     cpu_usage_level: int
     is_audio_passthrough: bool = True
     is_video_passthrough: bool = False
-
-    @classmethod
-    def _from_dict(cls, data: dict[str, Any]) -> VideoVariant:
-        """Deserialize from the Owncast API format.
-
-        Handles both setter format (``isAudioPassthrough``) and getter
-        format (``audioPassthrough``) since the Owncast API uses
-        different key names for reads vs writes.
-        """
-        return cls(
-            name=data.get("name", ""),
-            video_bitrate=data.get("videoBitrate", 0),
-            audio_bitrate=data.get("audioBitrate", 0),
-            scaled_width=data.get("scaledWidth", 0),
-            scaled_height=data.get("scaledHeight", 0),
-            framerate=data.get("framerate", 0),
-            cpu_usage_level=data.get("cpuUsageLevel", 3),
-            is_audio_passthrough=data.get(
-                "audioPassthrough", data.get("isAudioPassthrough", True)
-            ),
-            is_video_passthrough=data.get(
-                "videoPassthrough", data.get("isVideoPassthrough", False)
-            ),
-        )
 
     def _to_dict(self) -> dict[str, Any]:
         """Serialize to the Owncast API format."""
@@ -124,11 +97,6 @@ class SocialHandle:
     platform: str
     url: str
 
-    @classmethod
-    def _from_dict(cls, data: dict[str, Any]) -> SocialHandle:
-        """Deserialize from the Owncast API format."""
-        return cls(platform=data.get("platform", ""), url=data.get("url", ""))
-
     def _to_dict(self) -> dict[str, Any]:
         """Serialize to the Owncast API format."""
         return {"platform": self.platform, "url": self.url}
@@ -150,17 +118,6 @@ class ExternalAction:
     description: str = ""
     icon: str = ""
     open_externally: bool = True
-
-    @classmethod
-    def _from_dict(cls, data: dict[str, Any]) -> ExternalAction:
-        """Deserialize from the Owncast API format."""
-        return cls(
-            url=data.get("url", ""),
-            title=data.get("title", ""),
-            description=data.get("description", ""),
-            icon=data.get("icon", ""),
-            open_externally=data.get("openExternally", True),
-        )
 
     def _to_dict(self) -> dict[str, Any]:
         """Serialize to the Owncast API format."""
@@ -213,12 +170,20 @@ class OwncastAdminClient:
         """
         return dict(await self._get("/api/admin/status"))
 
-    async def get_active_viewers(self) -> list[dict[str, Any]]:
-        """Get a list of currently active viewers.
+    async def disconnect_stream(self) -> dict[str, Any]:
+        """Disconnect the current inbound stream.
 
-        :return: Viewer list as returned by the Owncast API.
+        :return: API response confirming the disconnect.
         """
-        return list(await self._get("/api/admin/viewers"))
+        self._logger.info("Disconnecting inbound stream.")
+        return dict(await self._get("/api/admin/disconnect"))
+
+    async def get_server_config(self) -> dict[str, Any]:
+        """Get the full server configuration.
+
+        :return: Server configuration dict.
+        """
+        return dict(await self._get("/api/admin/serverconfig"))
 
     async def get_viewers_over_time(self, window_start: int) -> list[dict[str, Any]]:
         """Get viewer count data over time for charting.
@@ -233,6 +198,13 @@ class OwncastAdminClient:
             )
         )
 
+    async def get_active_viewers(self) -> list[dict[str, Any]]:
+        """Get a list of currently active viewers.
+
+        :return: Viewer list as returned by the Owncast API.
+        """
+        return list(await self._get("/api/admin/viewers"))
+
     async def get_hardware_stats(self) -> dict[str, Any]:
         """Get server hardware statistics (CPU, memory, disk).
 
@@ -240,34 +212,19 @@ class OwncastAdminClient:
         """
         return dict(await self._get("/api/admin/hardwarestats"))
 
-    async def get_server_config(self) -> dict[str, Any]:
-        """Get the full server configuration.
-
-        :return: Server configuration dict.
-        """
-        return dict(await self._get("/api/admin/serverconfig"))
-
-    async def disconnect_stream(self) -> dict[str, Any]:
-        """Disconnect the current inbound stream.
-
-        :return: API response confirming the disconnect.
-        """
-        self._logger.info("Disconnecting inbound stream.")
-        return dict(await self._get("/api/admin/disconnect"))
-
-    async def get_chat_messages(self) -> list[dict[str, Any]]:
-        """Get chat messages from the admin perspective.
-
-        :return: Chat message list as returned by the Owncast API.
-        """
-        return list(await self._get("/api/admin/chat/messages"))
-
     async def get_connected_chat_clients(self) -> list[dict[str, Any]]:
         """Get currently connected chat clients.
 
         :return: Client list as returned by the Owncast API.
         """
         return list(await self._get("/api/admin/chat/clients"))
+
+    async def get_chat_messages(self) -> list[dict[str, Any]]:
+        """Get all chat messages, unfiltered (admin view).
+
+        :return: Chat message list as returned by the Owncast API.
+        """
+        return list(await self._get("/api/admin/chat/messages"))
 
     async def set_message_visibility(
         self, message_ids: list[str], *, visible: bool
@@ -307,27 +264,6 @@ class OwncastAdminClient:
         """
         return list(await self._get("/api/admin/chat/users/disabled"))
 
-    async def set_user_moderator(self, user_id: str, *, is_mod: bool) -> str:
-        """Grant or revoke moderator status for a user.
-
-        :param user_id: The user ID to modify.
-        :param is_mod: True to grant moderator, False to revoke.
-        :return: Success message from the server.
-        """
-        action = "Granting" if is_mod else "Revoking"
-        self._logger.info("%s moderator status for user %s.", action, user_id)
-        return await self._post(
-            "/api/admin/chat/users/setmoderator",
-            {"userId": user_id, "isModerator": is_mod},
-        )
-
-    async def get_moderators(self) -> list[dict[str, Any]]:
-        """Get a list of moderator users.
-
-        :return: User list as returned by the Owncast API.
-        """
-        return list(await self._get("/api/admin/chat/users/moderators"))
-
     async def ban_ip_address(self, ip: str) -> str:
         """Ban an IP address from chat.
 
@@ -352,6 +288,136 @@ class OwncastAdminClient:
         :return: IP ban list as returned by the Owncast API.
         """
         return list(await self._get("/api/admin/chat/users/ipbans"))
+
+    async def set_user_moderator(self, user_id: str, *, is_mod: bool) -> str:
+        """Grant or revoke moderator status for a user.
+
+        :param user_id: The user ID to modify.
+        :param is_mod: True to grant moderator, False to revoke.
+        :return: Success message from the server.
+        """
+        action = "Granting" if is_mod else "Revoking"
+        self._logger.info("%s moderator status for user %s.", action, user_id)
+        return await self._post(
+            "/api/admin/chat/users/setmoderator",
+            {"userId": user_id, "isModerator": is_mod},
+        )
+
+    async def get_moderators(self) -> list[dict[str, Any]]:
+        """Get a list of moderator users.
+
+        :return: User list as returned by the Owncast API.
+        """
+        return list(await self._get("/api/admin/chat/users/moderators"))
+
+    async def get_logs(self) -> list[dict[str, Any]]:
+        """Get server logs.
+
+        :return: Log entry list as returned by the Owncast API.
+        """
+        return list(await self._get("/api/admin/logs"))
+
+    async def get_warnings(self) -> list[dict[str, Any]]:
+        """Get server warning and error logs.
+
+        :return: Log entry list as returned by the Owncast API.
+        """
+        return list(await self._get("/api/admin/logs/warnings"))
+
+    async def get_followers(self, offset: int = 0, limit: int = 25) -> dict[str, Any]:
+        """Get a paginated list of followers.
+
+        :param offset: Number of followers to skip.
+        :param limit: Maximum number of followers to return.
+        :return: Paginated follower data as returned by the Owncast API.
+        """
+        return dict(
+            await self._get(
+                "/api/admin/followers", params={"offset": offset, "limit": limit}
+            )
+        )
+
+    async def get_pending_follow_requests(self) -> list[dict[str, Any]]:
+        """Get pending follow requests.
+
+        :return: Follower request list as returned by the Owncast API.
+        """
+        return list(await self._get("/api/admin/followers/pending"))
+
+    async def get_blocked_followers(self) -> list[dict[str, Any]]:
+        """Get blocked and rejected followers.
+
+        :return: Follower list as returned by the Owncast API.
+        """
+        return list(await self._get("/api/admin/followers/blocked"))
+
+    async def approve_follower(self, actor_iri: str, *, approved: bool) -> str:
+        """Approve or reject a follow request.
+
+        :param actor_iri: The ActivityPub actor IRI of the follower.
+        :param approved: True to approve, False to reject.
+        :return: Success message from the server.
+        """
+        action = "Approving" if approved else "Rejecting"
+        self._logger.info("%s follower %s.", action, actor_iri)
+        return await self._post(
+            "/api/admin/followers/approve",
+            {"actorIRI": actor_iri, "approved": approved},
+        )
+
+    async def upload_emoji(self, name: str, base64_data_url: str) -> str:
+        """Upload a custom emoji from a base64 data URL.
+
+        :param name: The emoji name.
+        :param base64_data_url: Data URL string
+            (e.g., ``data:image/png;base64,iVBOR...``).
+        :return: Success message from the server.
+        """
+        self._logger.info("Uploading emoji: %s", name)
+        return await self._post(
+            "/api/admin/emoji/upload", {"name": name, "data": base64_data_url}
+        )
+
+    async def delete_emoji(self, name: str) -> str:
+        """Delete a custom emoji.
+
+        :param name: The emoji name to delete.
+        :return: Success message from the server.
+        """
+        self._logger.info("Deleting emoji: %s", name)
+        return await self._post("/api/admin/emoji/delete", {"name": name})
+
+    async def set_admin_password(self, password: str) -> str:
+        """Change the admin password.
+
+        :param password: The new admin password.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/adminpass", password, "admin password"
+        )
+
+    async def set_stream_keys(self, keys: list[StreamKey]) -> str:
+        """Set the stream keys.
+
+        :param keys: List of :class:`StreamKey` objects.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/streamkeys",
+            [k._to_dict() for k in keys],  # noqa: SLF001  # framework serialization; private to module authors
+            "stream keys",
+        )
+
+    async def set_page_content(self, content: str) -> str:
+        """Set the custom page content (HTML/markdown below the player).
+
+        :param content: The page content.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/pagecontent", content, "page content"
+        )
 
     async def set_stream_title(self, title: str) -> str:
         """Set the stream title.
@@ -383,16 +449,6 @@ class OwncastAdminClient:
             "/api/admin/config/serversummary", summary, "server summary"
         )
 
-    async def set_welcome_message(self, message: str) -> str:
-        """Set the welcome message shown to new viewers.
-
-        :param message: The new welcome message.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/welcomemessage", message, "welcome message"
-        )
-
     async def set_offline_message(self, message: str) -> str:
         """Set the message shown when the stream is offline.
 
@@ -403,94 +459,14 @@ class OwncastAdminClient:
             "/api/admin/config/offlinemessage", message, "offline message"
         )
 
-    async def set_page_content(self, content: str) -> str:
-        """Set the custom page content (HTML/markdown below the player).
+    async def set_welcome_message(self, message: str) -> str:
+        """Set the welcome message shown to new viewers.
 
-        :param content: The page content.
+        :param message: The new welcome message.
         :return: Success message from the server.
         """
         return await self._set_config_value(
-            "/api/admin/config/pagecontent", content, "page content"
-        )
-
-    async def set_admin_password(self, password: str) -> str:
-        """Change the admin password.
-
-        :param password: The new admin password.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/adminpass", password, "admin password"
-        )
-
-    async def set_server_url(self, url: str) -> str:
-        """Set the public server URL.
-
-        :param url: The new server URL.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/serverurl", url, "server URL"
-        )
-
-    async def set_custom_styles(self, css: str) -> str:
-        """Set custom CSS styles for the web interface.
-
-        :param css: The CSS string.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/customstyles", css, "custom styles"
-        )
-
-    async def set_custom_javascript(self, js: str) -> str:
-        """Set custom JavaScript for the web interface.
-
-        :param js: The JavaScript string.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/customjavascript", js, "custom JavaScript"
-        )
-
-    async def set_socket_host_override(self, host: str) -> str:
-        """Set the WebSocket host override.
-
-        :param host: The WebSocket host override value.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/sockethostoverride", host, "socket host override"
-        )
-
-    async def set_ffmpeg_path(self, path: str) -> str:
-        """Set the path to the ffmpeg binary.
-
-        :param path: The ffmpeg binary path.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/ffmpegpath", path, "ffmpeg path"
-        )
-
-    async def set_video_serving_endpoint(self, endpoint: str) -> str:
-        """Set the video serving endpoint (e.g., for CDN).
-
-        :param endpoint: The video serving endpoint URL.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/videoservingendpoint", endpoint, "video serving endpoint"
-        )
-
-    async def set_video_codec(self, codec: str) -> str:
-        """Set the video codec.
-
-        :param codec: The video codec name.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/video/codec", codec, "video codec"
+            "/api/admin/config/welcomemessage", message, "welcome message"
         )
 
     async def set_chat_disabled(self, *, disabled: bool) -> str:
@@ -525,6 +501,26 @@ class OwncastAdminClient:
             "chat established mode",
         )
 
+    async def set_forbidden_usernames(self, names: list[str]) -> str:
+        """Set the list of forbidden usernames.
+
+        :param names: List of forbidden username strings.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/chat/forbiddenusernames", names, "forbidden usernames"
+        )
+
+    async def set_suggested_usernames(self, names: list[str]) -> str:
+        """Set the list of suggested usernames for new viewers.
+
+        :param names: List of suggested username strings.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/chat/suggestedusernames", names, "suggested usernames"
+        )
+
     async def set_chat_spam_protection(self, *, enabled: bool) -> str:
         """Enable or disable chat spam protection.
 
@@ -547,6 +543,204 @@ class OwncastAdminClient:
             "/api/admin/config/chat/slurfilterenabled", enabled, "chat slur filter"
         )
 
+    async def set_chat_require_authentication(self, *, required: bool) -> str:
+        """Require chat users to authenticate before sending messages.
+
+        :param required: True to require authentication.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/chat/requireauthentication",
+            required,
+            "chat require authentication",
+        )
+
+    async def set_video_codec(self, codec: str) -> str:
+        """Set the video codec.
+
+        :param codec: The video codec name.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/video/codec", codec, "video codec"
+        )
+
+    async def set_stream_latency(self, level: int) -> str:
+        """Set the stream latency level.
+
+        :param level: Latency level value.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/video/streamlatencylevel", level, "stream latency"
+        )
+
+    async def set_video_variants(self, variants: list[VideoVariant]) -> str:
+        """Set the video output variants (quality levels).
+
+        :param variants: List of :class:`VideoVariant` objects.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/video/streamoutputvariants",
+            [v._to_dict() for v in variants],  # noqa: SLF001  # framework serialization; private to module authors
+            "video variants",
+        )
+
+    async def set_color_variables(self, variables: dict[str, Any]) -> str:
+        """Set the custom color variables for the web interface.
+
+        :param variables: Color variables dict.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/appearance", variables, "color variables"
+        )
+
+    async def set_logo(self, base64_data_url: str) -> str:
+        """Set the server logo from a base64 data URL.
+
+        :param base64_data_url: Data URL string
+            (e.g., ``data:image/png;base64,iVBOR...``).
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/logo", base64_data_url, "logo"
+        )
+
+    async def set_favicon(self, base64_data_url: str) -> str:
+        """Set a custom favicon from a base64 data URL.
+
+        The data-URL signature mirrors :meth:`set_logo` so module code
+        stays stable across Owlbot's target Owncast version. Owncast
+        0.2.5's ``/api/admin/config/favicon`` expects ``multipart/form-data``
+        with a ``favicon`` field, so this method decodes the URL and
+        uploads the bytes. A future Owncast release (tracked in PR #4879,
+        "Rework the favicon upload to work just like the logo upload")
+        reworks the endpoint to accept the same JSON ``{"value": data_url}``
+        body as :meth:`set_logo`; when Owlbot pins against that version
+        the transport can be swapped for :meth:`_set_config_value`
+        without a signature change.
+
+        Accepted media types: ``image/png``, ``image/x-icon``,
+        ``image/vnd.microsoft.icon``.
+
+        :param base64_data_url: Data URL string
+            (e.g., ``data:image/png;base64,iVBOR...``).
+        :return: Success message from the server.
+        :raises ValueError: If ``base64_data_url`` is not a valid base64
+            data URL or its media type is not supported.
+        """
+        if not base64_data_url.startswith("data:"):
+            msg = f"Not a data URL: {base64_data_url[:30]!r}"
+            raise ValueError(msg)
+        header, _, encoded = base64_data_url[len("data:") :].partition(",")
+        if not header or not encoded or "base64" not in header.split(";")[1:]:
+            msg = f"Malformed base64 data URL: {base64_data_url[:30]!r}"
+            raise ValueError(msg)
+        content_type = header.split(";")[0]
+        if content_type == "image/png":
+            filename = "favicon.png"
+        elif content_type in ("image/x-icon", "image/vnd.microsoft.icon"):
+            filename = "favicon.ico"
+        else:
+            msg = (
+                f"Unsupported favicon media type {content_type!r}; "
+                f"Owncast accepts image/png, image/x-icon, or "
+                f"image/vnd.microsoft.icon."
+            )
+            raise ValueError(msg)
+        image_bytes = base64.b64decode(encoded, validate=True)
+        form = aiohttp.FormData()
+        form.add_field(
+            "favicon", image_bytes, filename=filename, content_type=content_type
+        )
+        self._logger.info("Setting config: favicon (%s)", content_type)
+        return await request_with_envelope(
+            self._http,
+            self._base_url,
+            "/api/admin/config/favicon",
+            form,
+            logger=self._logger,
+            auth=self._auth,
+        )
+
+    async def reset_favicon(self) -> str:
+        """Reset the favicon to the Owncast default.
+
+        :return: Success message from the server.
+        """
+        self._logger.info("Resetting favicon to default.")
+        return await self._delete("/api/admin/config/favicon")
+
+    async def set_tags(self, tags: list[str]) -> str:
+        """Set the server tags.
+
+        :param tags: List of tag strings.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value("/api/admin/config/tags", tags, "tags")
+
+    async def set_ffmpeg_path(self, path: str) -> str:
+        """Set the path to the ffmpeg binary.
+
+        :param path: The ffmpeg binary path.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/ffmpegpath", path, "ffmpeg path"
+        )
+
+    async def set_web_server_port(self, port: int) -> str:
+        """Set the web server port.
+
+        :param port: The web server port number.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/webserverport", port, "web server port"
+        )
+
+    async def set_web_server_ip(self, ip: str) -> str:
+        """Set the web server bind IP address.
+
+        :param ip: The IP address to bind to.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/webserverip", ip, "web server IP"
+        )
+
+    async def set_rtmp_port(self, port: int) -> str:
+        """Set the RTMP server port.
+
+        :param port: The RTMP port number.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/rtmpserverport", port, "RTMP port"
+        )
+
+    async def set_socket_host_override(self, host: str) -> str:
+        """Set the WebSocket host override.
+
+        :param host: The WebSocket host override value.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/sockethostoverride", host, "socket host override"
+        )
+
+    async def set_video_serving_endpoint(self, endpoint: str) -> str:
+        """Set the video serving endpoint (e.g., for CDN).
+
+        :param endpoint: The video serving endpoint URL.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/videoservingendpoint", endpoint, "video serving endpoint"
+        )
+
     async def set_nsfw(self, *, nsfw: bool) -> str:
         """Set the NSFW flag for the server.
 
@@ -565,92 +759,6 @@ class OwncastAdminClient:
             "/api/admin/config/directoryenabled", enabled, "directory enabled"
         )
 
-    async def set_hide_viewer_count(self, *, hide: bool) -> str:
-        """Show or hide the viewer count.
-
-        :param hide: True to hide the viewer count.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/hideviewercount", hide, "hide viewer count"
-        )
-
-    async def set_disable_search_indexing(self, *, disabled: bool) -> str:
-        """Enable or disable search engine indexing.
-
-        :param disabled: True to disable search indexing.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/disablesearchindexing",
-            disabled,
-            "disable search indexing",
-        )
-
-    async def set_forbidden_usernames(self, names: list[str]) -> str:
-        """Set the list of forbidden usernames.
-
-        :param names: List of forbidden username strings.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/chat/forbiddenusernames", names, "forbidden usernames"
-        )
-
-    async def set_suggested_usernames(self, names: list[str]) -> str:
-        """Set the list of suggested usernames for new viewers.
-
-        :param names: List of suggested username strings.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/chat/suggestedusernames", names, "suggested usernames"
-        )
-
-    async def set_tags(self, tags: list[str]) -> str:
-        """Set the server tags.
-
-        :param tags: List of tag strings.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value("/api/admin/config/tags", tags, "tags")
-
-    async def set_federation_blocked_domains(self, domains: list[str]) -> str:
-        """Set the list of blocked federation domains.
-
-        :param domains: List of domain strings to block.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/federation/blockdomains",
-            domains,
-            "federation blocked domains",
-        )
-
-    async def set_stream_keys(self, keys: list[StreamKey]) -> str:
-        """Set the stream keys.
-
-        :param keys: List of :class:`StreamKey` objects.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/streamkeys",
-            [k._to_dict() for k in keys],  # noqa: SLF001  # framework serialization; private to module authors
-            "stream keys",
-        )
-
-    async def set_video_variants(self, variants: list[VideoVariant]) -> str:
-        """Set the video output variants (quality levels).
-
-        :param variants: List of :class:`VideoVariant` objects.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/video/streamoutputvariants",
-            [v._to_dict() for v in variants],  # noqa: SLF001  # framework serialization; private to module authors
-            "video variants",
-        )
-
     async def set_social_handles(self, handles: list[SocialHandle]) -> str:
         """Set the social media handles displayed on the page.
 
@@ -661,18 +769,6 @@ class OwncastAdminClient:
             "/api/admin/config/socialhandles",
             [h._to_dict() for h in handles],  # noqa: SLF001  # framework serialization; private to module authors
             "social handles",
-        )
-
-    async def set_external_actions(self, actions: list[ExternalAction]) -> str:
-        """Set the external actions (buttons/links in the player).
-
-        :param actions: List of :class:`ExternalAction` objects.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/externalactions",
-            [a._to_dict() for a in actions],  # noqa: SLF001  # framework serialization; private to module authors
-            "external actions",
         )
 
     async def set_s3_config(
@@ -706,6 +802,138 @@ class OwncastAdminClient:
                 "region": region,
             },
             "S3 config",
+        )
+
+    async def set_server_url(self, url: str) -> str:
+        """Set the public server URL.
+
+        :param url: The new server URL.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/serverurl", url, "server URL"
+        )
+
+    async def set_external_actions(self, actions: list[ExternalAction]) -> str:
+        """Set the external actions (buttons/links in the player).
+
+        :param actions: List of :class:`ExternalAction` objects.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/externalactions",
+            [a._to_dict() for a in actions],  # noqa: SLF001  # framework serialization; private to module authors
+            "external actions",
+        )
+
+    async def set_custom_styles(self, css: str) -> str:
+        """Set custom CSS styles for the web interface.
+
+        :param css: The CSS string.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/customstyles", css, "custom styles"
+        )
+
+    async def set_custom_javascript(self, js: str) -> str:
+        """Set custom JavaScript for the web interface.
+
+        :param js: The JavaScript string.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/customjavascript", js, "custom JavaScript"
+        )
+
+    async def set_hide_viewer_count(self, *, hide: bool) -> str:
+        """Show or hide the viewer count.
+
+        :param hide: True to hide the viewer count.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/hideviewercount", hide, "hide viewer count"
+        )
+
+    async def set_disable_search_indexing(self, *, disabled: bool) -> str:
+        """Enable or disable search engine indexing.
+
+        :param disabled: True to disable search indexing.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/disablesearchindexing",
+            disabled,
+            "disable search indexing",
+        )
+
+    async def set_federation_enabled(self, *, enabled: bool) -> str:
+        """Enable or disable federation (ActivityPub).
+
+        :param enabled: True to enable federation.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/federation/enable", enabled, "federation enabled"
+        )
+
+    async def set_federation_activity_private(self, *, private: bool) -> str:
+        """Mark federated activity as private (followers-only).
+
+        :param private: True to restrict activity to approved followers.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/federation/private",
+            private,
+            "federation activity private",
+        )
+
+    async def set_federation_show_engagement(self, *, enabled: bool) -> str:
+        """Show or hide federated engagement (likes, boosts) in chat.
+
+        :param enabled: True to display engagement activity.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/federation/showengagement",
+            enabled,
+            "federation show engagement",
+        )
+
+    async def set_federation_username(self, name: str) -> str:
+        """Set the federation (ActivityPub) username.
+
+        :param name: The federation username.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/federation/username", name, "federation username"
+        )
+
+    async def set_federation_go_live_message(self, message: str) -> str:
+        """Set the message sent to followers when going live.
+
+        :param message: The go-live notification message.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/federation/livemessage",
+            message,
+            "federation go-live message",
+        )
+
+    async def set_federation_blocked_domains(self, domains: list[str]) -> str:
+        """Set the list of blocked federation domains.
+
+        :param domains: List of domain strings to block.
+        :return: Success message from the server.
+        """
+        return await self._set_config_value(
+            "/api/admin/config/federation/blockdomains",
+            domains,
+            "federation blocked domains",
         )
 
     async def set_discord_notifications(
@@ -753,126 +981,21 @@ class OwncastAdminClient:
             "browser notifications",
         )
 
-    async def set_color_variables(self, variables: dict[str, Any]) -> str:
-        """Set the custom color variables for the web interface.
-
-        :param variables: Color variables dict.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/appearance", variables, "color variables"
-        )
-
-    async def set_stream_latency(self, level: int) -> str:
-        """Set the stream latency level.
-
-        :param level: Latency level value.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/video/streamlatencylevel", level, "stream latency"
-        )
-
-    async def set_rtmp_port(self, port: int) -> str:
-        """Set the RTMP server port.
-
-        :param port: The RTMP port number.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/rtmpserverport", port, "RTMP port"
-        )
-
-    async def set_web_server_port(self, port: int) -> str:
-        """Set the web server port.
-
-        :param port: The web server port number.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/webserverport", port, "web server port"
-        )
-
-    async def set_web_server_ip(self, ip: str) -> str:
-        """Set the web server bind IP address.
-
-        :param ip: The IP address to bind to.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/webserverip", ip, "web server IP"
-        )
-
-    async def set_federation_enabled(self, *, enabled: bool) -> str:
-        """Enable or disable federation (ActivityPub).
-
-        :param enabled: True to enable federation.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/federation/enable", enabled, "federation enabled"
-        )
-
-    async def set_federation_username(self, name: str) -> str:
-        """Set the federation (ActivityPub) username.
-
-        :param name: The federation username.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/federation/username", name, "federation username"
-        )
-
-    async def set_federation_go_live_message(self, message: str) -> str:
-        """Set the message sent to followers when going live.
-
-        :param message: The go-live notification message.
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/federation/livemessage",
-            message,
-            "federation go-live message",
-        )
-
-    async def set_logo(self, base64_data_url: str) -> str:
-        """Set the server logo from a base64 data URL.
-
-        :param base64_data_url: Data URL string
-            (e.g., ``data:image/png;base64,iVBOR...``).
-        :return: Success message from the server.
-        """
-        return await self._set_config_value(
-            "/api/admin/config/logo", base64_data_url, "logo"
-        )
-
-    async def upload_emoji(self, name: str, data_base64: str) -> str:
-        """Upload a custom emoji.
-
-        :param name: The emoji name.
-        :param data_base64: Base64-encoded image data for the emoji.
-        :return: Success message from the server.
-        """
-        self._logger.info("Uploading emoji: %s", name)
-        return await self._post(
-            "/api/admin/emoji/upload", {"name": name, "data": data_base64}
-        )
-
-    async def delete_emoji(self, name: str) -> str:
-        """Delete a custom emoji.
-
-        :param name: The emoji name to delete.
-        :return: Success message from the server.
-        """
-        self._logger.info("Deleting emoji: %s", name)
-        return await self._post("/api/admin/emoji/delete", {"name": name})
-
     async def get_webhooks(self) -> list[dict[str, Any]]:
         """Get all registered webhooks.
 
         :return: Webhook list as returned by the Owncast API.
         """
         return list(await self._get("/api/admin/webhooks"))
+
+    async def delete_webhook(self, webhook_id: int) -> str:
+        """Delete a webhook.
+
+        :param webhook_id: The ID of the webhook to delete.
+        :return: Success message from the server.
+        """
+        self._logger.info("Deleting webhook: %d", webhook_id)
+        return await self._post("/api/admin/webhooks/delete", {"id": webhook_id})
 
     async def create_webhook(self, url: str, events: list[str]) -> str:
         """Create a new webhook.
@@ -886,21 +1009,22 @@ class OwncastAdminClient:
             "/api/admin/webhooks/create", {"url": url, "events": events}
         )
 
-    async def delete_webhook(self, webhook_id: int) -> str:
-        """Delete a webhook.
-
-        :param webhook_id: The ID of the webhook to delete.
-        :return: Success message from the server.
-        """
-        self._logger.info("Deleting webhook: %d", webhook_id)
-        return await self._post("/api/admin/webhooks/delete", {"id": webhook_id})
-
     async def get_access_tokens(self) -> list[dict[str, Any]]:
         """Get all access tokens.
 
         :return: Token list as returned by the Owncast API.
         """
         return list(await self._get("/api/admin/accesstokens"))
+
+    async def delete_access_token(self, token: str) -> str:
+        """Delete an access token.
+
+        :param token: The token string to delete.
+        :return: Success message from the server.
+        """
+        self._logger.info("Deleting access token ending in '...%s'.", token[-4:])
+
+        return await self._post("/api/admin/accesstokens/delete", {"token": token})
 
     async def create_access_token(self, name: str, scopes: list[str]) -> str:
         """Create a new access token.
@@ -914,59 +1038,54 @@ class OwncastAdminClient:
             "/api/admin/accesstokens/create", {"name": name, "scopes": scopes}
         )
 
-    async def delete_access_token(self, token: str) -> str:
-        """Delete an access token.
+    async def reset_yp_registration(self) -> dict[str, Any]:
+        """Clear the YP (Owncast directory) registration key.
 
-        :param token: The token string to delete.
-        :return: Success message from the server.
+        :return: API response confirming the reset.
         """
-        self._logger.info("Deleting access token ending in '...%s'.", token[-4:])
+        self._logger.info("Resetting YP registration.")
+        return dict(await self._get("/api/admin/yp/reset"))
 
-        return await self._post("/api/admin/accesstokens/delete", {"token": token})
+    async def get_playback_metrics(self) -> dict[str, Any]:
+        """Get video playback metrics.
 
-    async def get_followers(self, offset: int = 0, limit: int = 25) -> dict[str, Any]:
-        """Get a paginated list of followers.
-
-        :param offset: Number of followers to skip.
-        :param limit: Maximum number of followers to return.
-        :return: Paginated follower data as returned by the Owncast API.
+        :return: Playback metrics as returned by the Owncast API.
         """
-        return dict(
-            await self._get(
-                "/api/admin/followers", params={"offset": offset, "limit": limit}
-            )
-        )
+        return dict(await self._get("/api/admin/metrics/video"))
 
-    async def get_pending_follow_requests(self) -> list[dict[str, Any]]:
-        """Get pending follow requests.
+    async def get_prometheus_metrics(self) -> str:
+        """Fetch metrics from the Owncast-proxied Prometheus endpoint.
 
-        :return: Follower request list as returned by the Owncast API.
+        :return: Prometheus exposition text (or JSON when requested via
+            Accept header, not set by this method).
         """
-        return list(await self._get("/api/admin/followers/pending"))
+        return await self._get_text("/api/admin/prometheus")
 
-    async def get_blocked_followers(self) -> list[dict[str, Any]]:
-        """Get blocked and rejected followers.
+    async def post_prometheus(self, data: dict[str, Any] | None = None) -> str:
+        """POST to the Owncast-proxied Prometheus endpoint.
 
-        :return: Follower list as returned by the Owncast API.
+        :param data: Optional JSON body to forward to the Prometheus API.
+        :return: Server response message, empty for non-JSON responses.
         """
-        return list(await self._get("/api/admin/followers/blocked"))
+        return await self._post("/api/admin/prometheus", data)
 
-    async def approve_follower(self, actor_iri: str, *, approved: bool) -> str:
-        """Approve or reject a follow request.
+    async def put_prometheus(self, data: dict[str, Any] | None = None) -> str:
+        """PUT to the Owncast-proxied Prometheus endpoint.
 
-        :param actor_iri: The ActivityPub actor IRI of the follower.
-        :param approved: True to approve, False to reject.
-        :return: Success message from the server.
+        :param data: Optional JSON body to forward to the Prometheus API.
+        :return: Server response message, empty for non-JSON responses.
         """
-        action = "Approving" if approved else "Rejecting"
-        self._logger.info("%s follower %s.", action, actor_iri)
-        return await self._post(
-            "/api/admin/followers/approve",
-            {"actorIRI": actor_iri, "approved": approved},
-        )
+        return await self._put("/api/admin/prometheus", data)
+
+    async def delete_prometheus(self) -> str:
+        """DELETE on the Owncast-proxied Prometheus endpoint.
+
+        :return: Server response message, empty for non-JSON responses.
+        """
+        return await self._delete("/api/admin/prometheus")
 
     async def send_federated_message(self, message: str) -> str:
-        """Send a message to all followers via federation.
+        """Send a public message to the Fediverse from the server's account.
 
         :param message: The message text to send.
         :return: Success message from the server.
@@ -974,26 +1093,21 @@ class OwncastAdminClient:
         self._logger.info("Sending federated message: %s", message)
         return await self._post("/api/admin/federation/send", {"value": message})
 
-    async def get_logs(self) -> list[dict[str, Any]]:
-        """Get server logs.
+    async def get_federated_actions(
+        self, offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Get a paginated list of federated activities.
 
-        :return: Log entry list as returned by the Owncast API.
+        :param offset: Number of activities to skip.
+        :param limit: Maximum number of activities to return.
+        :return: Paginated activity data with ``total`` and ``results`` fields.
         """
-        return list(await self._get("/api/admin/logs"))
-
-    async def get_warnings(self) -> list[dict[str, Any]]:
-        """Get server warning and error logs.
-
-        :return: Log entry list as returned by the Owncast API.
-        """
-        return list(await self._get("/api/admin/logs/warnings"))
-
-    async def get_playback_metrics(self) -> dict[str, Any]:
-        """Get playback quality metrics.
-
-        :return: Playback metrics as returned by the Owncast API.
-        """
-        return dict(await self._get("/api/admin/metrics/video"))
+        return dict(
+            await self._get(
+                "/api/admin/federation/actions",
+                params={"offset": offset, "limit": limit},
+            )
+        )
 
     async def _set_config_value(
         self, endpoint: str, value: Any, description: str
@@ -1014,7 +1128,7 @@ class OwncastAdminClient:
 
         :raises OwncastError: If the request fails.
         """
-        return await post_with_envelope(
+        return await request_with_envelope(
             self._http,
             self._base_url,
             endpoint,
@@ -1023,12 +1137,57 @@ class OwncastAdminClient:
             auth=self._auth,
         )
 
+    async def _delete(self, endpoint: str) -> str:
+        """Send a DELETE request to the Owncast Admin API.
+
+        :raises OwncastError: If the request fails.
+        """
+        return await request_with_envelope(
+            self._http,
+            self._base_url,
+            endpoint,
+            logger=self._logger,
+            auth=self._auth,
+            method="DELETE",
+        )
+
+    async def _put(self, endpoint: str, data: dict[str, Any] | None = None) -> str:
+        """Send a PUT request to the Owncast Admin API.
+
+        :raises OwncastError: If the request fails.
+        """
+        return await request_with_envelope(
+            self._http,
+            self._base_url,
+            endpoint,
+            data,
+            logger=self._logger,
+            auth=self._auth,
+            method="PUT",
+        )
+
     async def _get(self, endpoint: str, params: dict[str, Any] | None = None) -> Any:
         """Send a GET request to the Owncast Admin API.
 
         :raises OwncastError: If the request fails.
         """
         return await get_json(
+            self._http,
+            self._base_url,
+            endpoint,
+            params,
+            logger=self._logger,
+            auth=self._auth,
+        )
+
+    async def _get_text(
+        self, endpoint: str, params: dict[str, Any] | None = None
+    ) -> str:
+        """Send a GET request to the Owncast Admin API and return raw text.
+
+        :raises OwncastError: If the request fails.
+        """
+        return await get_text(
             self._http,
             self._base_url,
             endpoint,

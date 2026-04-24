@@ -76,13 +76,13 @@ jobs:
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: .owncast-test
-          key: owncast-${{ hashFiles('tests/conftest.py') }}-${{ runner.os }}-${{ runner.arch }}
+          key: owncast-${{ hashFiles('tests/integration/conftest.py') }}-${{ runner.os }}-${{ runner.arch }}
 
       - name: Install dependencies
         run: uv sync
 
       - name: Run unit tests with Pytest
-        run: uv run pytest -v --cov --cov-report=
+        run: uv run pytest -v --cov --cov-report= --run-integration
 
       - name: Report code coverage
         run: uv run coverage report

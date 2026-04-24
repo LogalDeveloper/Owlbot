@@ -31,6 +31,7 @@ modules/
 # Test / coverage artifacts
 .coverage
 .pytest_cache/
+.owncast-test/
 
 # Local configuration (keep config.yaml.example in repo)
 config.yaml
