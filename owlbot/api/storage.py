@@ -286,8 +286,9 @@ class ModuleStorage:
 
     async def _close(self) -> None:
         """Close the connection (internal use by bot)."""
-        self._closed = True
-        if self._conn is not None:
-            await self._conn.close()
-            self._conn = None
+        async with self._lock:
+            self._closed = True
+            if self._conn is not None:
+                await self._conn.close()
+                self._conn = None
         self._logger.info("Connection closed.")

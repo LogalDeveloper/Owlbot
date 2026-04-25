@@ -338,6 +338,36 @@ class TestConcurrency:
         rows = await storage_with_table.fetch_all("SELECT id FROM items ORDER BY id")
         assert [r["id"] for r in rows] == [1, 2]
 
+    async def test_close_waits_for_in_flight_connection_setup(
+        self, storage: ModuleStorage, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_close() serializes against in-flight connection setup.
+
+        Without the lock, _close() can run between _ensure_connection's _closed
+        check and the _conn assignment, leaving _closed=True with a live
+        connection still bound to _conn that no later call ever closes.
+        """
+        import aiosqlite  # noqa: PLC0415  # imported here to monkeypatch its connect
+
+        release = asyncio.Event()
+        real_connect = aiosqlite.connect
+
+        async def gated_connect(*args: Any, **kwargs: Any) -> aiosqlite.Connection:
+            await release.wait()
+            return await real_connect(*args, **kwargs)
+
+        monkeypatch.setattr(aiosqlite, "connect", gated_connect)
+
+        op_task = asyncio.create_task(storage.execute("SELECT 1"))
+        await asyncio.sleep(0)
+        close_task = asyncio.create_task(storage._close())
+        await asyncio.sleep(0)
+        release.set()
+        await asyncio.gather(op_task, close_task)
+
+        assert storage._closed is True
+        assert storage._conn is None
+
 
 class TestStorageError:
     """Invalid SQL raises StorageError wrapping the underlying error."""
