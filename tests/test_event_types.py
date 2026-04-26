@@ -357,14 +357,14 @@ class TestNameChangedEvent:
     def test_full_payload(self) -> None:
         """All fields are populated from a realistic NAME_CHANGE eventData dict."""
         data: dict[str, Any] = {
-            "user": _user_dict(display_name="OldName"),
+            "user": _user_dict(display_name="NewName"),
             "clientId": 5,
             "newName": "NewName",
             "id": "evt-002",
             "timestamp": "2026-01-15T14:00:00Z",
         }
         event = NameChangedEvent.from_dict(data)
-        assert event.user.display_name == "OldName"
+        assert event.user.display_name == "NewName"
         assert event.new_name == "NewName"
         assert event.client_id == 5
         assert event.event_id == "evt-002"
@@ -631,11 +631,23 @@ class TestLogEvent:
             pytest.param(
                 EventType.NAME_CHANGE,
                 make_name_changed_event(
-                    user=make_user(display_name="OldName"),
+                    user=make_user(
+                        display_name="NewName",
+                        previous_names=["OldName", "NewName"],
+                    ),
                     new_name="NewName",
                 ),
-                "[NAME_CHANGE] OldName changed name to NewName.",
+                "[NAME_CHANGE] OldName changed to NewName.",
                 id="name-change",
+            ),
+            pytest.param(
+                EventType.NAME_CHANGE,
+                make_name_changed_event(
+                    user=make_user(display_name="NewName"),
+                    new_name="NewName",
+                ),
+                "[NAME_CHANGE] Display name changed to NewName.",
+                id="name-change-fallback",
             ),
             pytest.param(
                 EventType.STREAM_STARTED,

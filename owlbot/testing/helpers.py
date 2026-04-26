@@ -174,7 +174,8 @@ def make_name_changed_event(
 ) -> NameChangedEvent:
     """Build a NameChangedEvent with sensible test defaults.
 
-    :param user: The user changing names; defaults to ``make_user()``.
+    :param user: The user changing names; defaults to a user whose
+        ``display_name`` matches ``new_name``.
     :param client_id: Client connection identifier.
     :param new_name: The new display name.
     :param event_id: Unique event identifier.
@@ -182,7 +183,7 @@ def make_name_changed_event(
     :return: A populated NameChangedEvent instance.
     """
     return NameChangedEvent(
-        user=user if user is not None else make_user(),
+        user=user if user is not None else make_user(display_name=new_name),
         client_id=client_id,
         new_name=new_name,
         event_id=event_id,

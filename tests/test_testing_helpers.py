@@ -226,6 +226,7 @@ class TestMakeNameChangedEvent:
         event = make_name_changed_event()
         assert isinstance(event, NameChangedEvent)
         assert isinstance(event.user, User)
+        assert event.user.display_name == "NewName"
         assert event.client_id == 0
         assert event.new_name == "NewName"
         assert event.event_id == "test-name-change-id"

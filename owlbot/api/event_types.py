@@ -224,7 +224,8 @@ class NameChangedEvent:
     def from_dict(cls, data: dict[str, Any]) -> NameChangedEvent:
         """Create a NameChangedEvent from webhook JSON data.
 
-        Note: The user object contains the OLD display name in user.display_name.
+        In Owncast webhook payloads, ``user.display_name`` already
+        reflects the new display name.
 
         :param data: The event data from the webhook payload.
         :return: A populated NameChangedEvent instance.
@@ -444,9 +445,18 @@ def log_event(event_type: EventType, event: Event) -> None:
         case UserPartedEvent(user=user):
             logger.info("[%s] %s parted.", event_type, user.display_name)
         case NameChangedEvent(user=user, new_name=new_name):
-            logger.info(
-                "[%s] %s changed name to %s.", event_type, user.display_name, new_name
+            # Owncast does not send the old name explicitly, so use the most
+            # recent distinct entry from the user's name history when present.
+            old_name = next(
+                (
+                    name
+                    for name in reversed(user.previous_names)
+                    if name and name != new_name
+                ),
+                None,
             )
+            subject = old_name if old_name is not None else "Display name"
+            logger.info("[%s] %s changed to %s.", event_type, subject, new_name)
         case StreamStartedEvent(stream_title=title):
             logger.info('[%s] Stream started: "%s"', event_type, title)
         case StreamStoppedEvent():
