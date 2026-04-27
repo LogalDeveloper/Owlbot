@@ -161,7 +161,7 @@ async def editor_submit(ctx: RouteContext) -> web.Response:
     clip_url = ctx.routes.url_for(f"/view/{clip.id}")
     await ctx.owncast_client.send_message(f"{clip.creator} created a clip: {clip_url}")
 
-    return web.HTTPFound(clip_url)
+    raise web.HTTPFound(clip_url)
 
 
 @on_route("/view/{clip_id}", methods=["GET"])

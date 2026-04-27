@@ -205,7 +205,7 @@ async def create_submit(ctx: RouteContext) -> web.Response:
 
     # Redirect to the mod's voting page.
     vote_url = ctx.routes.url_for(f"/vote/{token}")
-    return web.HTTPFound(vote_url)
+    raise web.HTTPFound(vote_url)
 
 
 @on_route("/vote/{token}", methods=["GET"])
@@ -293,7 +293,7 @@ async def vote_submit(ctx: RouteContext) -> web.Response:
 
     # Redirect back to the voting page.
     vote_url = ctx.routes.url_for(f"/vote/{token}")
-    return web.HTTPFound(vote_url)
+    raise web.HTTPFound(vote_url)
 
 
 @on_route("/vote/{token}/events", streaming=True)
@@ -379,7 +379,7 @@ async def mod_end(ctx: RouteContext) -> web.Response:
 
     await manager.end()
     results_url = ctx.routes.url_for("/results")
-    return web.HTTPFound(results_url)
+    raise web.HTTPFound(results_url)
 
 
 @on_route("/vote/{token}/cancel", methods=["POST"])

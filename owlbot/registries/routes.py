@@ -620,7 +620,8 @@ class RouteDispatcher:
                 type(result).__name__,
             )
             return web.Response(status=500)
-
+        except web.HTTPException as exc:
+            return exc
         except TimeoutError:
             mod_logger.warning(
                 "Route handler '%s' timed out after %ss.",

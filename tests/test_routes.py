@@ -23,6 +23,7 @@ ModuleRoutes (ownership-scoped wrapper), and RouteContext.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import types
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
@@ -511,6 +512,28 @@ class TestRouteDispatcherDispatch:
         assert response.status == HTTPStatus.OK
         assert response.content_type == "application/json"
 
+    async def test_dispatch_dict_serialization_error_returns_500(
+        self, module_context: ModuleContext
+    ) -> None:
+        """JSON serialization errors return 500 instead of escaping dispatch."""
+
+        async def handler(ctx: RouteContext) -> dict[str, object]:
+            return {"bad": object()}
+
+        dispatcher = _make_dispatcher(module_context)
+        dispatcher.register("/api", handler, module_name="mod")
+
+        request = make_mocked_request("GET", "/owlbot/mod/api")
+        request.match_info["module_name"] = "mod"
+        request.match_info["path"] = "api"
+
+        response: web.StreamResponse | None = None
+        with contextlib.suppress(TypeError):
+            response = await dispatcher.dispatch(request)
+
+        assert response is not None
+        assert response.status == HTTPStatus.INTERNAL_SERVER_ERROR
+
     async def test_dispatch_web_response(self, module_context: ModuleContext) -> None:
         """Handler returning web.Response is passed through."""
 
@@ -526,6 +549,26 @@ class TestRouteDispatcherDispatch:
 
         response = await dispatcher.dispatch(request)
         assert response.status == HTTPStatus.CREATED
+
+    async def test_dispatch_raised_http_exception_passthrough(
+        self,
+        module_context: ModuleContext,
+    ) -> None:
+        """Raised aiohttp HTTP exceptions are passed through."""
+        exc = web.HTTPFound("/dest")
+
+        async def handler(ctx: RouteContext) -> web.Response:
+            raise exc
+
+        dispatcher = _make_dispatcher(module_context)
+        dispatcher.register("/page", handler, module_name="mod")
+
+        request = make_mocked_request("GET", "/owlbot/mod/page")
+        request.match_info["module_name"] = "mod"
+        request.match_info["path"] = "page"
+
+        response = await dispatcher.dispatch(request)
+        assert response is exc
 
     async def test_dispatch_none_response(self, module_context: ModuleContext) -> None:
         """Handler returning None produces 204 No Content."""
