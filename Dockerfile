@@ -6,9 +6,9 @@ ENV UV_LINK_MODE=copy \
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-RUN uv sync --no-dev --frozen --no-install-project
+RUN uv sync --no-dev --locked --no-install-project
 COPY . .
-RUN uv sync --no-dev --frozen --no-editable
+RUN uv sync --no-dev --locked --no-editable
 
 FROM archlinux:base
 

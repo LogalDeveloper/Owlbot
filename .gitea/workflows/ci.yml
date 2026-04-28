@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  UV_PYTHON_DOWNLOADS: never
+
 jobs:
   formatting:
     name: Formatting
@@ -19,13 +22,13 @@ jobs:
           fetch-depth: 0
 
       - name: Cache uv packages
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.cache/uv
           key: uv-${{ hashFiles('uv.lock') }}
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --locked
 
       - name: Check formatting with Ruff
         run: uv run ruff format --check --diff .
@@ -40,13 +43,13 @@ jobs:
           fetch-depth: 0
 
       - name: Cache uv packages
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.cache/uv
           key: uv-${{ hashFiles('uv.lock') }}
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --locked
 
       - name: Check linting with Ruff
         run: uv run ruff check .
@@ -60,26 +63,33 @@ jobs:
     env:
       UV_PYTHON: ${{ matrix.python-version }}
       UV_PYTHON_PREFERENCE: system
+      UV_PYTHON_DOWNLOADS: automatic
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
 
+      - name: Cache uv managed Python installs
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.local/share/uv/python
+          key: uv-python-${{ matrix.python-version }}-${{ runner.os }}-${{ runner.arch }}
+
       - name: Cache uv packages
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.cache/uv
           key: uv-${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
 
       - name: Cache Owncast binary
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: .owncast-test
           key: owncast-${{ hashFiles('tests/integration/conftest.py') }}-${{ runner.os }}-${{ runner.arch }}
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --locked
 
       - name: Run unit tests with Pytest
         run: uv run pytest -v --cov --cov-report= --run-integration
@@ -97,13 +107,13 @@ jobs:
           fetch-depth: 0
 
       - name: Cache uv packages
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.cache/uv
           key: uv-${{ hashFiles('uv.lock') }}
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --locked
 
       - name: Check types with Mypy
         run: uv run mypy .
@@ -118,13 +128,13 @@ jobs:
           fetch-depth: 0
 
       - name: Cache uv packages
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.cache/uv
           key: uv-${{ hashFiles('uv.lock') }}
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --locked
 
       - name: Check spelling with codespell
         run: uv run codespell
