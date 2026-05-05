@@ -898,7 +898,7 @@ class TestRouteDispatcherDispatch:
         self,
         module_context: ModuleContext,
     ) -> None:
-        """Raised aiohttp HTTP exceptions are passed through."""
+        """Raised aiohttp HTTP exceptions are re-raised for aiohttp to handle."""
         exc = web.HTTPFound("/dest")
 
         async def handler(ctx: RouteContext) -> web.Response:
@@ -911,8 +911,9 @@ class TestRouteDispatcherDispatch:
         request.match_info["module_name"] = "mod"
         request.match_info["path"] = "page"
 
-        response = await dispatcher.dispatch(request)
-        assert response is exc
+        with pytest.raises(web.HTTPFound) as exc_info:
+            await dispatcher.dispatch(request)
+        assert exc_info.value is exc
 
     async def test_dispatch_none_response(self, module_context: ModuleContext) -> None:
         """Handler returning None produces 204 No Content."""
