@@ -16,8 +16,8 @@
     "use strict";
 
     const config = window.POLL_CONFIG;
-    const tokenInfo = window.TOKEN_INFO;
-    if (!config || !tokenInfo) return;
+    const viewerInfo = window.VIEWER_INFO;
+    if (!config || !viewerInfo) return;
 
     const timerEl = document.getElementById("timer");
     let remaining = config.timeRemaining;
@@ -71,7 +71,7 @@
 
     // Show vote counts immediately for non-hidden polls so the UI
     // doesn't look identical to a hidden poll before SSE delivers data.
-    if (!config.hidden || tokenInfo.isModerator) {
+    if (!config.hidden || viewerInfo.isModerator) {
         for (const el of document.querySelectorAll(".vote-count")) {
             el.classList.remove("d-none");
         }
@@ -79,7 +79,7 @@
 
     // --- SSE connection ---
 
-    const evtSource = new EventSource(tokenInfo.eventsUrl);
+    const evtSource = new EventSource(viewerInfo.eventsUrl);
 
     const parse = (e) => {
         try {

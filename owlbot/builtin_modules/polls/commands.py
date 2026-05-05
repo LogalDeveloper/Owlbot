@@ -34,22 +34,19 @@ from .manager import PollError, get_manager
 async def poll_command(ctx: CommandContext) -> None:
     """Start the poll creation flow.
 
-    Generates a moderator token and sends the poll creator a private link
-    to the creation form.
+    Sends the poll creator a private protected link to the creation form.
 
     :param ctx: The command context.
     """
     manager = get_manager(ctx.module)
 
-    try:
-        mod_token = await manager.begin_creation(ctx.user.id)
-    except PollError as e:
+    if manager.active_poll is not None:
         await ctx.owncast_client.send_system_message_to_client(
-            ctx.chat_event.client_id, str(e)
+            ctx.chat_event.client_id, "A poll is already active."
         )
         return
 
-    url = ctx.routes.url_for(f"/create/{mod_token}")
+    url = ctx.session_url_for("/create")
     await ctx.owncast_client.send_system_message_to_client(
         ctx.chat_event.client_id,
         f'<a href="{url}"><u>Click here to set up a poll</u></a>.',
@@ -114,12 +111,7 @@ async def vote_command(ctx: CommandContext) -> None:
         return
 
     user_id = ctx.user.id
-    token = manager.get_voter_token(
-        user_id,
-        is_moderator=ctx.user.is_moderator,
-        is_authenticated=ctx.user.is_authenticated,
-    )
-    vote_url = ctx.routes.url_for(f"/vote/{token.value}")
+    vote_url = ctx.session_url_for("/vote")
 
     # Check authentication requirement.
     if poll.requires_auth and not ctx.user.is_authenticated:
@@ -165,7 +157,10 @@ async def vote_command(ctx: CommandContext) -> None:
         # Convert 1-based to 0-based index.
         selection = choice - 1
 
-        await manager.record_vote(user_id, {selection})
+        await manager.record_vote(
+            ctx.user,
+            {selection},
+        )
         await ctx.owncast_client.send_system_message_to_client(
             ctx.chat_event.client_id,
             f"Your vote for #{choice} ({escape(poll.options[selection])})"
@@ -209,13 +204,6 @@ async def handle_bare_vote(ctx: EventContext[ChatEvent]) -> None:
 
     event = ctx.event
 
-    # Keep token privilege flags in sync with the user's current status.
-    manager.refresh_user_status(
-        event.user.id,
-        is_moderator=event.user.is_moderator,
-        is_authenticated=event.user.is_authenticated,
-    )
-
     text = event.raw_body.strip()
 
     try:
@@ -231,12 +219,7 @@ async def handle_bare_vote(ctx: EventContext[ChatEvent]) -> None:
     await ctx.owncast_client.set_message_visibility([event.message_id], visible=False)
     ctx.stop_propagation("bare number vote in active poll")
 
-    token = manager.get_voter_token(
-        event.user.id,
-        is_moderator=event.user.is_moderator,
-        is_authenticated=event.user.is_authenticated,
-    )
-    vote_url = ctx.routes.url_for(f"/vote/{token.value}")
+    vote_url = ctx.session_url_for("/vote")
 
     # Check authentication requirement.
     if poll.requires_auth and not event.user.is_authenticated:
@@ -274,7 +257,10 @@ async def handle_bare_vote(ctx: EventContext[ChatEvent]) -> None:
     # Record the vote.
     selection = choice - 1
 
-    await manager.record_vote(event.user.id, {selection})
+    await manager.record_vote(
+        event.user,
+        {selection},
+    )
     await ctx.owncast_client.send_system_message_to_client(
         event.client_id,
         f"Your vote for #{choice} ({escape(poll.options[selection])})"

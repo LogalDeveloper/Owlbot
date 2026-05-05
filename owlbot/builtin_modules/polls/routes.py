@@ -18,10 +18,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import secrets
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
@@ -38,6 +37,9 @@ from .types import (
     SSEEvent,
     sse_payload,
 )
+
+if TYPE_CHECKING:
+    from owlbot.sessions import BrowserSession
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 _POLLS_CSS_PATH = _STATIC_DIR / "polls.css"
@@ -57,6 +59,14 @@ def _error_page(ctx: RouteContext, status: int, message: str) -> web.Response:
     return web.Response(status=status, text=page, content_type="text/html")
 
 
+def _require_session(ctx: RouteContext) -> BrowserSession:
+    """Return the browser session for a protected polls route."""
+    session = ctx.session
+    if session is None:
+        raise RuntimeError("Protected polls route called without a browser session.")
+    return session
+
+
 def _default_form() -> dict[str, Any]:
     """Return default form values for the poll creation template."""
     return {
@@ -73,7 +83,6 @@ def _default_form() -> dict[str, Any]:
 
 def _create_form_page(
     ctx: RouteContext,
-    token: str,
     *,
     form: dict[str, Any],
     error: str | None = None,
@@ -82,7 +91,6 @@ def _create_form_page(
     """Render the poll creation form.
 
     :param ctx: The route context.
-    :param token: The creation token.
     :param form: Form field values to populate.
     :param error: Optional error message to display.
     :param status: HTTP status code.
@@ -97,40 +105,31 @@ def _create_form_page(
     }
     page = ctx.templates.render(
         "create.html",
-        token=token,
         form=form,
         error=error,
         constraints=constraints,
-        submit_url=ctx.routes.url_for(f"/create/{token}"),
+        submit_url=ctx.routes.url_for("/create"),
         create_js_url=ctx.routes.url_for("/static/create.js"),
     )
     return web.Response(status=status, text=page, content_type="text/html")
 
 
-@on_route("/create/{token}", methods=["GET"])
+@on_route("/create", methods=["GET"], requires_moderator=True)
 async def create_page(ctx: RouteContext) -> web.Response:
     """Serve the poll creation form.
 
     :param ctx: The route context.
     :return: HTML response with the creation form.
     """
-    token = ctx.match_info["token"]
     manager = get_manager(ctx.module)
 
     if manager.active_poll is not None:
         return _error_page(ctx, HTTPStatus.CONFLICT, "A poll is already active.")
 
-    if manager.creation_token_value is None or not secrets.compare_digest(
-        manager.creation_token_value, token
-    ):
-        return _error_page(
-            ctx, HTTPStatus.FORBIDDEN, "Invalid or expired creation link."
-        )
-
-    return _create_form_page(ctx, token, form=_default_form())
+    return _create_form_page(ctx, form=_default_form())
 
 
-@on_route("/create/{token}", methods=["POST"])
+@on_route("/create", methods=["POST"], requires_moderator=True)
 async def create_submit(ctx: RouteContext) -> web.Response:
     """Handle poll creation form submission.
 
@@ -140,7 +139,6 @@ async def create_submit(ctx: RouteContext) -> web.Response:
     :param ctx: The route context.
     :return: Redirect to the voting page, or error response.
     """
-    token = ctx.match_info["token"]
     data = await ctx.request.post()
 
     # Parse form inputs.
@@ -188,7 +186,6 @@ async def create_submit(ctx: RouteContext) -> web.Response:
     manager = get_manager(ctx.module)
     try:
         await manager.create_poll(
-            token=token,
             question=question,
             options=options,
             hidden=hidden,
@@ -200,20 +197,20 @@ async def create_submit(ctx: RouteContext) -> web.Response:
         )
     except PollError as e:
         return _create_form_page(
-            ctx, token, form=form, error=str(e), status=HTTPStatus.BAD_REQUEST
+            ctx, form=form, error=str(e), status=HTTPStatus.BAD_REQUEST
         )
 
     # Redirect to the mod's voting page.
-    vote_url = ctx.routes.url_for(f"/vote/{token}")
+    vote_url = ctx.routes.url_for("/vote")
     raise web.HTTPFound(vote_url)
 
 
-@on_route("/vote/{token}", methods=["GET"])
+@on_route("/vote", methods=["GET"], requires_session=True)
 async def vote_page(ctx: RouteContext) -> web.Response:
     """Serve the voting page.
 
-    Validates the token and renders the voting page with appropriate
-    visibility and permission controls based on the token's privileges.
+    Renders the voting page with appropriate visibility and permission controls
+    based on the connected viewer's session.
 
     :param ctx: The route context.
     :return: HTML response with the voting page.
@@ -224,34 +221,35 @@ async def vote_page(ctx: RouteContext) -> web.Response:
     if poll is None:
         return _error_page(ctx, HTTPStatus.NOT_FOUND, "No active poll.")
 
-    token = ctx.match_info["token"]
-    token_obj = poll.tokens.get(token)
-
-    if token_obj is None:
-        return _error_page(ctx, HTTPStatus.FORBIDDEN, "Invalid or expired voting link.")
-
-    has_voted = token_obj.user_id in poll.votes
-    current_votes = poll.votes.get(token_obj.user_id, set())
+    session = _require_session(ctx)
+    user_id = session.user.id
+    has_voted = user_id in poll.votes
+    current_votes = poll.votes.get(user_id, set())
+    vote_url = ctx.routes.url_for("/vote")
 
     page = ctx.templates.render(
         "vote.html",
         poll=poll,
-        token=token_obj,
+        viewer_is_authenticated=session.is_authenticated,
+        viewer_is_moderator=session.is_moderator,
         has_voted=has_voted,
         current_votes=current_votes,
-        vote_url=ctx.routes.url_for(f"/vote/{token}"),
+        vote_url=vote_url,
+        events_url=ctx.routes.url_for("/vote/events"),
+        end_url=ctx.routes.url_for("/vote/end"),
+        cancel_url=ctx.routes.url_for("/vote/cancel"),
         polls_css_url=ctx.routes.url_for("/static/polls.css"),
         polls_js_url=ctx.routes.url_for("/static/polls.js"),
     )
     return web.Response(text=page, content_type="text/html")
 
 
-@on_route("/vote/{token}", methods=["POST"])
+@on_route("/vote", methods=["POST"], requires_session=True)
 async def vote_submit(ctx: RouteContext) -> web.Response:
     """Handle vote form submission.
 
-    Validates the token, parses selections, delegates to the manager,
-    and redirects back to the voting page.
+    Parses selections, delegates to the manager, and redirects back to the
+    voting page.
 
     :param ctx: The route context.
     :return: Redirect back to the voting page, or error response.
@@ -262,20 +260,14 @@ async def vote_submit(ctx: RouteContext) -> web.Response:
     if poll is None:
         return _error_page(ctx, HTTPStatus.NOT_FOUND, "No active poll.")
 
-    token = ctx.match_info["token"]
-    token_obj = poll.tokens.get(token)
+    session = _require_session(ctx)
 
-    if token_obj is None:
-        return _error_page(ctx, HTTPStatus.FORBIDDEN, "Invalid voting link.")
-
-    if poll.requires_auth and not token_obj.is_authenticated:
+    if poll.requires_auth and not session.is_authenticated:
         return _error_page(
             ctx,
             HTTPStatus.FORBIDDEN,
             "This poll requires an authenticated account to vote.",
         )
-
-    voter_id = token_obj.user_id
 
     data = await ctx.request.post()
 
@@ -287,16 +279,19 @@ async def vote_submit(ctx: RouteContext) -> web.Response:
         return _error_page(ctx, HTTPStatus.BAD_REQUEST, "Invalid selection.")
 
     try:
-        await manager.record_vote(voter_id, selections)
+        await manager.record_vote(
+            session.user,
+            selections,
+        )
     except PollError as e:
         return _error_page(ctx, HTTPStatus.BAD_REQUEST, str(e))
 
     # Redirect back to the voting page.
-    vote_url = ctx.routes.url_for(f"/vote/{token}")
+    vote_url = ctx.routes.url_for("/vote")
     raise web.HTTPFound(vote_url)
 
 
-@on_route("/vote/{token}/events", streaming=True)
+@on_route("/vote/events", streaming=True, requires_session=True)
 async def events_stream(ctx: RouteContext) -> web.StreamResponse | web.Response:
     """SSE endpoint for live poll updates.
 
@@ -311,9 +306,8 @@ async def events_stream(ctx: RouteContext) -> web.StreamResponse | web.Response:
     if poll is None:
         return web.Response(status=HTTPStatus.NOT_FOUND, text="No active poll.")
 
-    token = ctx.match_info["token"]
-    if token not in poll.tokens:
-        return web.Response(status=HTTPStatus.FORBIDDEN, text="Invalid token.")
+    session = _require_session(ctx)
+    user_id = session.user.id
 
     response = web.StreamResponse(
         status=HTTPStatus.OK,
@@ -326,7 +320,10 @@ async def events_stream(ctx: RouteContext) -> web.StreamResponse | web.Response:
     )
     await response.prepare(ctx.request)
 
-    await manager.register_sse_client(token, response)
+    await manager.register_sse_client(
+        session.user,
+        response=response,
+    )
 
     try:
         while manager.active_poll is poll:
@@ -340,24 +337,25 @@ async def events_stream(ctx: RouteContext) -> web.StreamResponse | web.Response:
                 payload = sse_payload(SSEEvent.KEEPALIVE, {"time_remaining": remaining})
                 await response.write(payload)
             except Exception:  # noqa: BLE001  # SSE disconnect; no single exception covers all transport failures
-                ctx.logger.debug("SSE keepalive failed for %s...", token[:8])
+                ctx.logger.debug("SSE keepalive failed for %s.", user_id)
                 break
     finally:
         # Only remove ourselves if we're still the registered client.
-        # A page reload creates a new SSE connection under the same token,
+        # A page reload creates a new SSE connection for the same user,
         # so the old handler must not evict the replacement.
-        if poll.sse_clients.get(token) is response:
-            poll.sse_clients.pop(token, None)
+        client = poll.sse_clients.get(user_id)
+        if client is not None and client.response is response:
+            poll.sse_clients.pop(user_id, None)
         ctx.logger.debug(
-            "SSE client disconnected: %s... (%d remaining).",
-            token[:8],
+            "SSE client disconnected: %s (%d remaining).",
+            user_id,
             len(poll.sse_clients),
         )
 
     return response
 
 
-@on_route("/vote/{token}/end", methods=["POST"])
+@on_route("/vote/end", methods=["POST"], requires_moderator=True)
 async def mod_end(ctx: RouteContext) -> web.Response:
     """End the poll via the moderator web UI.
 
@@ -370,19 +368,12 @@ async def mod_end(ctx: RouteContext) -> web.Response:
     if poll is None:
         return _error_page(ctx, HTTPStatus.NOT_FOUND, "No active poll.")
 
-    token = ctx.match_info["token"]
-    token_obj = poll.tokens.get(token)
-    if token_obj is None or not token_obj.is_moderator:
-        return _error_page(
-            ctx, HTTPStatus.FORBIDDEN, "Only moderators can end the poll."
-        )
-
     await manager.end()
     results_url = ctx.routes.url_for("/results")
     raise web.HTTPFound(results_url)
 
 
-@on_route("/vote/{token}/cancel", methods=["POST"])
+@on_route("/vote/cancel", methods=["POST"], requires_moderator=True)
 async def mod_cancel(ctx: RouteContext) -> web.Response:
     """Cancel the poll via the moderator web UI.
 
@@ -394,13 +385,6 @@ async def mod_cancel(ctx: RouteContext) -> web.Response:
 
     if poll is None:
         return _error_page(ctx, HTTPStatus.NOT_FOUND, "No active poll.")
-
-    token = ctx.match_info["token"]
-    token_obj = poll.tokens.get(token)
-    if token_obj is None or not token_obj.is_moderator:
-        return _error_page(
-            ctx, HTTPStatus.FORBIDDEN, "Only moderators can cancel the poll."
-        )
 
     await manager.cancel()
     return _error_page(ctx, HTTPStatus.OK, "This poll has been cancelled.")

@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import asyncio
-import secrets
 import time
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -39,7 +38,6 @@ DEFAULT_DURATION = 240
 MIN_DURATION = 30
 MAX_DURATION = 600
 REMINDER_THRESHOLD = 60
-CREATION_TOKEN_TIMEOUT = 15 * 60
 STREAM_GRACE_PERIOD = 5 * 60
 RESULT_EXPIRY = 3600
 
@@ -64,19 +62,17 @@ def sse_payload(event_type: SSEEvent, data: dict[str, Any]) -> bytes:
 
 
 @dataclass(slots=True)
-class Token:
-    """A token for poll access.
+class PollSSEClient:
+    """A connected live-results stream for a poll viewer.
 
-    :param user_id: The Owncast user ID this token belongs to.
-    :param is_moderator: Whether the user has moderator privileges.
-    :param is_authenticated: Whether the user has an authenticated Owncast account.
-    :param value: The token string used in URLs (auto-generated if not provided).
+    :param user_id: Owncast user ID associated with the browser session.
+    :param is_moderator: Whether this viewer can see hidden live tallies.
+    :param response: The active SSE response.
     """
 
     user_id: str
     is_moderator: bool
-    is_authenticated: bool
-    value: str = field(default_factory=lambda: secrets.token_urlsafe(32))
+    response: web.StreamResponse
 
 
 @dataclass(slots=True)
@@ -93,9 +89,8 @@ class ActivePoll:
     :param duration: Poll duration in seconds.
     :param created_at: Timestamp when the poll was created.
     :param votes: Mapping of user ID to set of selected option indices.
-    :param sse_clients: Mapping of client token to SSE stream response.
+    :param sse_clients: Mapping of user ID to SSE client response metadata.
     :param timer_task: Asyncio task for the poll timer.
-    :param tokens: Mapping of token string to Token object.
     """
 
     question: str
@@ -108,9 +103,8 @@ class ActivePoll:
     duration: int
     created_at: datetime
     votes: dict[str, set[int]] = field(default_factory=dict)
-    sse_clients: dict[str, web.StreamResponse] = field(default_factory=dict)
+    sse_clients: dict[str, PollSSEClient] = field(default_factory=dict)
     timer_task: asyncio.Task[None] | None = None
-    tokens: dict[str, Token] = field(default_factory=dict)
     done_event: asyncio.Event = field(default_factory=asyncio.Event)
     _started_at_mono: float = field(default_factory=time.monotonic)
 

@@ -114,8 +114,7 @@ async def on_user_joined(ctx: EventContext[UserJoinedEvent]) -> None:
     """Notify a user joining chat that a poll is active.
 
     Sends a private message with the poll question, options, and voting
-    instructions. Also refreshes the user's token privileges in case their
-    authentication or moderator status has changed.
+    instructions.
 
     :param ctx: The event context.
     """
@@ -123,13 +122,6 @@ async def on_user_joined(ctx: EventContext[UserJoinedEvent]) -> None:
     poll = manager.active_poll
     if poll is None:
         return
-
-    event = ctx.event
-    manager.refresh_user_status(
-        event.user.id,
-        is_moderator=event.user.is_moderator,
-        is_authenticated=event.user.is_authenticated,
-    )
 
     escaped_question = escape(poll.question)
     option_lines = "".join(

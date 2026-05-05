@@ -22,14 +22,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import secrets
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from markupsafe import escape
 
 from .types import (
-    CREATION_TOKEN_TIMEOUT,
     MAX_DURATION,
     MAX_OPTION_LENGTH,
     MAX_OPTIONS,
@@ -41,8 +39,8 @@ from .types import (
     STREAM_GRACE_PERIOD,
     ActivePoll,
     CompletedPoll,
+    PollSSEClient,
     SSEEvent,
-    Token,
     compute_results,
     sse_payload,
 )
@@ -50,7 +48,7 @@ from .types import (
 if TYPE_CHECKING:
     from aiohttp import web
 
-    from owlbot.api import ModuleContext
+    from owlbot.api import ModuleContext, User
 
 
 class PollError(Exception):
@@ -70,8 +68,6 @@ class PollManager:
         """Initialize the manager with the module context."""
         self._ctx = ctx
         self._active_poll: ActivePoll | None = None
-        self._creation_token: Token | None = None
-        self._creation_expiry_task: asyncio.Task[None] | None = None
         self._grace_task: asyncio.Task[None] | None = None
         self._last_result: CompletedPoll | None = None
         self._result_expiry_task: asyncio.Task[None] | None = None
@@ -82,55 +78,9 @@ class PollManager:
         return self._active_poll
 
     @property
-    def creation_token_value(self) -> str | None:
-        """The pending token value for poll creation (or None)."""
-        return self._creation_token.value if self._creation_token else None
-
-    @property
     def last_result(self) -> CompletedPoll | None:
         """The most recently completed poll result, if any."""
         return self._last_result
-
-    async def begin_creation(self, creator_id: str) -> str:
-        """Begin the poll creation flow by generating a moderator token.
-
-        The token expires after :data:`CREATION_TOKEN_TIMEOUT` seconds
-        if not used.
-
-        :param creator_id: The user ID of the poll creator.
-        :return: The generated moderator token.
-        :raises PollError: If a poll is already active.
-        """
-        if self._active_poll is not None:
-            raise PollError("A poll is already active.")
-
-        # Cancel any previous token and its expiry task.
-        self.cancel_creation_token()
-
-        self._creation_token = Token(
-            user_id=creator_id,
-            is_moderator=True,
-            is_authenticated=True,
-        )
-
-        async def _expire_creation_token() -> None:
-            await asyncio.sleep(CREATION_TOKEN_TIMEOUT)
-            self._creation_token = None
-            self._creation_expiry_task = None
-            self._ctx.logger.debug(
-                "Creation token expired after %ds.",
-                CREATION_TOKEN_TIMEOUT,
-            )
-
-        self._creation_expiry_task = asyncio.create_task(_expire_creation_token())
-        return self._creation_token.value
-
-    def cancel_creation_token(self) -> None:
-        """Cancel any pending creation token and its expiry task."""
-        if self._creation_expiry_task is not None:
-            self._creation_expiry_task.cancel()
-            self._creation_expiry_task = None
-        self._creation_token = None
 
     def _cancel_result_expiry(self) -> None:
         """Cancel any running result expiry task."""
@@ -141,7 +91,6 @@ class PollManager:
     async def create_poll(
         self,
         *,
-        token: str,
         question: str,
         options: list[str],
         hidden: bool,
@@ -153,10 +102,9 @@ class PollManager:
     ) -> ActivePoll:
         """Create and activate a new poll.
 
-        Validates the moderator token, constructs an :class:`ActivePoll`,
-        starts the auto-end timer task, and announces in chat.
+        Constructs an :class:`ActivePoll`, starts the auto-end timer task, and
+        announces in chat.
 
-        :param token: Moderator token from :meth:`begin_creation`.
         :param question: The poll question.
         :param options: List of poll option strings.
         :param hidden: Whether vote results are hidden until the poll ends.
@@ -166,19 +114,13 @@ class PollManager:
         :param max_selections: Maximum selections allowed (multi-select).
         :param duration: Poll duration in seconds.
         :return: The newly created :class:`ActivePoll`.
-        :raises PollError: If validation fails, the token is invalid,
-            or a poll is already active.
+        :raises PollError: If validation fails or a poll is already active.
         """
         self._last_result = None
         self._cancel_result_expiry()
 
         if self._active_poll is not None:
             raise PollError("A poll is already active.")
-
-        if self._creation_token is None or not secrets.compare_digest(
-            self._creation_token.value, token
-        ):
-            raise PollError("Invalid or expired creation token.")
 
         # Validate inputs.
         if not question:
@@ -249,13 +191,9 @@ class PollManager:
             max_selections=max_selections,
             duration=duration,
             created_at=now,
-            tokens={token: self._creation_token},
         )
 
         self._active_poll = poll
-        # The token object now lives in poll.tokens as a regular token,
-        # so clearing the creation reference has no effect on it.
-        self.cancel_creation_token()
 
         # Start auto-end timer task with reminder before expiry.
         async def _poll_timer() -> None:
@@ -321,60 +259,14 @@ class PollManager:
 
         return poll
 
-    def get_voter_token(
-        self, user_id: str, *, is_moderator: bool, is_authenticated: bool
-    ) -> Token:
-        """Get or create a token for the given user.
-
-        :param user_id: The user's unique identifier.
-        :param is_moderator: Whether the user has moderator privileges.
-        :param is_authenticated: Whether the user has an authenticated Owncast account.
-        :return: The Token object.
-        :raises PollError: If no poll is currently active.
-        """
-        poll = self._active_poll
-        if poll is None:
-            raise PollError("No active poll.")
-
-        # Return existing token if user already has one.
-        for token in poll.tokens.values():
-            if token.user_id == user_id:
-                return token
-
-        # Create new token with privilege based on mod status.
-        token = Token(
-            user_id=user_id,
-            is_moderator=is_moderator,
-            is_authenticated=is_authenticated,
-        )
-        poll.tokens[token.value] = token
-        return token
-
-    def refresh_user_status(
-        self, user_id: str, *, is_moderator: bool, is_authenticated: bool
+    async def record_vote(
+        self,
+        user: User,
+        selections: set[int],
     ) -> None:
-        """Update the privilege flags on an existing token for the given user.
-
-        No-op if there is no active poll or the user has no token.
-
-        :param user_id: The user's unique identifier.
-        :param is_moderator: Current moderator status.
-        :param is_authenticated: Current authentication status.
-        """
-        poll = self._active_poll
-        if poll is None:
-            return
-
-        for token in poll.tokens.values():
-            if token.user_id == user_id:
-                token.is_moderator = is_moderator
-                token.is_authenticated = is_authenticated
-                return
-
-    async def record_vote(self, user_id: str, selections: set[int]) -> None:
         """Record a user's vote and broadcast an SSE update.
 
-        :param user_id: The voter's unique identifier.
+        :param user: The voter.
         :param selections: Set of selected option indices (0-based).
         :raises PollError: If no poll is active or the selections are invalid.
         """
@@ -383,16 +275,10 @@ class PollManager:
             raise PollError("No active poll.")
 
         # Check authentication requirement.
-        if poll.requires_auth:
-            authenticated = False
-            for token_obj in poll.tokens.values():
-                if token_obj.user_id == user_id:
-                    authenticated = token_obj.is_authenticated
-                    break
-            if not authenticated:
-                raise PollError("This poll requires an authenticated account to vote.")
+        if poll.requires_auth and not user.is_authenticated:
+            raise PollError("This poll requires an authenticated account to vote.")
 
-        if user_id in poll.votes:
+        if user.id in poll.votes:
             raise PollError("You have already voted.")
 
         if not selections:
@@ -414,7 +300,7 @@ class PollManager:
         if poll.max_selections is not None and len(selections) > poll.max_selections:
             raise PollError(f"At most {poll.max_selections} selections are allowed.")
 
-        poll.votes[user_id] = selections
+        poll.votes[user.id] = selections
 
         # Broadcast SSE update.
         results = compute_results(poll.options, poll.votes)
@@ -553,14 +439,17 @@ class PollManager:
         await self._close_sse_clients(poll)
 
     async def register_sse_client(
-        self, token: str, response: web.StreamResponse
+        self,
+        user: User,
+        *,
+        response: web.StreamResponse,
     ) -> None:
-        """Register an SSE client connection, replacing any existing one for the token.
+        """Register an SSE client connection for a user.
 
         Sends an initial ``tally`` event so the client has current
         results without needing them baked into the page.
 
-        :param token: The client's token (mod or voter).
+        :param user: Owncast user associated with the browser session.
         :param response: The SSE stream response object.
         :raises PollError: If no poll is currently active.
         """
@@ -568,14 +457,14 @@ class PollManager:
         if poll is None:
             raise PollError("No active poll.")
 
-        if token not in poll.tokens:
-            raise PollError("Invalid token.")
-
-        poll.sse_clients[token] = response
+        poll.sse_clients[user.id] = PollSSEClient(
+            user_id=user.id,
+            is_moderator=user.is_moderator,
+            response=response,
+        )
 
         # Send initial vote counts if this client should see results.
-        token_obj = poll.tokens[token]
-        if token_obj.is_moderator or not poll.hidden:
+        if user.is_moderator or not poll.hidden:
             results = compute_results(poll.options, poll.votes)
             payload = sse_payload(
                 SSEEvent.TALLY,
@@ -591,8 +480,7 @@ class PollManager:
         """Start the stream-stop grace period.
 
         If the stream does not restart within :data:`STREAM_GRACE_PERIOD`
-        seconds, any pending creation token is cleared and any active poll
-        is cancelled.
+        seconds, any active poll is cancelled.
         """
         self.cancel_stream_grace()
 
@@ -602,7 +490,6 @@ class PollManager:
                 STREAM_GRACE_PERIOD,
             )
             await asyncio.sleep(STREAM_GRACE_PERIOD)
-            self.cancel_creation_token()
             if self._active_poll is not None:
                 await self.cancel()
                 self._ctx.logger.info(
@@ -621,10 +508,9 @@ class PollManager:
     async def teardown(self) -> None:
         """Clean up on module unload.
 
-        Cancels grace period, creation token, and any active poll.
+        Cancels grace period and any active poll.
         """
         self.cancel_stream_grace()
-        self.cancel_creation_token()
         self._cancel_result_expiry()
         if self._active_poll is not None:
             await self.cancel()
@@ -634,8 +520,8 @@ class PollManager:
     ) -> None:
         """Broadcast an SSE event to connected clients.
 
-        For ``tally`` events on hidden polls, only the moderator client
-        receives the update. All other event types are sent to every client.
+        For ``tally`` events on hidden polls, only moderator clients receive
+        the update. All other event types are sent to every client.
 
         :param poll: The active poll.
         :param event_type: The SSE event type.
@@ -646,12 +532,11 @@ class PollManager:
 
         # Determine which clients to send to.
         if poll.hidden and event_type == SSEEvent.TALLY:
-            # Only privileged tokens receive vote updates for hidden polls.
+            # Only moderators receive vote updates for hidden polls.
             targets = {
-                token_value: client
-                for token_value, client in clients.items()
-                if (token_obj := poll.tokens.get(token_value))
-                and token_obj.is_moderator
+                user_id: client
+                for user_id, client in clients.items()
+                if client.is_moderator
             }
         else:
             targets = dict(clients)
@@ -660,18 +545,18 @@ class PollManager:
             return
 
         # Send to all targets concurrently.
-        tokens = list(targets.keys())
+        user_ids = list(targets.keys())
         responses = list(targets.values())
         results = await asyncio.gather(
-            *(r.write(payload) for r in responses),
+            *(client.response.write(payload) for client in responses),
             return_exceptions=True,
         )
 
         # Remove failed clients.
-        for token, result in zip(tokens, results, strict=True):
+        for user_id, result in zip(user_ids, results, strict=True):
             if isinstance(result, BaseException):
-                self._ctx.logger.debug("Removing disconnected SSE client: %s", token)
-                clients.pop(token, None)
+                self._ctx.logger.debug("Removing disconnected SSE client: %s", user_id)
+                clients.pop(user_id, None)
 
     async def _close_sse_clients(self, poll: ActivePoll) -> None:
         """Close all SSE client connections for a poll.
@@ -680,7 +565,7 @@ class PollManager:
         """
         for client in poll.sse_clients.values():
             with contextlib.suppress(Exception):
-                await client.write_eof()
+                await client.response.write_eof()
         poll.sse_clients.clear()
 
 
