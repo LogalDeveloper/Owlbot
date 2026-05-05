@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}Owlbot Session{% endblock %}
+
+{% block content %}
+<h1 class="mb-3">Owlbot Session</h1>
+{% if session is none %}
+<div class="alert alert-secondary mb-0" role="status">
+    <p class="mb-0">There is no active Owlbot session for this browser.</p>
+    <p class="mb-0">Run <code>{{ command_prefix }}connect</code> in chat and try again.</p>
+</div>
+{% else %}
+<div class="alert alert-success mb-0" role="status">
+    <p class="mb-0">This browser has an active Owlbot session for <strong>{{ session.user.display_name }}</strong> (<code>{{ session.user.id }}</code>).</p>
+    <p class="mb-0">This Owlbot session expires at <code>{{ session.expires_at.isoformat() }}</code>.</p>
+</div>
+{% endif %}
+{% endblock %}

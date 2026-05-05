@@ -30,6 +30,7 @@ from owlbot.api.storage import ModuleStorage
 from owlbot.api.templates import ModuleTemplates
 from owlbot.builtin_modules import quotes as quotes_pkg
 from owlbot.registries.events import EventDispatcher
+from owlbot.sessions import DEFAULT_SESSION_TTL, SESSION_COOKIE_NAME, SessionManager
 from owlbot.testing import (
     make_chat_event,
     make_user,
@@ -47,7 +48,12 @@ if TYPE_CHECKING:
     from aiohttp.test_utils import TestClient
     from aioresponses import aioresponses
 
-    from owlbot.api.context import CommandContext, EventContext, ModuleContext
+    from owlbot.api.context import (
+        CommandContext,
+        EventContext,
+        ModuleContext,
+        RouteContext,
+    )
     from owlbot.api.event_types import UserJoinedEvent
     from owlbot.registries.commands import CommandDispatcher
     from owlbot.registries.routes import RouteDispatcher
@@ -618,3 +624,86 @@ class TestRouteClient:
 
         resp = await route_client.get("/owlbot/test_module/noop")
         assert resp.status == 204
+
+    async def test_connect_token_redemption_sets_browser_session(
+        self,
+        module_context: ModuleContext,
+        command_dispatcher: CommandDispatcher,
+        route_client: TestClient[Any, Any],
+        session_manager: SessionManager,
+    ) -> None:
+        """Redeeming a connect token persists the session cookie."""
+        session_urls: list[str] = []
+
+        async def handler(ctx: RouteContext) -> dict[str, str | bool]:
+            assert ctx.session is not None
+            return {
+                "user_id": ctx.session.user.id,
+                "authenticated": ctx.session.is_authenticated,
+            }
+
+        async def link_command(ctx: CommandContext) -> None:
+            session_urls.append(ctx.session_url_for("/secure"))
+
+        module_context.routes.register(
+            "/secure",
+            handler,
+            methods=["GET"],
+            requires_authenticated=True,
+        )
+        module_context.commands.register("secure", link_command)
+        await command_dispatcher.dispatch(
+            make_chat_event(
+                raw_body="!secure",
+                user=make_user(id="alice", is_authenticated=True),
+            )
+        )
+
+        session_url = session_urls[0]
+
+        redeem = await route_client.get(
+            session_url.removeprefix("http://localhost:8081"),
+            allow_redirects=False,
+        )
+
+        assert redeem.status == 302
+        session_cookie = redeem.cookies[SESSION_COOKIE_NAME]
+        assert session_cookie["max-age"] == str(
+            int(DEFAULT_SESSION_TTL.total_seconds())
+        )
+        assert session_cookie["path"] == "/owlbot"
+        assert session_cookie["httponly"] is True
+        assert session_cookie["samesite"] == "Lax"
+
+        resp = await route_client.get("/owlbot/test_module/secure")
+
+        assert resp.status == 200
+        assert await resp.json() == {"user_id": "alice", "authenticated": True}
+
+        session_manager.invalidate_session(session_cookie.value)
+
+        stale = await route_client.get("/owlbot/test_module/secure")
+
+        assert stale.status == 401
+        cleared_cookie = stale.cookies[SESSION_COOKIE_NAME]
+        assert cleared_cookie["path"] == "/owlbot"
+        assert cleared_cookie["max-age"] == "0"
+        browser_cookies = route_client.session.cookie_jar.filter_cookies(
+            route_client.make_url("/owlbot/test_module/secure")
+        )
+        assert SESSION_COOKIE_NAME not in browser_cookies
+
+    async def test_invalid_connect_token_returns_guidance_page(
+        self,
+        route_client: TestClient[Any, Any],
+    ) -> None:
+        """Invalid connect tokens return the shared guidance page with a 403 status."""
+        resp = await route_client.get(
+            "/owlbot/connect/not-a-real-token",
+            allow_redirects=False,
+        )
+
+        assert resp.status == 403
+        text = await resp.text()
+        assert "!connect" in text
+        assert "Powered by Owlbot v" in text

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1 class="mb-3">{{ title }}</h1>
+<div class="alert alert-warning" role="alert">
+    <p class="mb-0">{{ body_message }}</p>
+    {% if command_message is none %}
+    <p class="mb-0">Run <code>{{ command_prefix }}connect</code> in chat and try again.</p>
+    {% else %}
+    <p class="mb-0">{{ command_message }}</p>
+    {% endif %}
+</div>
+{% endblock %}

@@ -37,9 +37,12 @@ from owlbot.registries.commands import (
     CommandRegistry,
     ModuleCommands,
 )
+from owlbot.sessions import SessionManager
 from owlbot.testing import RecordingOwncastClient, make_chat_event, make_user
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from owlbot.api.context import ModuleContext
     from owlbot.api.event_types import ChatEvent
     from owlbot.api.storage import ModuleStorage
@@ -444,15 +447,27 @@ class TestCommandDispatcherDispatch:
         owncast_client: RecordingOwncastClient | None = None,
         handler_timeout: float = 5.0,
         command_prefix: str = "!",
+        session_manager: SessionManager | None = None,
+        public_base_url: str | None = None,
     ) -> tuple[CommandDispatcher, ModuleContext, RecordingOwncastClient]:
         """Build a CommandDispatcher wired to the given ModuleContext."""
         stub = owncast_client or RecordingOwncastClient()
+        resolved_session_manager = (
+            session_manager if session_manager is not None else SessionManager()
+        )
+        resolved_public_base_url = (
+            public_base_url
+            if public_base_url is not None
+            else module_context.config.public_base_url
+        )
         dispatcher = CommandDispatcher(
             get_module_context=lambda _name: module_context,
             owncast_client=stub,
             handler_timeout=handler_timeout,
             loaded_modules=set(),
             command_prefix=command_prefix,
+            session_manager=resolved_session_manager,
+            public_base_url=resolved_public_base_url,
         )
         return dispatcher, module_context, stub
 
@@ -862,6 +877,250 @@ class TestCommandDispatcherDispatch:
             for r in caplog.records
         )
 
+    async def test_builtin_connect_sends_private_connect_link(
+        self, module_context: ModuleContext
+    ) -> None:
+        """!connect hides the chat line and whispers a one-time link."""
+        stub = RecordingOwncastClient()
+        session_manager = SessionManager()
+        dispatcher = CommandDispatcher(
+            get_module_context=lambda _name: module_context,
+            owncast_client=stub,
+            handler_timeout=5.0,
+            loaded_modules=set(),
+            session_manager=session_manager,
+            public_base_url=module_context.config.public_base_url,
+        )
+        user = make_user(id="user-123", display_name="Alice")
+
+        await dispatcher.dispatch(
+            make_chat_event(client_id=42, raw_body="!connect", user=user)
+        )
+
+        assert len(stub.calls) == 2
+        assert stub.calls[0].name == "set_message_visibility"
+        assert stub.calls[0].kwargs == {
+            "message_ids": ["test-msg-id"],
+            "visible": False,
+        }
+        assert stub.calls[1].name == "send_system_message_to_client"
+        assert stub.calls[1].kwargs["client_id"] == 42
+        assert stub.calls[1].kwargs["unsanitized"] is True
+        body = stub.calls[1].kwargs["body"]
+        url = body.split('href="', 1)[1].split('"', 1)[0]
+        token = url.rsplit("/", 1)[-1]
+        connect_token = session_manager.get_connect_token(token)
+        assert body == (
+            f'<a href="{url}">'
+            "<u>Click here to connect your Owncast session with Owlbot.</u>"
+            "</a>"
+        )
+        assert connect_token is not None
+        assert connect_token.destination_path == "/owlbot/connect"
+        assert connect_token.user.id == user.id
+
+    async def test_builtin_connect_can_be_reissued_immediately(
+        self, module_context: ModuleContext
+    ) -> None:
+        """!connect is not throttled by the generic built-in cooldown."""
+        stub = RecordingOwncastClient()
+        session_manager = SessionManager()
+        dispatcher = CommandDispatcher(
+            get_module_context=lambda _name: module_context,
+            owncast_client=stub,
+            handler_timeout=5.0,
+            loaded_modules=set(),
+            session_manager=session_manager,
+            public_base_url=module_context.config.public_base_url,
+        )
+        user = make_user(id="user-123", display_name="Alice")
+
+        await dispatcher.dispatch(
+            make_chat_event(client_id=42, raw_body="!connect", user=user)
+        )
+        await dispatcher.dispatch(
+            make_chat_event(client_id=42, raw_body="!connect", user=user)
+        )
+
+        assert len(stub.calls) == 4
+        assert [call.name for call in stub.calls] == [
+            "set_message_visibility",
+            "send_system_message_to_client",
+            "set_message_visibility",
+            "send_system_message_to_client",
+        ]
+        assert all(
+            call.kwargs == {"message_ids": ["test-msg-id"], "visible": False}
+            for call in stub.calls[::2]
+        )
+        tokens: list[str] = []
+        for call in stub.calls[1::2]:
+            body = call.kwargs["body"]
+            url = body.split('href="', 1)[1].split('"', 1)[0]
+            tokens.append(url.rsplit("/", 1)[-1])
+            assert body == (
+                f'<a href="{url}">'
+                "<u>Click here to connect your Owncast session with Owlbot.</u>"
+                "</a>"
+            )
+        assert tokens[0] != tokens[1]
+        assert session_manager.get_connect_token(tokens[0]) is None
+        assert session_manager.get_connect_token(tokens[1]) is not None
+
+    async def test_command_context_session_url_for_uses_command_user(
+        self, module_context: ModuleContext
+    ) -> None:
+        """Dispatched command contexts can issue user-bound session URLs."""
+        session_manager = SessionManager()
+        captured_url = ""
+        user = make_user(id="user-123", is_authenticated=True)
+
+        async def handler(ctx: CommandContext) -> None:
+            nonlocal captured_url
+            captured_url = ctx.session_url_for("/panel")
+
+        dispatcher, _, _ = self._make_dispatcher(
+            module_context,
+            session_manager=session_manager,
+            public_base_url="https://example.com",
+        )
+        dispatcher.register(
+            "panel",
+            handler,
+            module_name=module_context.module_name,
+        )
+
+        await dispatcher.dispatch(make_chat_event(raw_body="!panel", user=user))
+
+        token = captured_url.rsplit("/", 1)[-1]
+        connect_token = session_manager.get_connect_token(token)
+        assert captured_url.startswith("https://example.com/owlbot/connect/")
+        assert connect_token is not None
+        assert connect_token.destination_path == "/owlbot/test_module/panel"
+        assert connect_token.user.id == user.id
+
+    def test_command_session_url_for_accepts_module_relative_path(
+        self, module_context: ModuleContext
+    ) -> None:
+        """Command session URLs add the module namespace to relative paths."""
+        session_manager = SessionManager()
+        dispatcher, _, _ = self._make_dispatcher(
+            module_context,
+            session_manager=session_manager,
+            public_base_url="https://example.com",
+        )
+        session_url_for = dispatcher._make_session_url_for(
+            module_context.module_name,
+            make_user(id="alice"),
+        )
+
+        url = session_url_for("panel")
+        token = url.rsplit("/", 1)[-1]
+        connect_token = session_manager.get_connect_token(token)
+
+        assert connect_token is not None
+        assert connect_token.destination_path == "/owlbot/test_module/panel"
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            pytest.param("../panel", id="relative-parent"),
+            pytest.param("/../panel", id="absolute-parent"),
+            pytest.param("/../../admin", id="multi-parent"),
+            pytest.param("nested/../../other", id="nested-parent"),
+            pytest.param("/%2e%2e/panel", id="encoded-parent"),
+        ],
+    )
+    def test_command_session_url_for_rejects_paths_outside_module_namespace(
+        self, module_context: ModuleContext, path: str
+    ) -> None:
+        """Module-provided session paths cannot escape their namespace."""
+        session_manager = SessionManager()
+        dispatcher, _, _ = self._make_dispatcher(
+            module_context,
+            session_manager=session_manager,
+            public_base_url="https://example.com",
+        )
+        session_url_for = dispatcher._make_session_url_for(
+            module_context.module_name,
+            make_user(id="alice"),
+        )
+
+        with pytest.raises(ValueError, match="module namespace"):
+            session_url_for(path)
+
+    async def test_unregistered_builtin_does_not_shadow_later_module_command(
+        self, module_context: ModuleContext
+    ) -> None:
+        """Removing a built-in clears its fast-path handler entry too."""
+        builtin_calls: list[str] = []
+        module_calls: list[str] = []
+
+        async def builtin_handler(event: ChatEvent, owncast_client: Any) -> None:
+            builtin_calls.append("builtin")
+
+        async def module_handler(ctx: CommandContext) -> None:
+            module_calls.append(ctx.command)
+
+        dispatcher, _, _ = self._make_dispatcher(module_context)
+        dispatcher.register_builtin("test", builtin_handler)
+
+        assert dispatcher.unregister("test") is True
+
+        dispatcher.register("test", module_handler, module_name="mod_a")
+        await dispatcher.dispatch(make_chat_event(client_id=42, raw_body="!test"))
+
+        assert builtin_calls == []
+        assert module_calls == ["test"]
+
+    async def test_failed_builtin_registration_does_not_poison_later_dispatch(
+        self, module_context: ModuleContext
+    ) -> None:
+        """A built-in conflict leaves no stale fast-path handler behind."""
+        builtin_calls: list[str] = []
+        module_calls: list[str] = []
+
+        async def module_handler(ctx: CommandContext) -> None:
+            module_calls.append(ctx.command)
+
+        async def builtin_handler(event: ChatEvent, owncast_client: Any) -> None:
+            builtin_calls.append("builtin")
+
+        dispatcher, _, _ = self._make_dispatcher(module_context)
+        dispatcher.register("test", module_handler, module_name="mod_a")
+
+        with pytest.raises(ValueError, match="conflicts with existing command 'test'"):
+            dispatcher.register_builtin("test", builtin_handler)
+
+        await dispatcher.dispatch(make_chat_event(client_id=42, raw_body="!test"))
+
+        assert builtin_calls == []
+        assert module_calls == ["test"]
+
+    async def test_bulk_unregister_builtins_clears_fast_path_handler_map(
+        self, module_context: ModuleContext
+    ) -> None:
+        """Bulk-unregistering built-ins removes their fast-path handlers too."""
+        builtin_calls: list[str] = []
+        module_calls: list[str] = []
+
+        async def builtin_handler(event: ChatEvent, owncast_client: Any) -> None:
+            builtin_calls.append("builtin")
+
+        async def module_handler(ctx: CommandContext) -> None:
+            module_calls.append(ctx.command)
+
+        dispatcher, _, _ = self._make_dispatcher(module_context)
+        dispatcher.register_builtin("test", builtin_handler)
+
+        assert dispatcher.unregister_by_module("__builtin__") >= 1
+
+        dispatcher.register("test", module_handler, module_name="mod_a")
+        await dispatcher.dispatch(make_chat_event(client_id=42, raw_body="!test"))
+
+        assert builtin_calls == []
+        assert module_calls == ["test"]
+
     async def test_command_event_fields(self, module_context: ModuleContext) -> None:
         """Dispatched CommandContext carries correct CommandEvent fields."""
         captured: list[CommandContext] = []
@@ -901,6 +1160,8 @@ class TestModuleCommands:
             owncast_client=stub,
             handler_timeout=5.0,
             loaded_modules=set(),
+            session_manager=SessionManager(),
+            public_base_url=module_context.config.public_base_url,
         )
         mod_cmds = {name: ModuleCommands(dispatcher, name) for name in module_names}
         return dispatcher, mod_cmds
@@ -1031,6 +1292,8 @@ class TestCommandContext:
     def _make_command_context(
         self,
         module_ctx: ModuleContext,
+        *,
+        session_url_for: Callable[[str], str] | None = None,
     ) -> tuple[CommandContext, CommandEvent, EventContext[ChatEvent]]:
         """Build a CommandContext wrapping the given ModuleContext."""
         event = make_chat_event(client_id=42, raw_body="!greet world")
@@ -1048,6 +1311,11 @@ class TestCommandContext:
             command_event=cmd_event,
             event_context=event_ctx,
             module=module_ctx,
+            _session_url_for=(
+                session_url_for
+                if session_url_for is not None
+                else lambda path: f"https://example.com{path}"
+            ),
         )
         return cmd_ctx, cmd_event, event_ctx
 
@@ -1109,3 +1377,12 @@ class TestCommandContext:
         """ctx.event_context is the EventContext passed at construction."""
         cmd_ctx, _, event_ctx = self._make_command_context(module_context)
         assert cmd_ctx.event_context is event_ctx
+
+    def test_session_url_for(self, module_context: ModuleContext) -> None:
+        """ctx.session_url_for() delegates to the command-scoped URL builder."""
+        cmd_ctx, _, _ = self._make_command_context(
+            module_context,
+            session_url_for=lambda path: f"https://example.com{path}",
+        )
+
+        assert cmd_ctx.session_url_for("/panel") == "https://example.com/panel"

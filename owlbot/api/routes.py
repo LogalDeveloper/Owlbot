@@ -39,6 +39,9 @@ class RouteMark(TypedDict):
     path: str
     methods: list[str] | None
     streaming: bool
+    requires_session: bool
+    requires_authenticated: bool
+    requires_moderator: bool
 
 
 # Handler type: receives RouteContext, returns a response or dict (auto-JSON).
@@ -57,6 +60,9 @@ class RouteInfo:
     handler: RouteHandler
     module_name: str
     streaming: bool = False
+    requires_session: bool = False
+    requires_authenticated: bool = False
+    requires_moderator: bool = False
 
 
 def on_route(
@@ -64,6 +70,9 @@ def on_route(
     *,
     methods: list[str] | None = None,
     streaming: bool = False,
+    requires_session: bool = False,
+    requires_authenticated: bool = False,
+    requires_moderator: bool = False,
 ) -> Callable[[RouteHandler], RouteHandler]:
     """Register an HTTP route handler.
 
@@ -81,7 +90,12 @@ def on_route(
         # methods=None is resolved to ["GET"] by RouteRegistry.register().
         # Framework decorator marker; private to module authors.
         func._owlbot_route = RouteMark(  # type: ignore[attr-defined]  # noqa: SLF001
-            path=path, methods=methods, streaming=streaming
+            path=path,
+            methods=methods,
+            streaming=streaming,
+            requires_session=requires_session,
+            requires_authenticated=requires_authenticated,
+            requires_moderator=requires_moderator,
         )
         return func
 

@@ -41,7 +41,13 @@ from owlbot.registries.events import (
     HandlerEntry,
     ModuleEvents,
 )
-from owlbot.testing import make_chat_event, make_user_joined_event
+from owlbot.sessions import SessionManager
+from owlbot.testing import (
+    make_chat_event,
+    make_name_changed_event,
+    make_user,
+    make_user_joined_event,
+)
 
 if TYPE_CHECKING:
     from owlbot.api.context import ModuleContext
@@ -51,6 +57,22 @@ if TYPE_CHECKING:
 def _unused_get_module_context(name: str) -> ModuleContext:
     """Stub for EventDispatcher tests that never invoke get_module_context."""
     raise AssertionError("get_module_context should not be called")
+
+
+def _make_dispatcher(
+    command_dispatch: Any,
+    get_module_context: Any,
+    *,
+    handler_timeout: float,
+    session_manager: SessionManager | None = None,
+) -> EventDispatcher:
+    """Build an EventDispatcher with a default session manager for tests."""
+    return EventDispatcher(
+        command_dispatch=command_dispatch,
+        get_module_context=get_module_context,
+        handler_timeout=handler_timeout,
+        session_manager=session_manager or SessionManager(),
+    )
 
 
 class TestOnEventDecorator:
@@ -396,7 +418,7 @@ class TestEventDispatcherDispatch:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
@@ -423,7 +445,7 @@ class TestEventDispatcherDispatch:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
@@ -449,7 +471,7 @@ class TestEventDispatcherDispatch:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
@@ -467,7 +489,7 @@ class TestEventDispatcherDispatch:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
@@ -489,7 +511,7 @@ class TestEventDispatcherDispatch:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
@@ -517,7 +539,7 @@ class TestEventDispatcherDispatch:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
@@ -541,7 +563,7 @@ class TestEventDispatcherDispatch:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
@@ -570,7 +592,7 @@ class TestEventDispatcherDispatch:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
@@ -603,7 +625,7 @@ class TestEventDispatcherStorage:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
@@ -634,7 +656,7 @@ class TestEventDispatcherStorage:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
@@ -664,7 +686,7 @@ class TestEventDispatcherStorage:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
@@ -685,7 +707,7 @@ class TestEventDispatcherStorage:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda _name: module_context,
             handler_timeout=0.05,
@@ -713,7 +735,7 @@ class TestEventDispatcherStorage:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda _name: module_context,
             handler_timeout=0.05,
@@ -741,7 +763,7 @@ class TestEventDispatcherStorage:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda _name: module_context,
             handler_timeout=0.05,
@@ -786,7 +808,7 @@ class TestCommandDispatchPhase:
         async def command_dispatch(event: ChatEvent) -> None:
             command_calls.append(event)
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
@@ -809,7 +831,7 @@ class TestCommandDispatchPhase:
         async def stopper(ctx: EventContext[Any]) -> None:
             ctx.stop_propagation("spam")
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
@@ -830,7 +852,7 @@ class TestCommandDispatchPhase:
         async def command_dispatch(event: ChatEvent) -> None:
             raise RuntimeError("fail")
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=lambda _name: module_context,
             handler_timeout=5.0,
@@ -838,6 +860,79 @@ class TestCommandDispatchPhase:
         with caplog.at_level(logging.ERROR, logger="owlbot.events"):
             await dispatcher.dispatch(EventType.CHAT, make_chat_event())
         assert any("Command dispatch failed." in r.message for r in caplog.records)
+
+    async def test_user_event_refreshes_matching_sessions(
+        self, module_context: ModuleContext
+    ) -> None:
+        """User-bearing events refresh any existing Owlbot sessions for that user."""
+        session_manager = SessionManager()
+        original_user = make_user(id="user-123", display_name="Original")
+        session = session_manager.create_session(original_user)
+        refreshed_user = make_user(
+            id="user-123",
+            display_name="UpdatedName",
+            is_authenticated=True,
+        )
+
+        async def command_dispatch(event: ChatEvent) -> None:
+            pass
+
+        dispatcher = _make_dispatcher(
+            command_dispatch=command_dispatch,
+            get_module_context=lambda _name: module_context,
+            handler_timeout=5.0,
+            session_manager=session_manager,
+        )
+
+        await dispatcher.dispatch(
+            EventType.USER_JOINED,
+            make_user_joined_event(
+                user=refreshed_user, client_id=1, event_id="evt-001"
+            ),
+        )
+
+        refreshed_session = session_manager.get_session(session.session_id)
+        assert refreshed_session is not None
+        assert refreshed_session.user.display_name == "UpdatedName"
+        assert refreshed_session.user.is_authenticated is True
+
+    async def test_name_change_event_refreshes_sessions_with_new_display_name(
+        self, module_context: ModuleContext
+    ) -> None:
+        """NAME_CHANGE refreshes sessions from the webhook user snapshot."""
+        session_manager = SessionManager()
+        original_user = make_user(id="user-123", display_name="Original")
+        session = session_manager.create_session(original_user)
+        renamed_user = make_user(
+            id="user-123",
+            display_name="UpdatedName",
+            is_authenticated=True,
+        )
+
+        async def command_dispatch(event: ChatEvent) -> None:
+            pass
+
+        dispatcher = _make_dispatcher(
+            command_dispatch=command_dispatch,
+            get_module_context=lambda _name: module_context,
+            handler_timeout=5.0,
+            session_manager=session_manager,
+        )
+
+        await dispatcher.dispatch(
+            EventType.NAME_CHANGE,
+            make_name_changed_event(
+                user=renamed_user,
+                new_name="UpdatedName",
+                client_id=1,
+                event_id="evt-002",
+            ),
+        )
+
+        refreshed_session = session_manager.get_session(session.session_id)
+        assert refreshed_session is not None
+        assert refreshed_session.user.display_name == "UpdatedName"
+        assert refreshed_session.user.is_authenticated is True
 
 
 class TestModuleEvents:
@@ -849,7 +944,7 @@ class TestModuleEvents:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=_unused_get_module_context,
             handler_timeout=5.0,
@@ -868,7 +963,7 @@ class TestModuleEvents:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=_unused_get_module_context,
             handler_timeout=5.0,
@@ -890,7 +985,7 @@ class TestModuleEvents:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=_unused_get_module_context,
             handler_timeout=5.0,
@@ -914,7 +1009,7 @@ class TestModuleEvents:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=_unused_get_module_context,
             handler_timeout=5.0,
@@ -936,7 +1031,7 @@ class TestModuleEvents:
         async def command_dispatch(event: ChatEvent) -> None:
             pass
 
-        dispatcher = EventDispatcher(
+        dispatcher = _make_dispatcher(
             command_dispatch=command_dispatch,
             get_module_context=_unused_get_module_context,
             handler_timeout=5.0,

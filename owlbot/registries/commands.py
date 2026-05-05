@@ -22,9 +22,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import posixpath
 import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, cast
+from urllib.parse import unquote, urlsplit
 
 from owlbot._version import __version__
 from owlbot.api.commands import CommandEvent, CommandHandler, CommandInfo, CommandMark
@@ -35,7 +37,9 @@ if TYPE_CHECKING:
     from types import ModuleType
 
     from owlbot.api.context import ModuleContext
+    from owlbot.api.event_types import User
     from owlbot.api.owncast_client import OwncastClient
+    from owlbot.sessions import SessionManager
 
 type BuiltinCommandHandler = Callable[[ChatEvent, "OwncastClient"], Awaitable[None]]
 
@@ -253,6 +257,8 @@ class CommandDispatcher:
         owncast_client: OwncastClient,
         handler_timeout: float,
         loaded_modules: set[str],
+        session_manager: SessionManager,
+        public_base_url: str,
         command_prefix: str = "!",
     ) -> None:
         """Initialize the command dispatcher.
@@ -264,6 +270,8 @@ class CommandDispatcher:
         :param owncast_client: Owncast API client for sending error messages.
         :param handler_timeout: Timeout for command handlers in seconds.
         :param loaded_modules: Reference to the set of currently loaded module names.
+        :param session_manager: Session manager used for browser connect links.
+        :param public_base_url: Public base URL for generated connect links.
         :param command_prefix: Prefix character for commands (e.g., "!").
         """
         self._command_registry = CommandRegistry(command_prefix)
@@ -271,6 +279,8 @@ class CommandDispatcher:
         self._owncast_client = owncast_client
         self._handler_timeout = handler_timeout
         self._loaded_modules = loaded_modules
+        self._session_manager = session_manager
+        self._public_base_url = public_base_url.rstrip("/")
         # Maps canonical command name -> monotonic timestamp of last invocation.
         self._cooldown_tracker: dict[str, float] = {}
         # Maps canonical command name -> built-in handler callable.
@@ -289,6 +299,7 @@ class CommandDispatcher:
         handler: BuiltinCommandHandler,
         *,
         aliases: list[str] | tuple[str, ...] | None = None,
+        cooldown: int = 60,
     ) -> None:
         """Register a built-in command handler.
 
@@ -298,16 +309,17 @@ class CommandDispatcher:
         :param name: Primary command name (case-insensitive).
         :param handler: Async function with signature (ChatEvent, OwncastClient).
         :param aliases: Optional list of alternative names.
+        :param cooldown: Minimum seconds between invocations (0 to disable).
         """
         name_lower = name.lower()
-        self._builtin_handlers[name_lower] = handler
         self._command_registry.register(
             name=name,
             handler=handler,  # type: ignore[arg-type]
             aliases=aliases,
             module_name="__builtin__",
-            cooldown=60,
+            cooldown=cooldown,
         )
+        self._builtin_handlers[name_lower] = handler
         logger.debug("Registered built-in command '%s'.", name_lower)
 
     def register(
@@ -359,6 +371,7 @@ class CommandDispatcher:
         result = self._command_registry.unregister(name)
         if result and info is not None:
             self._cooldown_tracker.pop(info.name, None)
+            self._builtin_handlers.pop(info.name, None)
         return result
 
     def get(self, trigger: str) -> CommandInfo | None:
@@ -415,6 +428,7 @@ class CommandDispatcher:
         module_commands = self.get_by_module(module_name)
         for cmd_name in module_commands:
             self._cooldown_tracker.pop(cmd_name, None)
+            self._builtin_handlers.pop(cmd_name, None)
         return self._command_registry.unregister_by_module(module_name)
 
     async def dispatch(self, event: ChatEvent) -> None:
@@ -539,6 +553,10 @@ class CommandDispatcher:
             command_event=cmd_event,
             event_context=event_ctx,
             module=module_ctx,
+            _session_url_for=self._make_session_url_for(
+                command_info.module_name,
+                user,
+            ),
         )
 
         try:
@@ -567,22 +585,74 @@ class CommandDispatcher:
 
     def _register_builtin_commands(self) -> None:
         """Register all built-in commands."""
-        loaded_modules = self._loaded_modules
+        self.register_builtin("about", self._builtin_about)
+        self.register_builtin("connect", self._builtin_connect, cooldown=0)
 
-        async def about_with_modules(
-            event: ChatEvent,  # noqa: ARG001  # required by builtin handler signature
-            owncast_client: OwncastClient,
-        ) -> None:
-            module_count = len(loaded_modules)
-            module_list = (
-                ", ".join(sorted(loaded_modules)) if loaded_modules else "none"
-            )
-            await owncast_client.send_message(
-                f"Owlbot v{__version__} - A logal.dev project | "
-                f"Modules ({module_count}): {module_list}"
-            )
+    async def _builtin_about(
+        self,
+        _event: ChatEvent,
+        owncast_client: OwncastClient,
+    ) -> None:
+        """Send the bot version and loaded-module summary."""
+        module_count = len(self._loaded_modules)
+        module_list = (
+            ", ".join(sorted(self._loaded_modules)) if self._loaded_modules else "none"
+        )
+        await owncast_client.send_message(
+            f"Owlbot v{__version__} - A logal.dev project | "
+            f"Modules ({module_count}): {module_list}"
+        )
 
-        self.register_builtin("about", about_with_modules)
+    async def _builtin_connect(
+        self,
+        event: ChatEvent,
+        owncast_client: OwncastClient,
+    ) -> None:
+        """Send the invoking client a one-time Owlbot connect token."""
+        session_manager = self._session_manager
+        public_base_url = self._public_base_url
+
+        await owncast_client.set_message_visibility([event.message_id], visible=False)
+
+        token = session_manager.issue_connect_token(user=event.user)
+        session_url = f"{public_base_url}/owlbot/connect/{token}"
+        await owncast_client.send_system_message_to_client(
+            event.client_id,
+            (
+                f'<a href="{session_url}">'
+                "<u>Click here to connect your Owncast session with Owlbot.</u>"
+                "</a>"
+            ),
+            unsanitized=True,
+        )
+
+    def _make_session_url_for(
+        self,
+        module_name: str,
+        user: User,
+    ) -> Callable[[str], str]:
+        """Build the command-scoped session URL helper."""
+        session_manager = self._session_manager
+        public_base_url = self._public_base_url
+
+        def session_url_for(path: str) -> str:
+            if not path.startswith("/"):
+                path = "/" + path
+            destination_path = f"/owlbot/{module_name}{path}"
+
+            module_root = f"/owlbot/{module_name}"
+            decoded_path = unquote(urlsplit(destination_path).path)
+            normalized_path = posixpath.normpath(decoded_path)
+            if normalized_path != module_root and not normalized_path.startswith(
+                f"{module_root}/"
+            ):
+                msg = "session destination must stay within the module namespace"
+                raise ValueError(msg)
+
+            token = session_manager.issue_connect_token(destination_path, user=user)
+            return f"{public_base_url}/owlbot/connect/{token}"
+
+        return session_url_for
 
 
 class ModuleCommands:

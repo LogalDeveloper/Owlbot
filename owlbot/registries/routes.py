@@ -32,12 +32,15 @@ from aiohttp.web import DynamicResource
 
 from owlbot.api.context import RouteContext
 from owlbot.api.routes import RouteHandler, RouteInfo, RouteMark
+from owlbot.sessions import SESSION_COOKIE_NAME
+from owlbot.web.sessions import connect_guidance_response
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from types import ModuleType
 
     from owlbot.api.context import ModuleContext
+    from owlbot.sessions import BrowserSession, SessionManager
 
 logger = logging.getLogger("owlbot.web")
 
@@ -94,6 +97,9 @@ class RouteRegistry:
         methods: list[str] | None = None,
         module_name: str,
         streaming: bool = False,
+        requires_session: bool = False,
+        requires_authenticated: bool = False,
+        requires_moderator: bool = False,
     ) -> RouteInfo:
         """Register a route handler.
 
@@ -134,6 +140,9 @@ class RouteRegistry:
             handler=handler,
             module_name=module_name,
             streaming=streaming,
+            requires_session=requires_session,
+            requires_authenticated=requires_authenticated,
+            requires_moderator=requires_moderator,
         )
 
         if group is None:
@@ -357,6 +366,9 @@ class RouteRegistry:
                         methods=mark["methods"],
                         module_name=module_name,
                         streaming=mark["streaming"],
+                        requires_session=mark["requires_session"],
+                        requires_authenticated=mark["requires_authenticated"],
+                        requires_moderator=mark["requires_moderator"],
                     )
 
 
@@ -371,6 +383,8 @@ class RouteDispatcher:
         self,
         get_module_context: Callable[[str], ModuleContext],
         handler_timeout: float,
+        session_manager: SessionManager,
+        command_prefix: str = "!",
     ) -> None:
         """Initialize the route dispatcher.
 
@@ -383,6 +397,8 @@ class RouteDispatcher:
         self._route_registry = RouteRegistry()
         self._get_module_context = get_module_context
         self._handler_timeout = handler_timeout
+        self._session_manager = session_manager
+        self._command_prefix = command_prefix
         self._streaming_tasks: set[asyncio.Task[Any]] = set()
         self._handler_tasks: set[asyncio.Task[Any]] = set()
 
@@ -394,6 +410,9 @@ class RouteDispatcher:
         methods: list[str] | None = None,
         module_name: str,
         streaming: bool = False,
+        requires_session: bool = False,
+        requires_authenticated: bool = False,
+        requires_moderator: bool = False,
     ) -> RouteInfo:
         """Register a route handler.
 
@@ -413,6 +432,9 @@ class RouteDispatcher:
             methods=methods,
             module_name=module_name,
             streaming=streaming,
+            requires_session=requires_session,
+            requires_authenticated=requires_authenticated,
+            requires_moderator=requires_moderator,
         )
 
     def unregister(self, full_path: str, *, method: str | None = None) -> bool:
@@ -520,6 +542,8 @@ class RouteDispatcher:
         """
         module_name = request.match_info["module_name"]
         path = request.match_info.get("path", "")
+        session_id = request.cookies.get(SESSION_COOKIE_NAME)
+        session = self._session_manager.get_session(session_id)
 
         relative_path = f"/{path}" if path else "/"
 
@@ -545,13 +569,20 @@ class RouteDispatcher:
             return web.Response(status=405, headers={"Allow": allowed})
 
         route_info, match_info = result
-        return await self._handle_module_route(request, route_info, match_info)
+        return await self._handle_module_route(
+            request,
+            route_info,
+            match_info,
+            session=session,
+        )
 
     async def _handle_module_route(
         self,
         request: web.Request,
         route_info: RouteInfo,
         match_info: dict[str, str] | None = None,
+        *,
+        session: BrowserSession | None,
     ) -> web.StreamResponse:
         """Handle an HTTP request to a module-registered route.
 
@@ -569,7 +600,15 @@ class RouteDispatcher:
             request=request,
             module=module_ctx,
             match_info=match_info if match_info is not None else {},
+            session=session,
         )
+
+        guard_response = self._guard_response(
+            route_info,
+            session=session,
+        )
+        if guard_response is not None:
+            return guard_response
 
         logger.debug(
             "Calling route handler: %s from module: %s",
@@ -640,6 +679,50 @@ class RouteDispatcher:
                 self._streaming_tasks.discard(task)
                 self._handler_tasks.discard(task)
 
+    def _guard_response(
+        self,
+        route_info: RouteInfo,
+        *,
+        session: BrowserSession | None,
+    ) -> web.Response | None:
+        requires_session = (
+            route_info.requires_session
+            or route_info.requires_authenticated
+            or route_info.requires_moderator
+        )
+        if requires_session and session is None:
+            return connect_guidance_response(
+                status=401,
+                command_prefix=self._command_prefix,
+            )
+        if session is None:
+            return None
+        if route_info.requires_authenticated and not session.is_authenticated:
+            return connect_guidance_response(
+                status=403,
+                command_prefix=self._command_prefix,
+                title="Authentication required",
+                message="You must be authenticated in Owncast to access this page.",
+                command_message=(
+                    "If you believe this is in error, try using "
+                    f"{self._command_prefix}connect in chat to reconnect your "
+                    "Owncast account."
+                ),
+            )
+        if route_info.requires_moderator and not session.is_moderator:
+            return connect_guidance_response(
+                status=403,
+                command_prefix=self._command_prefix,
+                title="Moderator access required",
+                message="Only moderators can access this page.",
+                command_message=(
+                    "If you believe this is in error, try using "
+                    f"{self._command_prefix}connect in chat to reconnect your "
+                    "Owncast account."
+                ),
+            )
+        return None
+
 
 class ModuleRoutes:
     """Module-scoped wrapper around RouteDispatcher.
@@ -650,7 +733,10 @@ class ModuleRoutes:
     """
 
     def __init__(
-        self, dispatcher: RouteDispatcher, module_name: str, public_base_url: str
+        self,
+        dispatcher: RouteDispatcher,
+        module_name: str,
+        public_base_url: str,
     ) -> None:
         """Initialize the module-scoped routes wrapper.
 
@@ -682,6 +768,9 @@ class ModuleRoutes:
         *,
         methods: list[str] | None = None,
         streaming: bool = False,
+        requires_session: bool = False,
+        requires_authenticated: bool = False,
+        requires_moderator: bool = False,
     ) -> RouteInfo:
         """Register a route handler for this module.
 
@@ -700,6 +789,9 @@ class ModuleRoutes:
             methods=methods,
             module_name=self._module_name,
             streaming=streaming,
+            requires_session=requires_session,
+            requires_authenticated=requires_authenticated,
+            requires_moderator=requires_moderator,
         )
 
     def unregister(self, path: str, *, method: str | None = None) -> bool:

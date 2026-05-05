@@ -35,6 +35,8 @@ from aiohttp.test_utils import make_mocked_request
 from owlbot.api.context import RouteContext
 from owlbot.api.routes import RouteInfo, RouteMark, on_route
 from owlbot.registries.routes import ModuleRoutes, RouteDispatcher, RouteRegistry
+from owlbot.sessions import SessionManager
+from owlbot.testing import make_user
 
 if TYPE_CHECKING:
     from owlbot.api.context import ModuleContext
@@ -43,11 +45,17 @@ if TYPE_CHECKING:
 def _make_dispatcher(
     module_context: ModuleContext,
     handler_timeout: float = 0.1,
+    *,
+    session_manager: SessionManager | None = None,
+    command_prefix: str = "!",
 ) -> RouteDispatcher:
     """Build a RouteDispatcher wired to the given ModuleContext."""
+    session_manager = session_manager or SessionManager()
     return RouteDispatcher(
         get_module_context=lambda _name: module_context,
         handler_timeout=handler_timeout,
+        session_manager=session_manager,
+        command_prefix=command_prefix,
     )
 
 
@@ -104,6 +112,23 @@ class TestOnRouteDecorator:
         assert mark["path"] == expected_path
         assert mark["methods"] == expected_methods
         assert mark["streaming"] is expected_streaming
+
+    def test_sets_auth_requirements(self) -> None:
+        """@on_route stores the route auth flags on the mark."""
+
+        @on_route(
+            "/secure",
+            requires_session=True,
+            requires_authenticated=True,
+            requires_moderator=True,
+        )
+        async def handler(ctx: Any) -> None:
+            pass
+
+        mark: RouteMark = handler._owlbot_route  # type: ignore[attr-defined]
+        assert mark["requires_session"] is True
+        assert mark["requires_authenticated"] is True
+        assert mark["requires_moderator"] is True
 
     def test_returns_function_unchanged(self) -> None:
         """@on_route returns the original function."""
@@ -163,6 +188,35 @@ class TestRouteInfo:
         assert info.methods == frozenset({"GET", "POST"})
         assert info.handler is _noop
         assert info.module_name == "mod"
+
+    def test_auth_flags_default_false(self) -> None:
+        """RouteInfo auth flags default to False."""
+        info = RouteInfo(
+            path="/x",
+            full_path="/owlbot/mod/x",
+            methods=frozenset({"GET"}),
+            handler=_noop,
+            module_name="mod",
+        )
+        assert info.requires_session is False
+        assert info.requires_authenticated is False
+        assert info.requires_moderator is False
+
+    def test_auth_flags_accessible(self) -> None:
+        """RouteInfo stores route auth metadata."""
+        info = RouteInfo(
+            path="/x",
+            full_path="/owlbot/mod/x",
+            methods=frozenset({"GET"}),
+            handler=_noop,
+            module_name="mod",
+            requires_session=True,
+            requires_authenticated=True,
+            requires_moderator=True,
+        )
+        assert info.requires_session is True
+        assert info.requires_authenticated is True
+        assert info.requires_moderator is True
 
 
 class TestRouteRegistry:
@@ -230,6 +284,21 @@ class TestRouteRegistry:
         reg = RouteRegistry()
         info = reg.register("/sse", _noop, module_name="mod", streaming=True)
         assert info.streaming is True
+
+    def test_register_auth_flags(self) -> None:
+        """register() stores route auth metadata on RouteInfo."""
+        reg = RouteRegistry()
+        info = reg.register(
+            "/secure",
+            _noop,
+            module_name="mod",
+            requires_session=True,
+            requires_authenticated=True,
+            requires_moderator=True,
+        )
+        assert info.requires_session is True
+        assert info.requires_authenticated is True
+        assert info.requires_moderator is True
 
     def test_get_no_method_returns_list(self) -> None:
         """get() without method returns list of all handlers at path."""
@@ -494,6 +563,281 @@ class TestRouteRegistry:
 
 class TestRouteDispatcherDispatch:
     """Tests RouteDispatcher.dispatch() from owlbot.registries.routes."""
+
+    async def test_requires_session_without_cookie_returns_401_with_guidance(
+        self, module_context: ModuleContext
+    ) -> None:
+        """A session-protected route returns guidance when no cookie is present."""
+
+        async def handler(ctx: RouteContext) -> web.Response:
+            return web.Response(text="ok")
+
+        dispatcher = _make_dispatcher(module_context, session_manager=SessionManager())
+        dispatcher.register(
+            "/secure",
+            handler,
+            module_name="mod",
+            requires_session=True,
+        )
+
+        request = make_mocked_request("GET", "/owlbot/mod/secure")
+        request.match_info["module_name"] = "mod"
+        request.match_info["path"] = "secure"
+
+        response = await dispatcher.dispatch(request)
+
+        assert response.status == HTTPStatus.UNAUTHORIZED
+        assert isinstance(response, web.Response)
+        assert response.text is not None
+        assert "!connect" in response.text
+
+    async def test_requires_authenticated_rejects_unauthenticated_session(
+        self, module_context: ModuleContext
+    ) -> None:
+        """An unauthenticated linked session is rejected before the handler runs."""
+        auth_manager = SessionManager()
+        session = auth_manager.create_session(make_user(id="guest"))
+        handler_called = False
+
+        async def handler(ctx: RouteContext) -> web.Response:
+            nonlocal handler_called
+            handler_called = True
+            return web.Response(text="ok")
+
+        dispatcher = _make_dispatcher(module_context, session_manager=auth_manager)
+        dispatcher.register(
+            "/secure",
+            handler,
+            module_name="mod",
+            requires_authenticated=True,
+        )
+
+        request = make_mocked_request(
+            "GET",
+            "/owlbot/mod/secure",
+            headers={"Cookie": f"owlbot_session={session.session_id}"},
+        )
+        request.match_info["module_name"] = "mod"
+        request.match_info["path"] = "secure"
+
+        response = await dispatcher.dispatch(request)
+
+        assert response.status == HTTPStatus.FORBIDDEN
+        assert handler_called is False
+        assert isinstance(response, web.Response)
+        assert response.text is not None
+        assert (
+            "You must be authenticated in Owncast to access this page." in response.text
+        )
+        assert (
+            "If you believe this is in error, try using !connect in chat "
+            "to reconnect your Owncast account." in response.text
+        )
+
+    async def test_requires_authenticated_guidance_uses_configured_command_prefix(
+        self, module_context: ModuleContext
+    ) -> None:
+        """Protected-route guidance uses the configured connect command prefix."""
+        auth_manager = SessionManager()
+        session = auth_manager.create_session(make_user(id="guest"))
+
+        dispatcher = _make_dispatcher(
+            module_context,
+            session_manager=auth_manager,
+            command_prefix="/",
+        )
+        dispatcher.register(
+            "/secure",
+            _noop,
+            module_name="mod",
+            requires_authenticated=True,
+        )
+
+        request = make_mocked_request(
+            "GET",
+            "/owlbot/mod/secure",
+            headers={"Cookie": f"owlbot_session={session.session_id}"},
+        )
+        request.match_info["module_name"] = "mod"
+        request.match_info["path"] = "secure"
+
+        response = await dispatcher.dispatch(request)
+
+        assert response.status == HTTPStatus.FORBIDDEN
+        assert isinstance(response, web.Response)
+        assert response.text is not None
+        assert "/connect in chat" in response.text
+        assert "!connect in chat" not in response.text
+
+    async def test_requires_session_with_stale_cookie_returns_guidance(
+        self, module_context: ModuleContext
+    ) -> None:
+        """A stale session cookie is treated as missing for a protected route."""
+        dispatcher = _make_dispatcher(module_context, session_manager=SessionManager())
+        dispatcher.register(
+            "/secure",
+            _noop,
+            module_name="mod",
+            requires_session=True,
+        )
+
+        request = make_mocked_request(
+            "GET",
+            "/owlbot/mod/secure",
+            headers={"Cookie": "owlbot_session=stale-session"},
+        )
+        request.match_info["module_name"] = "mod"
+        request.match_info["path"] = "secure"
+
+        response = await dispatcher.dispatch(request)
+
+        assert response.status == HTTPStatus.UNAUTHORIZED
+        assert isinstance(response, web.Response)
+        assert response.text is not None
+        assert "!connect" in response.text
+
+    async def test_requires_authenticated_with_stale_cookie_returns_guidance(
+        self, module_context: ModuleContext
+    ) -> None:
+        """A stale session cookie is treated as missing for stricter routes."""
+        dispatcher = _make_dispatcher(module_context, session_manager=SessionManager())
+        dispatcher.register(
+            "/secure",
+            _noop,
+            module_name="mod",
+            requires_authenticated=True,
+        )
+
+        request = make_mocked_request(
+            "GET",
+            "/owlbot/mod/secure",
+            headers={"Cookie": "owlbot_session=stale-session"},
+        )
+        request.match_info["module_name"] = "mod"
+        request.match_info["path"] = "secure"
+
+        response = await dispatcher.dispatch(request)
+
+        assert response.status == HTTPStatus.UNAUTHORIZED
+        assert isinstance(response, web.Response)
+        assert response.text is not None
+        assert "!connect" in response.text
+
+    async def test_valid_session_populates_route_context_session(
+        self, module_context: ModuleContext
+    ) -> None:
+        """Resolved sessions are exposed on RouteContext for handlers."""
+        auth_manager = SessionManager()
+        session = auth_manager.create_session(
+            make_user(id="alice", is_authenticated=True)
+        )
+        captured_session = None
+
+        async def handler(ctx: RouteContext) -> web.Response:
+            nonlocal captured_session
+            captured_session = ctx.session
+            return web.Response(text="ok")
+
+        dispatcher = _make_dispatcher(module_context, session_manager=auth_manager)
+        dispatcher.register(
+            "/secure",
+            handler,
+            module_name="mod",
+            requires_session=True,
+        )
+
+        request = make_mocked_request(
+            "GET",
+            "/owlbot/mod/secure",
+            headers={"Cookie": f"owlbot_session={session.session_id}"},
+        )
+        request.match_info["module_name"] = "mod"
+        request.match_info["path"] = "secure"
+
+        response = await dispatcher.dispatch(request)
+
+        assert response.status == HTTPStatus.OK
+        assert captured_session is session
+
+    async def test_requires_moderator_rejects_non_moderator_session(
+        self, module_context: ModuleContext
+    ) -> None:
+        """A non-moderator session is rejected before the handler runs."""
+        auth_manager = SessionManager()
+        session = auth_manager.create_session(
+            make_user(id="alice", is_authenticated=True, is_moderator=False)
+        )
+        handler_called = False
+
+        async def handler(ctx: RouteContext) -> web.Response:
+            nonlocal handler_called
+            handler_called = True
+            return web.Response(text="ok")
+
+        dispatcher = _make_dispatcher(module_context, session_manager=auth_manager)
+        dispatcher.register(
+            "/secure",
+            handler,
+            module_name="mod",
+            requires_moderator=True,
+        )
+
+        request = make_mocked_request(
+            "GET",
+            "/owlbot/mod/secure",
+            headers={"Cookie": f"owlbot_session={session.session_id}"},
+        )
+        request.match_info["module_name"] = "mod"
+        request.match_info["path"] = "secure"
+
+        response = await dispatcher.dispatch(request)
+
+        assert response.status == HTTPStatus.FORBIDDEN
+        assert handler_called is False
+        assert isinstance(response, web.Response)
+        assert response.text is not None
+        assert "Only moderators can access this page." in response.text
+        assert (
+            "If you believe this is in error, try using !connect in chat "
+            "to reconnect your Owncast account." in response.text
+        )
+
+    async def test_requires_moderator_allows_moderator_session(
+        self, module_context: ModuleContext
+    ) -> None:
+        """A moderator session reaches the protected handler."""
+        auth_manager = SessionManager()
+        session = auth_manager.create_session(
+            make_user(id="alice", is_authenticated=True, is_moderator=True)
+        )
+        handler_called = False
+
+        async def handler(ctx: RouteContext) -> web.Response:
+            nonlocal handler_called
+            handler_called = True
+            assert ctx.session is session
+            return web.Response(text="ok")
+
+        dispatcher = _make_dispatcher(module_context, session_manager=auth_manager)
+        dispatcher.register(
+            "/secure",
+            handler,
+            module_name="mod",
+            requires_moderator=True,
+        )
+
+        request = make_mocked_request(
+            "GET",
+            "/owlbot/mod/secure",
+            headers={"Cookie": f"owlbot_session={session.session_id}"},
+        )
+        request.match_info["module_name"] = "mod"
+        request.match_info["path"] = "secure"
+
+        response = await dispatcher.dispatch(request)
+
+        assert response.status == HTTPStatus.OK
+        assert handler_called is True
 
     async def test_dispatch_dict_response(self, module_context: ModuleContext) -> None:
         """Handler returning dict produces JSON 200 response."""
@@ -986,6 +1330,21 @@ class TestRouteDispatcherDelegation:
         dispatcher.register_from_module(mod, "fake")
         assert len(dispatcher.get_by_module("fake")) == 1
 
+    def test_register_auth_flags(self, module_context: ModuleContext) -> None:
+        """RouteDispatcher.register() passes auth flags through."""
+        dispatcher = _make_dispatcher(module_context)
+        info = dispatcher.register(
+            "/secure",
+            _noop,
+            module_name="mod",
+            requires_session=True,
+            requires_authenticated=True,
+            requires_moderator=True,
+        )
+        assert info.requires_session is True
+        assert info.requires_authenticated is True
+        assert info.requires_moderator is True
+
     def test_unregister_by_module(self, module_context: ModuleContext) -> None:
         """RouteDispatcher.unregister_by_module() delegates to registry."""
         dispatcher = _make_dispatcher(module_context)
@@ -999,12 +1358,21 @@ class TestModuleRoutes:
     """Tests ModuleRoutes from owlbot.registries.routes."""
 
     def _make_mod_routes(
-        self, module_context: ModuleContext, *module_names: str
+        self,
+        module_context: ModuleContext,
+        *module_names: str,
     ) -> tuple[RouteDispatcher, dict[str, ModuleRoutes]]:
         """Build a dispatcher and ModuleRoutes wrappers for given modules."""
-        dispatcher = _make_dispatcher(module_context, handler_timeout=5.0)
+        dispatcher = _make_dispatcher(
+            module_context,
+            handler_timeout=5.0,
+        )
         mod_routes = {
-            name: ModuleRoutes(dispatcher, name, "https://example.com")
+            name: ModuleRoutes(
+                dispatcher,
+                name,
+                "https://example.com",
+            )
             for name in module_names
         }
         return dispatcher, mod_routes
@@ -1029,6 +1397,20 @@ class TestModuleRoutes:
         _, mod_routes = self._make_mod_routes(module_context, "mod_a")
         info = mod_routes["mod_a"].register("/data", _noop, methods=["GET", "POST"])
         assert info.methods == frozenset({"GET", "POST"})
+
+    def test_register_auth_flags(self, module_context: ModuleContext) -> None:
+        """ModuleRoutes.register() passes auth flags through."""
+        _, mod_routes = self._make_mod_routes(module_context, "mod_a")
+        info = mod_routes["mod_a"].register(
+            "/secure",
+            _noop,
+            requires_session=True,
+            requires_authenticated=True,
+            requires_moderator=True,
+        )
+        assert info.requires_session is True
+        assert info.requires_authenticated is True
+        assert info.requires_moderator is True
 
     def test_unregister_by_path(self, module_context: ModuleContext) -> None:
         """ModuleRoutes.unregister() removes all handlers at path."""
@@ -1186,3 +1568,11 @@ class TestRouteContext:
         )
         ctx = RouteContext(request=request, module=module_context)
         assert ctx.match_info == {}
+
+    def test_session_defaults_none(self, module_context: ModuleContext) -> None:
+        """RouteContext.session defaults to None."""
+        request = make_mocked_request(
+            "GET", f"/owlbot/{module_context.module_name}/test"
+        )
+        ctx = RouteContext(request=request, module=module_context)
+        assert ctx.session is None

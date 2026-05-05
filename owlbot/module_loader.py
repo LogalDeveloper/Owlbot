@@ -39,10 +39,11 @@ if TYPE_CHECKING:
 
     from .api.http_client import HttpClient
     from .api.lifecycle import LifecycleHandler
+    from .sessions import SessionManager
 
 logger = logging.getLogger("owlbot.modules")
 
-RESERVED_MODULE_NAMES: frozenset[str] = frozenset({"static"})
+RESERVED_MODULE_NAMES: frozenset[str] = frozenset({"connect", "static"})
 
 
 class ModuleLoadError(Exception):
@@ -57,6 +58,7 @@ class ModuleLoader:
         modules_dir: str | Path,
         config: Config,
         http_client: HttpClient,
+        session_manager: SessionManager,
     ) -> None:
         """Initialize the module loader.
 
@@ -67,6 +69,7 @@ class ModuleLoader:
         self.modules_dir = Path(modules_dir).resolve()
         self.config = config
         self.http_client = http_client
+        self.session_manager = session_manager
         self._module_contexts: dict[str, ModuleContext] = {}
         self.loaded_modules: set[str] = set()
 
@@ -92,15 +95,20 @@ class ModuleLoader:
             handler_timeout=config.handler_timeout,
             loaded_modules=self.loaded_modules,
             command_prefix=config.command_prefix,
+            session_manager=self.session_manager,
+            public_base_url=config.public_base_url,
         )
         self.event_dispatcher = EventDispatcher(
             command_dispatch=self.command_dispatcher.dispatch,
             get_module_context=self._require_module_context,
             handler_timeout=config.handler_timeout,
+            session_manager=self.session_manager,
         )
         self.route_dispatcher = RouteDispatcher(
             get_module_context=self._require_module_context,
             handler_timeout=config.handler_timeout,
+            session_manager=self.session_manager,
+            command_prefix=config.command_prefix,
         )
 
         self._core_template_dir = Path(__file__).resolve().parent / "templates"

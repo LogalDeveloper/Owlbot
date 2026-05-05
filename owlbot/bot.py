@@ -27,6 +27,7 @@ from .api.http_client import HttpClient
 from .http_server import HttpServer
 from .module_loader import ModuleLoader
 from .owncast_http import OwncastError
+from .sessions import SessionManager
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -75,17 +76,21 @@ class Owlbot:
         # Shared HTTP client (owns the aiohttp session lifecycle).
         self.http_client = HttpClient()
 
+        self.session_manager = SessionManager()
+
         # Module loader (owns API clients, dispatchers, and module contexts).
         self.module_loader = ModuleLoader(
             self.modules_dir,
             self.config,
             self.http_client,
+            self.session_manager,
         )
 
         self.http_server = HttpServer(
             config=self.config,
             event_dispatch=self.module_loader.event_dispatcher.dispatch,
             route_dispatcher=self.module_loader.route_dispatcher,
+            session_manager=self.session_manager,
         )
 
         logger.debug("Owlbot initialization complete.")
@@ -118,6 +123,7 @@ class Owlbot:
             # Auth is handled per-request by each Owncast client.
             # Framework lifecycle; private to module authors.
             await self.http_client._start()  # noqa: SLF001
+            self.session_manager.start()
 
             if self.skip_api_check:
                 logger.info("Skipping startup connection tests.")
@@ -140,6 +146,9 @@ class Owlbot:
                 f"Failed to start web server on "
                 f"{self.config.host}:{self.config.port}: {e}"
             ) from e
+        except Exception:
+            await self.stop()
+            raise
 
     async def stop(self) -> None:
         """Gracefully shut down the bot, unloading all modules.
@@ -160,6 +169,7 @@ class Owlbot:
         # Close the shared HTTP client (safe to call if startup failed early).
         # Framework lifecycle; private to module authors.
         await self.http_client._close()  # noqa: SLF001
+        await self.session_manager.close()
 
         logger.info("Owlbot shutdown complete.")
 

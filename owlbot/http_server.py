@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable, Coroutine
+from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -27,21 +28,60 @@ from aiohttp import web
 
 from . import __version__
 from .api.event_types import Event, EventType, parse_event
+from .sessions import SESSION_COOKIE_NAME
+from .web.sessions import register_browser_session_routes
 
 if TYPE_CHECKING:
     from .api.config import Config
     from .registries.routes import RouteDispatcher
+    from .sessions import SessionManager
 
 logger = logging.getLogger("owlbot.web")
 
 
-async def _on_response_prepare(
-    request: web.Request, response: web.StreamResponse
+def _session_cookie_delete_header() -> str:
+    cookie = SimpleCookie()
+    cookie[SESSION_COOKIE_NAME] = ""
+    morsel = cookie[SESSION_COOKIE_NAME]
+    morsel["expires"] = "Thu, 01 Jan 1970 00:00:00 GMT"
+    morsel["max-age"] = "0"
+    morsel["path"] = "/owlbot"
+    return morsel.OutputString()
+
+
+_SESSION_COOKIE_DELETE_HEADER = _session_cookie_delete_header()
+
+
+def _is_owlbot_path(path: str) -> bool:
+    return path == "/owlbot" or path.startswith("/owlbot/")
+
+
+def register_response_prepare_hook(
+    app: web.Application,
+    *,
+    session_manager: SessionManager,
 ) -> None:
-    """Set the Server header on all responses before headers are sent."""
-    response.headers["Server"] = f"Owlbot/{__version__}"
-    if request.path.startswith("/owlbot/static/"):
-        response.headers["Cache-Control"] = "max-age=86400"
+    """Register the shared response-prepare hook for an Owlbot HTTP app."""
+
+    async def on_response_prepare(
+        request: web.Request,
+        response: web.StreamResponse,
+    ) -> None:
+        """Set common headers and clear stale session cookies before headers send."""
+        response.headers["Server"] = f"Owlbot/{__version__}"
+        if request.path.startswith("/owlbot/static/"):
+            response.headers["Cache-Control"] = "max-age=86400"
+
+        session_id = request.cookies.get(SESSION_COOKIE_NAME)
+        if (
+            session_id is not None
+            and _is_owlbot_path(request.path)
+            and SESSION_COOKIE_NAME not in response.cookies
+            and session_manager.get_session(session_id) is None
+        ):
+            response.headers.add("Set-Cookie", _SESSION_COOKIE_DELETE_HEADER)
+
+    app.on_response_prepare.append(on_response_prepare)
 
 
 # Callback type for webhook dispatch (injected from Owlbot).
@@ -60,6 +100,7 @@ class HttpServer:
         config: Config,
         event_dispatch: WebhookCallback,
         route_dispatcher: RouteDispatcher,
+        session_manager: SessionManager,
     ) -> None:
         """Initialize the web server.
 
@@ -78,7 +119,7 @@ class HttpServer:
         self._runner: web.AppRunner | None = None
 
         self.app = web.Application()
-        self.app.on_response_prepare.append(_on_response_prepare)
+        register_response_prepare_hook(self.app, session_manager=session_manager)
         self.app.on_shutdown.append(self._on_shutdown)
         self.app.router.add_post(self.config.webhook_path, self._handle_webhook)
 
@@ -86,6 +127,13 @@ class HttpServer:
         static_dir = Path(__file__).resolve().parent / "static"
         if static_dir.is_dir():
             self.app.router.add_static("/owlbot/static", static_dir)
+
+        register_browser_session_routes(
+            self.app,
+            session_manager=session_manager,
+            command_prefix=self.config.command_prefix,
+            cookie_secure=self.config.public_base_url.startswith("https://"),
+        )
 
         # Catch-all routes for dynamic module route dispatch.
         # These single aiohttp routes handle all requests under /owlbot/ and

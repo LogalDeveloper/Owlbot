@@ -45,10 +45,13 @@ from owlbot.api.context import ModuleContext
 from owlbot.api.http_client import HttpClient
 from owlbot.api.storage import ModuleStorage
 from owlbot.api.templates import ModuleTemplates
+from owlbot.http_server import register_response_prepare_hook
 from owlbot.module_loader import ModuleLoader
 from owlbot.registries.commands import CommandDispatcher, ModuleCommands
 from owlbot.registries.events import EventDispatcher, ModuleEvents
 from owlbot.registries.routes import ModuleRoutes, RouteDispatcher
+from owlbot.sessions import SessionManager
+from owlbot.web.sessions import register_browser_session_routes
 
 from .stubs import RecordingOwncastAdminClient, RecordingOwncastClient
 
@@ -280,9 +283,17 @@ def _loaded_modules() -> set[str]:
 
 
 @pytest.fixture
+def session_manager() -> SessionManager:
+    """Return a shared session manager for the test bot instance."""
+    return SessionManager()
+
+
+@pytest.fixture
 def command_dispatcher(
     _context_registry: dict[str, ModuleContext],
     _loaded_modules: set[str],
+    session_manager: SessionManager,
+    config: Config,
     owncast_client: RecordingOwncastClient,
     handler_timeout: float,
     command_prefix: str,
@@ -294,12 +305,15 @@ def command_dispatcher(
         handler_timeout=handler_timeout,
         loaded_modules=_loaded_modules,
         command_prefix=command_prefix,
+        session_manager=session_manager,
+        public_base_url=config.public_base_url,
     )
 
 
 @pytest.fixture
 def event_dispatcher(
     _context_registry: dict[str, ModuleContext],
+    session_manager: SessionManager,
     command_dispatcher: CommandDispatcher,
     handler_timeout: float,
 ) -> EventDispatcher:
@@ -308,6 +322,7 @@ def event_dispatcher(
         command_dispatch=command_dispatcher.dispatch,
         get_module_context=_make_context_lookup(_context_registry),
         handler_timeout=handler_timeout,
+        session_manager=session_manager,
     )
 
 
@@ -315,11 +330,15 @@ def event_dispatcher(
 def route_dispatcher(
     _context_registry: dict[str, ModuleContext],
     handler_timeout: float,
+    session_manager: SessionManager,
+    command_prefix: str,
 ) -> RouteDispatcher:
     """Build a RouteDispatcher that resolves contexts via ``_context_registry``."""
     return RouteDispatcher(
         get_module_context=_make_context_lookup(_context_registry),
         handler_timeout=handler_timeout,
+        session_manager=session_manager,
+        command_prefix=command_prefix,
     )
 
 
@@ -336,6 +355,7 @@ def module_context(
     module_config: ModuleConfig,
     templates: ModuleTemplates,
     http: HttpClient,
+    session_manager: SessionManager,
     request: pytest.FixtureRequest,
     *,
     admin_client_enabled: bool,
@@ -359,7 +379,9 @@ def module_context(
         commands=ModuleCommands(command_dispatcher, module_name),
         events=ModuleEvents(event_dispatcher, module_name),
         routes=ModuleRoutes(
-            route_dispatcher, module_name, module_config.public_base_url
+            route_dispatcher,
+            module_name,
+            module_config.public_base_url,
         ),
         http=http,
         templates=templates,
@@ -373,10 +395,20 @@ def module_context(
 @pytest_asyncio.fixture
 async def route_client(
     route_dispatcher: RouteDispatcher,
+    session_manager: SessionManager,
+    command_prefix: str,
+    config: Config,
     aiohttp_client: Any,
 ) -> TestClient[Any, Any]:
     """Return an aiohttp test client wired to the RouteDispatcher."""
     app = web.Application()
+    register_response_prepare_hook(app, session_manager=session_manager)
+    register_browser_session_routes(
+        app,
+        session_manager=session_manager,
+        command_prefix=command_prefix,
+        cookie_secure=config.public_base_url.startswith("https://"),
+    )
     app.router.add_route(
         "*", "/owlbot/{module_name}/{path:.*}", route_dispatcher.dispatch
     )

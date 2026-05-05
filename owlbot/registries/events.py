@@ -27,7 +27,12 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, NamedTuple, cast
 
 from owlbot.api.context import EventContext, PropagationState
-from owlbot.api.event_types import ChatEvent, Event, EventType, log_event
+from owlbot.api.event_types import (
+    ChatEvent,
+    Event,
+    EventType,
+    log_event,
+)
 from owlbot.api.events import EventHandler, EventMark, Priority
 
 
@@ -46,6 +51,7 @@ if TYPE_CHECKING:
     from types import ModuleType
 
     from owlbot.api.context import ModuleContext
+    from owlbot.sessions import SessionManager
 
 logger = logging.getLogger("owlbot.events")
 
@@ -210,6 +216,7 @@ class EventDispatcher:
         command_dispatch: Callable[[ChatEvent], Awaitable[None]],
         get_module_context: Callable[[str], ModuleContext],
         handler_timeout: float,
+        session_manager: SessionManager,
     ) -> None:
         """Initialize the event dispatcher.
 
@@ -225,6 +232,7 @@ class EventDispatcher:
         self._command_dispatch = command_dispatch
         self._get_module_context = get_module_context
         self._handler_timeout = handler_timeout
+        self._session_manager = session_manager
 
     def register(
         self,
@@ -321,6 +329,10 @@ class EventDispatcher:
         :param event_type: The type of event to dispatch.
         :param event: The parsed event instance.
         """
+        user = getattr(event, "user", None)
+        if user is not None:
+            self._session_manager.refresh_user(user)
+
         log_event(event_type, event)
 
         handler_entries = self._handler_registry.get(event_type)

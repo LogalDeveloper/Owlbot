@@ -28,11 +28,14 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from aiohttp import web
 
     from owlbot.registries.commands import ModuleCommands
     from owlbot.registries.events import ModuleEvents
     from owlbot.registries.routes import ModuleRoutes
+    from owlbot.sessions import BrowserSession
 
     from .commands import CommandEvent
     from .config import ModuleConfig
@@ -219,6 +222,9 @@ class CommandContext:
     # Shared services for this module.
     module: ModuleContext
 
+    # Command-invocation-scoped protected-route URL builder.
+    _session_url_for: Callable[[str], str] = field(repr=False)
+
     @property
     def command(self) -> str:
         """The command name that was invoked (canonical name, not alias)."""
@@ -304,6 +310,10 @@ class CommandContext:
         """Optional client for the Owncast Admin API (None if admin is not enabled)."""
         return self.module.admin_client
 
+    def session_url_for(self, path: str) -> str:
+        """Build a connect URL for a module route for this user."""
+        return self._session_url_for(path)
+
 
 @dataclass(slots=True)
 class RouteContext:
@@ -322,6 +332,9 @@ class RouteContext:
     # Captured path parameters from pattern matching (e.g., {"id": "123"}).
     # Empty dict for plain routes, populated for routes with {name} patterns.
     match_info: dict[str, str] = field(default_factory=dict)
+
+    # Resolved Owlbot session for the request, if any.
+    session: BrowserSession | None = None
 
     @property
     def module_name(self) -> str:

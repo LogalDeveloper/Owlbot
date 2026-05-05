@@ -36,6 +36,7 @@ from owlbot.owncast_http import OwncastError
 from owlbot.registries.commands import ModuleCommands
 from owlbot.registries.events import ModuleEvents
 from owlbot.registries.routes import ModuleRoutes
+from owlbot.sessions import BrowserSession
 
 # Command system (module-facing).
 from .commands import (
@@ -113,6 +114,7 @@ from .storage import ModuleStorage, StorageError
 from .templates import ModuleTemplates
 
 __all__ = [
+    "BrowserSession",
     "ChatEvent",
     "CommandContext",
     "CommandEvent",
