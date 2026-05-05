@@ -999,56 +999,6 @@ class TestCommandDispatcherDispatch:
         assert connect_token.destination_path == "/owlbot/test_module/panel"
         assert connect_token.user.id == user.id
 
-    def test_command_session_url_for_accepts_module_relative_path(
-        self, module_context: ModuleContext
-    ) -> None:
-        """Command session URLs add the module namespace to relative paths."""
-        session_manager = SessionManager()
-        dispatcher, _, _ = self._make_dispatcher(
-            module_context,
-            session_manager=session_manager,
-            public_base_url="https://example.com",
-        )
-        session_url_for = dispatcher._make_session_url_for(
-            module_context.module_name,
-            make_user(id="alice"),
-        )
-
-        url = session_url_for("panel")
-        token = url.rsplit("/", 1)[-1]
-        connect_token = session_manager.get_connect_token(token)
-
-        assert connect_token is not None
-        assert connect_token.destination_path == "/owlbot/test_module/panel"
-
-    @pytest.mark.parametrize(
-        "path",
-        [
-            pytest.param("../panel", id="relative-parent"),
-            pytest.param("/../panel", id="absolute-parent"),
-            pytest.param("/../../admin", id="multi-parent"),
-            pytest.param("nested/../../other", id="nested-parent"),
-            pytest.param("/%2e%2e/panel", id="encoded-parent"),
-        ],
-    )
-    def test_command_session_url_for_rejects_paths_outside_module_namespace(
-        self, module_context: ModuleContext, path: str
-    ) -> None:
-        """Module-provided session paths cannot escape their namespace."""
-        session_manager = SessionManager()
-        dispatcher, _, _ = self._make_dispatcher(
-            module_context,
-            session_manager=session_manager,
-            public_base_url="https://example.com",
-        )
-        session_url_for = dispatcher._make_session_url_for(
-            module_context.module_name,
-            make_user(id="alice"),
-        )
-
-        with pytest.raises(ValueError, match="module namespace"):
-            session_url_for(path)
-
     async def test_unregistered_builtin_does_not_shadow_later_module_command(
         self, module_context: ModuleContext
     ) -> None:
@@ -1305,17 +1255,18 @@ class TestCommandContext:
             chat_event=event,
         )
         event_ctx: EventContext[ChatEvent] = EventContext(
-            event=event, module=module_ctx
-        )
-        cmd_ctx = CommandContext(
-            command_event=cmd_event,
-            event_context=event_ctx,
+            event=event,
             module=module_ctx,
             _session_url_for=(
                 session_url_for
                 if session_url_for is not None
                 else lambda path: f"https://example.com{path}"
             ),
+        )
+        cmd_ctx = CommandContext(
+            command_event=cmd_event,
+            event_context=event_ctx,
+            module=module_ctx,
         )
         return cmd_ctx, cmd_event, event_ctx
 
@@ -1379,7 +1330,7 @@ class TestCommandContext:
         assert cmd_ctx.event_context is event_ctx
 
     def test_session_url_for(self, module_context: ModuleContext) -> None:
-        """ctx.session_url_for() delegates to the command-scoped URL builder."""
+        """ctx.session_url_for() delegates to the underlying event context."""
         cmd_ctx, _, _ = self._make_command_context(
             module_context,
             session_url_for=lambda path: f"https://example.com{path}",

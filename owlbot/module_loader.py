@@ -103,6 +103,7 @@ class ModuleLoader:
             get_module_context=self._require_module_context,
             handler_timeout=config.handler_timeout,
             session_manager=self.session_manager,
+            public_base_url=config.public_base_url,
         )
         self.route_dispatcher = RouteDispatcher(
             get_module_context=self._require_module_context,

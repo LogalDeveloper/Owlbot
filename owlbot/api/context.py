@@ -123,6 +123,9 @@ class EventContext[E]:
     # Shared services for this module.
     module: ModuleContext
 
+    # Event-scoped protected-route URL builder. Present for user-bearing events.
+    _session_url_for: Callable[[str], str] | None = field(default=None, repr=False)
+
     # Shared state for propagation control.
     # All handlers for a single event dispatch share the same instance.
     _propagation: PropagationState = field(default_factory=PropagationState, repr=False)
@@ -161,6 +164,13 @@ class EventContext[E]:
     def routes(self) -> ModuleRoutes:
         """Module-scoped route API for URL building and route introspection."""
         return self.module.routes
+
+    def session_url_for(self, path: str) -> str:
+        """Build a connect URL for a module route for this event's user."""
+        if self._session_url_for is None:
+            msg = "session URLs are only available for events with a user"
+            raise RuntimeError(msg)
+        return self._session_url_for(path)
 
     @property
     def logger(self) -> logging.Logger:
@@ -221,9 +231,6 @@ class CommandContext:
 
     # Shared services for this module.
     module: ModuleContext
-
-    # Command-invocation-scoped protected-route URL builder.
-    _session_url_for: Callable[[str], str] = field(repr=False)
 
     @property
     def command(self) -> str:
@@ -311,8 +318,8 @@ class CommandContext:
         return self.module.admin_client
 
     def session_url_for(self, path: str) -> str:
-        """Build a connect URL for a module route for this user."""
-        return self._session_url_for(path)
+        """Build a connect URL for a module route for this command's user."""
+        return self.event_context.session_url_for(path)
 
 
 @dataclass(slots=True)

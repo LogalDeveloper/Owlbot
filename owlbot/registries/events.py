@@ -34,6 +34,7 @@ from owlbot.api.event_types import (
     log_event,
 )
 from owlbot.api.events import EventHandler, EventMark, Priority
+from owlbot.sessions import make_session_url_for
 
 
 class HandlerEntry(NamedTuple):
@@ -51,6 +52,7 @@ if TYPE_CHECKING:
     from types import ModuleType
 
     from owlbot.api.context import ModuleContext
+    from owlbot.api.event_types import User
     from owlbot.sessions import SessionManager
 
 logger = logging.getLogger("owlbot.events")
@@ -217,6 +219,7 @@ class EventDispatcher:
         get_module_context: Callable[[str], ModuleContext],
         handler_timeout: float,
         session_manager: SessionManager,
+        public_base_url: str,
     ) -> None:
         """Initialize the event dispatcher.
 
@@ -227,12 +230,15 @@ class EventDispatcher:
         :param get_module_context: Callable that looks up a
             ModuleContext by module name.
         :param handler_timeout: Timeout for individual handlers in seconds.
+        :param session_manager: Session manager used for browser connect links.
+        :param public_base_url: Public base URL for generated connect links.
         """
         self._handler_registry = EventRegistry()
         self._command_dispatch = command_dispatch
         self._get_module_context = get_module_context
         self._handler_timeout = handler_timeout
         self._session_manager = session_manager
+        self._public_base_url = public_base_url
 
     def register(
         self,
@@ -356,7 +362,13 @@ class EventDispatcher:
                     )
                     break
 
-                await self._call_handler(handler, event, module_name, propagation)
+                await self._call_handler(
+                    handler,
+                    event,
+                    module_name,
+                    propagation,
+                    user=user,
+                )
         else:
             logger.debug("No handlers registered for event type: %s", event_type)
 
@@ -381,6 +393,8 @@ class EventDispatcher:
         event: Event,
         module_name: str,
         propagation: PropagationState,
+        *,
+        user: User | None,
     ) -> None:
         """Call a single handler with timeout enforcement.
 
@@ -388,15 +402,27 @@ class EventDispatcher:
         :param event: The event to pass to the handler.
         :param module_name: The module that owns this handler.
         :param propagation: Shared propagation state for this dispatch cycle.
+        :param user: User resolved from the event, if the event carries one.
         """
         handler_name = handler.__name__
         logger.debug("Calling handler: %s from module: %s", handler_name, module_name)
 
         module_ctx = self._get_module_context(module_name)
+        session_url_for = (
+            make_session_url_for(
+                session_manager=self._session_manager,
+                public_base_url=self._public_base_url,
+                module_name=module_name,
+                user=user,
+            )
+            if user is not None
+            else None
+        )
 
         ctx: EventContext[Event] = EventContext(
             event=event,
             module=module_ctx,
+            _session_url_for=session_url_for,
             _propagation=propagation,
         )
 

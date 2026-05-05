@@ -316,6 +316,7 @@ def event_dispatcher(
     session_manager: SessionManager,
     command_dispatcher: CommandDispatcher,
     handler_timeout: float,
+    config: Config,
 ) -> EventDispatcher:
     """Build an EventDispatcher that resolves contexts via ``_context_registry``."""
     return EventDispatcher(
@@ -323,6 +324,7 @@ def event_dispatcher(
         get_module_context=_make_context_lookup(_context_registry),
         handler_timeout=handler_timeout,
         session_manager=session_manager,
+        public_base_url=config.public_base_url,
     )
 
 

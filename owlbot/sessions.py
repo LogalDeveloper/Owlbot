@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import posixpath
 import secrets
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
@@ -25,6 +26,8 @@ from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlsplit
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from owlbot.api.event_types import User
 
 SESSION_COOKIE_NAME = "owlbot_session"
@@ -291,3 +294,40 @@ class SessionManager:
         self._session_ids_by_user_id.setdefault(session.user.id, set()).add(
             session.session_id
         )
+
+
+def make_session_url_for(
+    *,
+    session_manager: SessionManager,
+    public_base_url: str,
+    module_name: str,
+    user: User,
+) -> Callable[[str], str]:
+    """Build a module-scoped protected-route URL helper for a user.
+
+    :param session_manager: Session manager that issues connect tokens.
+    :param public_base_url: Public base URL for generated connect links.
+    :param module_name: Module namespace the destination must stay within.
+    :param user: User the generated connect token should link to.
+    :return: Function that converts a module-relative path into a connect URL.
+    """
+    public_base_url = public_base_url.rstrip("/")
+
+    def session_url_for(path: str) -> str:
+        if not path.startswith("/"):
+            path = "/" + path
+        destination_path = f"/owlbot/{module_name}{path}"
+
+        module_root = f"/owlbot/{module_name}"
+        decoded_path = unquote(urlsplit(destination_path).path)
+        normalized_path = posixpath.normpath(decoded_path)
+        if normalized_path != module_root and not normalized_path.startswith(
+            f"{module_root}/"
+        ):
+            msg = "session destination must stay within the module namespace"
+            raise ValueError(msg)
+
+        token = session_manager.issue_connect_token(destination_path, user=user)
+        return f"{public_base_url}/owlbot/connect/{token}"
+
+    return session_url_for

@@ -22,22 +22,20 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-import posixpath
 import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, cast
-from urllib.parse import unquote, urlsplit
 
 from owlbot._version import __version__
 from owlbot.api.commands import CommandEvent, CommandHandler, CommandInfo, CommandMark
 from owlbot.api.context import CommandContext, EventContext
 from owlbot.api.event_types import ChatEvent
+from owlbot.sessions import make_session_url_for
 
 if TYPE_CHECKING:
     from types import ModuleType
 
     from owlbot.api.context import ModuleContext
-    from owlbot.api.event_types import User
     from owlbot.api.owncast_client import OwncastClient
     from owlbot.sessions import SessionManager
 
@@ -547,16 +545,18 @@ class CommandDispatcher:
         event_ctx: EventContext[ChatEvent] = EventContext(
             event=event,
             module=module_ctx,
+            _session_url_for=make_session_url_for(
+                session_manager=self._session_manager,
+                public_base_url=self._public_base_url,
+                module_name=command_info.module_name,
+                user=user,
+            ),
         )
 
         cmd_ctx = CommandContext(
             command_event=cmd_event,
             event_context=event_ctx,
             module=module_ctx,
-            _session_url_for=self._make_session_url_for(
-                command_info.module_name,
-                user,
-            ),
         )
 
         try:
@@ -625,34 +625,6 @@ class CommandDispatcher:
             ),
             unsanitized=True,
         )
-
-    def _make_session_url_for(
-        self,
-        module_name: str,
-        user: User,
-    ) -> Callable[[str], str]:
-        """Build the command-scoped session URL helper."""
-        session_manager = self._session_manager
-        public_base_url = self._public_base_url
-
-        def session_url_for(path: str) -> str:
-            if not path.startswith("/"):
-                path = "/" + path
-            destination_path = f"/owlbot/{module_name}{path}"
-
-            module_root = f"/owlbot/{module_name}"
-            decoded_path = unquote(urlsplit(destination_path).path)
-            normalized_path = posixpath.normpath(decoded_path)
-            if normalized_path != module_root and not normalized_path.startswith(
-                f"{module_root}/"
-            ):
-                msg = "session destination must stay within the module namespace"
-                raise ValueError(msg)
-
-            token = session_manager.issue_connect_token(destination_path, user=user)
-            return f"{public_base_url}/owlbot/connect/{token}"
-
-        return session_url_for
 
 
 class ModuleCommands:

@@ -24,6 +24,7 @@ from owlbot.sessions import (
     DEFAULT_CONNECT_DESTINATION_PATH,
     ConnectTokenRedemptionError,
     SessionManager,
+    make_session_url_for,
 )
 from owlbot.testing import make_user
 
@@ -286,3 +287,62 @@ class TestSessionManager:
             await manager.close()
 
         assert manager._cleanup_task is None
+
+
+class TestMakeSessionUrlFor:
+    """Tests for the shared protected-route URL builder."""
+
+    def test_accepts_module_relative_path(self) -> None:
+        """Session URLs add the module namespace to relative paths."""
+        session_manager = SessionManager()
+        session_url_for = make_session_url_for(
+            session_manager=session_manager,
+            public_base_url="https://example.com",
+            module_name="test_module",
+            user=make_user(id="alice"),
+        )
+
+        url = session_url_for("panel")
+        token = url.rsplit("/", 1)[-1]
+        connect_token = session_manager.get_connect_token(token)
+
+        assert url.startswith("https://example.com/owlbot/connect/")
+        assert connect_token is not None
+        assert connect_token.destination_path == "/owlbot/test_module/panel"
+
+    def test_strips_public_base_url_trailing_slash(self) -> None:
+        """Generated connect URLs do not include a double slash before /owlbot."""
+        session_manager = SessionManager()
+        session_url_for = make_session_url_for(
+            session_manager=session_manager,
+            public_base_url="https://example.com/",
+            module_name="test_module",
+            user=make_user(id="alice"),
+        )
+
+        assert session_url_for("/panel").startswith(
+            "https://example.com/owlbot/connect/"
+        )
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            pytest.param("../panel", id="relative-parent"),
+            pytest.param("/../panel", id="absolute-parent"),
+            pytest.param("/../../admin", id="multi-parent"),
+            pytest.param("nested/../../other", id="nested-parent"),
+            pytest.param("/%2e%2e/panel", id="encoded-parent"),
+        ],
+    )
+    def test_rejects_paths_outside_module_namespace(self, path: str) -> None:
+        """Module-provided session paths cannot escape their namespace."""
+        session_manager = SessionManager()
+        session_url_for = make_session_url_for(
+            session_manager=session_manager,
+            public_base_url="https://example.com",
+            module_name="test_module",
+            user=make_user(id="alice"),
+        )
+
+        with pytest.raises(ValueError, match="module namespace"):
+            session_url_for(path)

@@ -45,6 +45,7 @@ from owlbot.sessions import SessionManager
 from owlbot.testing import (
     make_chat_event,
     make_name_changed_event,
+    make_stream_started_event,
     make_user,
     make_user_joined_event,
 )
@@ -65,6 +66,7 @@ def _make_dispatcher(
     *,
     handler_timeout: float,
     session_manager: SessionManager | None = None,
+    public_base_url: str = "https://example.com",
 ) -> EventDispatcher:
     """Build an EventDispatcher with a default session manager for tests."""
     return EventDispatcher(
@@ -72,6 +74,7 @@ def _make_dispatcher(
         get_module_context=get_module_context,
         handler_timeout=handler_timeout,
         session_manager=session_manager or SessionManager(),
+        public_base_url=public_base_url,
     )
 
 
@@ -428,6 +431,48 @@ class TestEventDispatcherDispatch:
         await dispatcher.dispatch(EventType.CHAT, event)
         assert len(received) == 1
         assert received[0] is event
+
+    async def test_user_event_context_can_issue_session_url(
+        self, module_context: ModuleContext
+    ) -> None:
+        """Event contexts for user-bearing events can issue protected route URLs."""
+        session_manager = SessionManager()
+        captured_url = ""
+        user = make_user(id="user-123", is_authenticated=True)
+
+        async def handler(ctx: EventContext[Any]) -> None:
+            nonlocal captured_url
+            captured_url = ctx.session_url_for("/panel")
+
+        async def command_dispatch(event: ChatEvent) -> None:
+            pass
+
+        dispatcher = _make_dispatcher(
+            command_dispatch=command_dispatch,
+            get_module_context=lambda _name: module_context,
+            handler_timeout=5.0,
+            session_manager=session_manager,
+            public_base_url="https://example.com",
+        )
+        dispatcher.register(
+            handler, (EventType.USER_JOINED,), module_context.module_name
+        )
+
+        await dispatcher.dispatch(
+            EventType.USER_JOINED,
+            make_user_joined_event(
+                user=user,
+                client_id=1,
+                event_id="evt-001",
+            ),
+        )
+
+        token = captured_url.rsplit("/", 1)[-1]
+        connect_token = session_manager.get_connect_token(token)
+        assert captured_url.startswith("https://example.com/owlbot/connect/")
+        assert connect_token is not None
+        assert connect_token.destination_path == "/owlbot/test_module/panel"
+        assert connect_token.user.id == user.id
 
     async def test_priority_order(self, module_context: ModuleContext) -> None:
         """Handlers execute in priority order: HIGH before NORMAL before LOW."""
@@ -1106,6 +1151,30 @@ class TestEventContext:
         event = make_chat_event()
         ctx: EventContext[ChatEvent] = EventContext(event=event, module=module_context)
         assert ctx.event is event
+
+    def test_session_url_for_delegates_to_event_builder(
+        self, module_context: ModuleContext
+    ) -> None:
+        """ctx.session_url_for() delegates to the event-scoped URL builder."""
+        ctx: EventContext[ChatEvent] = EventContext(
+            event=make_chat_event(),
+            module=module_context,
+            _session_url_for=lambda path: f"https://example.com{path}",
+        )
+
+        assert ctx.session_url_for("/panel") == "https://example.com/panel"
+
+    def test_session_url_for_without_user_event_raises(
+        self, module_context: ModuleContext
+    ) -> None:
+        """Events without a user do not have a session URL builder."""
+        ctx: EventContext[Any] = EventContext(
+            event=make_stream_started_event(),
+            module=module_context,
+        )
+
+        with pytest.raises(RuntimeError, match="events with a user"):
+            ctx.session_url_for("/panel")
 
     def test_propagation_stopped_default(self, module_context: ModuleContext) -> None:
         """propagation_stopped is False by default."""
