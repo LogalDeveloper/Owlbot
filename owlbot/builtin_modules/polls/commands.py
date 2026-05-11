@@ -27,7 +27,41 @@ from owlbot.api import (
     on_event,
 )
 
-from .manager import PollError, get_manager
+from .manager import get_manager
+from .types import (
+    DuplicateVoteError,
+    NoActivePollError,
+    PollAuthenticationRequiredError,
+    PollVoteError,
+)
+
+
+def _vote_error_response(
+    error: NoActivePollError | PollVoteError,
+    *,
+    vote_url: str,
+) -> tuple[str, bool]:
+    """Return user-facing text and unsanitized flag for a vote failure.
+
+    :param error: The vote failure raised by the manager.
+    :param vote_url: Protected URL for the current poll page.
+    :return: Message text and whether it contains trusted HTML.
+    """
+    if isinstance(error, NoActivePollError):
+        return "There is no active poll.", False
+    if isinstance(error, PollAuthenticationRequiredError):
+        return (
+            "This poll requires an authenticated account to vote. "
+            f'<a href="{vote_url}"><u>Click here to view live results</u></a>.',
+            True,
+        )
+    if isinstance(error, DuplicateVoteError):
+        return (
+            "You have already voted in this poll. "
+            f'<a href="{vote_url}"><u>Click here to view live results</u></a>.',
+            True,
+        )
+    return str(error), False
 
 
 @on_command("poll", requires_moderator=True, cooldown=3)
@@ -64,9 +98,10 @@ async def end_poll_command(ctx: CommandContext) -> None:
 
     try:
         await manager.end()
-    except PollError as e:
+    except NoActivePollError:
         await ctx.owncast_client.send_system_message_to_client(
-            ctx.chat_event.client_id, str(e)
+            ctx.chat_event.client_id,
+            "There is no active poll.",
         )
 
 
@@ -80,9 +115,10 @@ async def cancel_poll_command(ctx: CommandContext) -> None:
 
     try:
         await manager.cancel()
-    except PollError as e:
+    except NoActivePollError:
         await ctx.owncast_client.send_system_message_to_client(
-            ctx.chat_event.client_id, str(e)
+            ctx.chat_event.client_id,
+            "There is no active poll.",
         )
 
 
@@ -110,30 +146,7 @@ async def vote_command(ctx: CommandContext) -> None:
         )
         return
 
-    user_id = ctx.user.id
-    vote_url = ctx.session_url_for("/vote")
-
-    # Check authentication requirement.
-    if poll.requires_auth and not ctx.user.is_authenticated:
-        await ctx.owncast_client.send_system_message_to_client(
-            ctx.chat_event.client_id,
-            "This poll requires an authenticated account to vote. "
-            f'<a href="{vote_url}">'
-            "<u>Click here to view live results</u></a>.",
-            unsanitized=True,
-        )
-        return
-
-    # Check if the user has already voted.
-    if user_id in poll.votes:
-        await ctx.owncast_client.send_system_message_to_client(
-            ctx.chat_event.client_id,
-            "You have already voted in this poll. "
-            f'<a href="{vote_url}"><u>Click here to view live results</u></a>.',
-            unsanitized=True,
-        )
-        return
-
+    vote_url = ctx.session_url_for("/current")
     args = ctx.args_list
 
     if args and not poll.allow_multiple:
@@ -157,10 +170,22 @@ async def vote_command(ctx: CommandContext) -> None:
         # Convert 1-based to 0-based index.
         selection = choice - 1
 
-        await manager.record_vote(
-            ctx.user,
-            {selection},
-        )
+        try:
+            await manager.record_vote(
+                ctx.user,
+                {selection},
+            )
+        except (
+            NoActivePollError,
+            PollVoteError,
+        ) as e:
+            message, unsanitized = _vote_error_response(e, vote_url=vote_url)
+            await ctx.owncast_client.send_system_message_to_client(
+                ctx.chat_event.client_id,
+                message,
+                unsanitized=unsanitized,
+            )
+            return
         await ctx.owncast_client.send_system_message_to_client(
             ctx.chat_event.client_id,
             f"Your vote for #{choice} ({escape(poll.options[selection])})"
@@ -189,11 +214,12 @@ async def vote_command(ctx: CommandContext) -> None:
 
 @on_event(EventType.CHAT)
 async def handle_bare_vote(ctx: EventContext[ChatEvent]) -> None:
-    """Allow voting by typing a bare number in chat during active polls.
+    """Allow voting by typing an in-range bare option number during active polls.
 
     For single-select polls, records the vote directly. For multi-select
     polls, sends the user a voting page link instead. The message is hidden
-    to keep votes private and prevent chat spam.
+    to keep votes private and prevent chat spam. Non-numeric and out-of-range
+    messages are ignored.
 
     :param ctx: The event context.
     """
@@ -219,28 +245,7 @@ async def handle_bare_vote(ctx: EventContext[ChatEvent]) -> None:
     await ctx.owncast_client.set_message_visibility([event.message_id], visible=False)
     ctx.stop_propagation("bare number vote in active poll")
 
-    vote_url = ctx.session_url_for("/vote")
-
-    # Check authentication requirement.
-    if poll.requires_auth and not event.user.is_authenticated:
-        await ctx.owncast_client.send_system_message_to_client(
-            event.client_id,
-            "This poll requires an authenticated account to vote. "
-            f'<a href="{vote_url}">'
-            "<u>Click here to view live results</u></a>.",
-            unsanitized=True,
-        )
-        return
-
-    # Check if the user has already voted.
-    if event.user.id in poll.votes:
-        await ctx.owncast_client.send_system_message_to_client(
-            event.client_id,
-            "You have already voted in this poll. "
-            f'<a href="{vote_url}"><u>Click here to view live results</u></a>.',
-            unsanitized=True,
-        )
-        return
+    vote_url = ctx.session_url_for("/current")
 
     # Multi-select polls can't use bare number voting; send a link instead.
     if poll.allow_multiple:
@@ -257,10 +262,22 @@ async def handle_bare_vote(ctx: EventContext[ChatEvent]) -> None:
     # Record the vote.
     selection = choice - 1
 
-    await manager.record_vote(
-        event.user,
-        {selection},
-    )
+    try:
+        await manager.record_vote(
+            event.user,
+            {selection},
+        )
+    except (
+        NoActivePollError,
+        PollVoteError,
+    ) as e:
+        message, unsanitized = _vote_error_response(e, vote_url=vote_url)
+        await ctx.owncast_client.send_system_message_to_client(
+            event.client_id,
+            message,
+            unsanitized=unsanitized,
+        )
+        return
     await ctx.owncast_client.send_system_message_to_client(
         event.client_id,
         f"Your vote for #{choice} ({escape(poll.options[selection])})"

@@ -17,7 +17,7 @@
             {% for opt in form.options %}
             <div class="input-group mb-2 option-row">
                 <span class="input-group-text option-number">{{ loop.index }}</span>
-                <input type="text" class="form-control option-input" name="option_{{ loop.index }}" required maxlength="{{ constraints.max_option_length }}" placeholder="Option {{ loop.index }}" value="{{ opt }}">
+                <input type="text" class="form-control option-input" name="options" required maxlength="{{ constraints.max_option_length }}" placeholder="Option {{ loop.index }}" value="{{ opt }}">
                 {% if loop.index > 2 %}
                 <button type="button" class="btn btn-outline-danger remove-option">Remove</button>
                 {% endif %}
@@ -52,20 +52,22 @@
 
     <div class="mb-3 ms-4 {{ '' if form.allow_multiple else 'd-none' }} d-flex align-items-center gap-2 flex-wrap" id="multi-select-options">
         <span>Voters must select between</span>
-        <input type="number" class="form-control form-control-sm" style="width: 5rem" id="min_selections" name="min_selections" min="1" placeholder="1" value="{{ form.min_selections }}">
+        <input type="number" class="form-control form-control-sm" style="width: 5rem" id="min_selections" name="min_selections" min="1" placeholder="1" value="{{ form.min_selections }}" {% if not form.allow_multiple %}disabled{% endif %}>
         <span>and</span>
-        <input type="number" class="form-control form-control-sm" style="width: 5rem" id="max_selections" name="max_selections" min="1" value="{{ form.max_selections }}">
+        <input type="number" class="form-control form-control-sm" style="width: 5rem" id="max_selections" name="max_selections" min="1" value="{{ form.max_selections }}" {% if not form.allow_multiple %}disabled{% endif %}>
         <span>options.</span>
     </div>
 
-    <input type="hidden" name="options" id="options-hidden">
     <button type="submit" class="btn btn-primary">Create Poll</button>
 </form>
 {% endblock %}
 {% block scripts %}
-<script>window.CREATE_CONFIG = {
-    maxOptions: {{ constraints.max_options | tojson }},
-    maxOptionLength: {{ constraints.max_option_length | tojson }}
-};</script>
-<script src="{{ create_js_url }}?v={{ owlbot_version }}"></script>
+<script id="create-config" type="application/json">
+{{ {
+    "minOptions": constraints.min_options,
+    "maxOptions": constraints.max_options,
+    "maxOptionLength": constraints.max_option_length
+} | tojson }}
+</script>
+<script type="module" src="{{ create_js_url }}?v={{ owlbot_version }}"></script>
 {% endblock %}

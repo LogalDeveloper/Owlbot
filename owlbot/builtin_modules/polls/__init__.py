@@ -43,17 +43,16 @@ from .commands import (
     vote_command,
 )
 from .manager import PollManager, get_manager
+from .repository import PollRepository
 from .routes import (
     create_page,
     create_submit,
+    current_page,
     events_stream,
     mod_cancel,
     mod_end,
     results_page,
-    static_create_js,
-    static_polls_css,
-    static_polls_js,
-    vote_page,
+    static_asset,
     vote_submit,
 )
 
@@ -61,6 +60,7 @@ __all__ = [
     "cancel_poll_command",
     "create_page",
     "create_submit",
+    "current_page",
     "end_poll_command",
     "events_stream",
     "handle_bare_vote",
@@ -72,12 +72,9 @@ __all__ = [
     "poll_command",
     "results_page",
     "setup",
-    "static_create_js",
-    "static_polls_css",
-    "static_polls_js",
+    "static_asset",
     "teardown",
     "vote_command",
-    "vote_page",
     "vote_submit",
 ]
 
@@ -88,12 +85,16 @@ async def setup(ctx: ModuleContext) -> None:
 
     :param ctx: Module context with config, storage, and other services.
     """
-    ctx.state["manager"] = PollManager(ctx)
+    repo = PollRepository()
+    ctx.state["manager"] = PollManager(ctx, repo)
 
 
 @on_event(EventType.STREAM_STOPPED)
 async def on_stream_stopped(ctx: EventContext[StreamStoppedEvent]) -> None:
     """Begin a grace period when the stream goes offline.
+
+    If the stream does not restart before the grace period expires, any active
+    poll is cancelled.
 
     :param ctx: The event context.
     """
@@ -113,8 +114,8 @@ async def on_stream_started(ctx: EventContext[StreamStartedEvent]) -> None:
 async def on_user_joined(ctx: EventContext[UserJoinedEvent]) -> None:
     """Notify a user joining chat that a poll is active.
 
-    Sends a private message with the poll question, options, and voting
-    instructions.
+    Sends a private message with the poll question, options, and a protected
+    current-poll link.
 
     :param ctx: The event context.
     """
@@ -128,11 +129,14 @@ async def on_user_joined(ctx: EventContext[UserJoinedEvent]) -> None:
         f"<strong>{i}.</strong> {escape(opt)}<br>"
         for i, opt in enumerate(poll.options, 1)
     )
-
-    if poll.allow_multiple:
-        instructions = "Use <strong>!vote</strong> to get a voting link."
+    selections = manager.get_selections(ctx.event.user)
+    vote_url = ctx.session_url_for("/current")
+    if selections is not None:
+        instructions = (
+            f'<a href="{vote_url}"><u>Click here to view live results</u></a>.'
+        )
     else:
-        instructions = "Type a number in chat or use <strong>!vote</strong> to vote."
+        instructions = f'<a href="{vote_url}"><u>Click here to vote</u></a>.'
 
     await ctx.owncast_client.send_system_message_to_client(
         ctx.event.client_id,
@@ -151,3 +155,4 @@ async def teardown(ctx: ModuleContext) -> None:
     """
     manager = get_manager(ctx)
     await manager.teardown()
+    ctx.state["manager"] = None

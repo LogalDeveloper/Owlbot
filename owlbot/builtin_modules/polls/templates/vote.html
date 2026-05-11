@@ -9,14 +9,39 @@
     <p class="text-body-secondary mb-1">Time remaining: <strong id="timer">--:--</strong></p>
     {% if poll.hidden %}
         {% if viewer_is_moderator %}
-    <p class="text-body-secondary mb-0">Results are hidden until this poll ends. As a moderator, you can still see the real-time results.</p>
+    <p class="text-body-secondary mb-{{ 1 if poll.allow_multiple else 0 }}">Results are hidden until this poll ends. As a moderator, you can still see the real-time results.</p>
         {% else %}
-    <p class="text-body-secondary mb-0">Results are hidden until this poll ends.</p>
+    <p class="text-body-secondary mb-{{ 1 if poll.allow_multiple else 0 }}">Results are hidden until this poll ends.</p>
         {% endif %}
     {% else %}
-    <p class="text-body-secondary mb-0">Results are updated in real time.</p>
+    <p class="text-body-secondary mb-{{ 1 if poll.allow_multiple else 0 }}">Results are updated in real time.</p>
+    {% endif %}
+    {% if poll.allow_multiple %}
+        {% set min_count = poll.min_selections or 1 %}
+        {% set max_count = poll.max_selections %}
+        {% set min_label = min_count ~ " option" ~ ("s" if min_count != 1 else "") %}
+    <p class="text-body-secondary mb-0">
+        {% if max_count is none %}
+            {% if min_count == 1 %}
+        Select one or more options.
+            {% else %}
+        Select at least {{ min_label }}.
+            {% endif %}
+        {% else %}
+            {% set max_label = max_count ~ " option" ~ ("s" if max_count != 1 else "") %}
+            {% if min_count == max_count %}
+        Select exactly {{ min_label }}.
+            {% else %}
+        Select {{ min_count }} to {{ max_label }}.
+            {% endif %}
+        {% endif %}
+    </p>
     {% endif %}
 </div>
+
+{% if error %}
+<div class="alert alert-danger" role="alert">{{ error }}</div>
+{% endif %}
 
 <form method="POST" action="{{ vote_url }}" id="vote-form">
     <div class="d-flex flex-column gap-2 mb-4">
@@ -26,11 +51,11 @@
             <label>
                 {% if poll.allow_multiple %}
                 <input type="checkbox" name="option" value="{{ loop.index0 }}" class="form-check-input me-2"
-                    {% if loop.index0 in current_votes %}checked{% endif %}
+                    {% if loop.index0 in current_selections %}checked{% endif %}
                     {% if has_voted or (not viewer_is_authenticated and poll.requires_auth) %}disabled{% endif %}>
                 {% else %}
                 <input type="radio" name="option" value="{{ loop.index0 }}" class="form-check-input me-2" required
-                    {% if loop.index0 in current_votes %}checked{% endif %}
+                    {% if loop.index0 in current_selections %}checked{% endif %}
                     {% if has_voted or (not viewer_is_authenticated and poll.requires_auth) %}disabled{% endif %}>
                 {% endif %}
                 {{ option }}
@@ -66,18 +91,14 @@
 {% endif %}
 {% endblock %}
 {% block scripts %}
-<script>
-window.POLL_CONFIG = {
-    hidden: {{ poll.hidden | tojson }},
-    timeRemaining: {{ poll.time_remaining | tojson }},
-    allowMultiple: {{ poll.allow_multiple | tojson }},
-    minSelections: {{ poll.min_selections | tojson }},
-    maxSelections: {{ poll.max_selections | tojson }}
-};
-window.VIEWER_INFO = {
-    isModerator: {{ viewer_is_moderator | tojson }},
-    eventsUrl: {{ events_url | tojson }}
-};
+<script id="poll-config" type="application/json">
+{{ {
+    "hidden": poll.hidden,
+    "timeRemaining": poll.time_remaining,
+    "isModerator": viewer_is_moderator,
+    "eventsUrl": events_url,
+    "optionCount": poll.options | length
+} | tojson }}
 </script>
-<script src="{{ polls_js_url }}?v={{ owlbot_version }}"></script>
+<script type="module" src="{{ polls_js_url }}?v={{ owlbot_version }}"></script>
 {% endblock %}

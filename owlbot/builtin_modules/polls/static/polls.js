@@ -12,174 +12,195 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-(() => {
-    "use strict";
+import { readJsonConfig } from "./shared/config.js";
+import {
+    disableControls,
+    requireElement,
+    showAlert,
+} from "./shared/dom.js";
+import {
+    isKeepalivePayload,
+    isPollEndedPayload,
+    isTallyPayload,
+    PollEventStream,
+} from "./shared/poll-events.js";
 
-    const config = window.POLL_CONFIG;
-    const viewerInfo = window.VIEWER_INFO;
-    if (!config || !viewerInfo) return;
+function normalizeSeconds(value) {
+    return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+}
 
-    const timerEl = document.getElementById("timer");
-    let remaining = config.timeRemaining;
+function formatTime(seconds) {
+    const safeSeconds = normalizeSeconds(seconds);
+    const minutes = Math.floor(safeSeconds / 60);
+    const remainingSeconds = safeSeconds % 60;
+    return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+}
 
-    // --- Countdown timer ---
+class CountdownTimer {
+    constructor(element, initialSeconds) {
+        this.element = element;
+        this.remaining = normalizeSeconds(initialSeconds);
+        this.intervalId = null;
+    }
 
-    const formatTime = (seconds) => {
-        const m = Math.floor(seconds / 60);
-        const s = seconds % 60;
-        return `${m}:${String(s).padStart(2, "0")}`;
-    };
+    start() {
+        this.render();
+        this.ensureInterval();
+    }
 
-    const updateTimer = () => {
-        if (remaining <= 0) {
-            timerEl.textContent = "0:00";
+    stop() {
+        if (this.intervalId === null) {
             return;
         }
-        timerEl.textContent = formatTime(remaining);
-        remaining--;
-    };
+        window.clearInterval(this.intervalId);
+        this.intervalId = null;
+    }
 
-    updateTimer();
-    const timerInterval = setInterval(() => {
-        updateTimer();
-        if (remaining < 0) {
-            clearInterval(timerInterval);
-        }
-    }, 1000);
-
-    // --- Update vote bars ---
-
-    const updateBars = (counts) => {
-        const total = counts.reduce((a, b) => a + b, 0);
-        for (const bar of document.querySelectorAll(".option-bar")) {
-            const idx = Number(bar.dataset.index);
-            const fill = bar.querySelector(".bar-fill");
-            const countSpan = bar.querySelector(".vote-count");
-            const pct = total > 0 ? Math.round((counts[idx] / total) * 100) : 0;
-            if (fill && counts[idx] !== undefined) {
-                fill.style.width = `${pct}%`;
-            }
-            if (countSpan) {
-                const countEl = countSpan.querySelector(".count");
-                const pctEl = countSpan.querySelector(".pct");
-                if (countEl) countEl.textContent = counts[idx];
-                if (pctEl) pctEl.textContent = pct;
-                countSpan.classList.remove("d-none");
-            }
-        }
-    };
-
-    // Show vote counts immediately for non-hidden polls so the UI
-    // doesn't look identical to a hidden poll before SSE delivers data.
-    if (!config.hidden || viewerInfo.isModerator) {
-        for (const el of document.querySelectorAll(".vote-count")) {
-            el.classList.remove("d-none");
+    setRemaining(seconds) {
+        this.remaining = normalizeSeconds(seconds);
+        this.render();
+        if (this.remaining > 0) {
+            this.ensureInterval();
+        } else {
+            this.stop();
         }
     }
 
-    // --- SSE connection ---
-
-    const evtSource = new EventSource(viewerInfo.eventsUrl);
-
-    const parse = (e) => {
-        try {
-            return JSON.parse(e.data);
-        } catch {
-            return null;
+    ensureInterval() {
+        if (this.intervalId !== null || this.remaining <= 0) {
+            return;
         }
-    };
+        this.intervalId = window.setInterval(() => this.tick(), 1000);
+    }
 
-    evtSource.addEventListener("error", () => {
-        if (evtSource.readyState === EventSource.CLOSED) {
-            clearInterval(timerInterval);
-            const status = document.getElementById("poll-status");
-            if (status) {
-                status.innerHTML =
-                    '<div class="alert alert-danger mb-0" role="alert">' +
-                    "Connection lost. Results are not live. Refresh to reconnect.</div>";
+    tick() {
+        if (this.remaining <= 0) {
+            this.stop();
+            this.render();
+            return;
+        }
+
+        this.remaining -= 1;
+        this.render();
+
+        if (this.remaining <= 0) {
+            this.stop();
+        }
+    }
+
+    render() {
+        this.element.textContent = formatTime(this.remaining);
+    }
+}
+
+class ResultsBars {
+    constructor(root) {
+        this.rows = Array.from(root.querySelectorAll(".option-bar")).map(
+            (row) => ({
+                index: Number(row.dataset.index),
+                fill: row.querySelector(".bar-fill"),
+                countWrapper: row.querySelector(".vote-count"),
+                count: row.querySelector(".count"),
+                percent: row.querySelector(".pct"),
+            })
+        );
+    }
+
+    showCounts() {
+        for (const row of this.rows) {
+            row.countWrapper?.classList.remove("d-none");
+        }
+    }
+
+    update(counts) {
+        const total = counts.reduce((sum, count) => sum + count, 0);
+
+        for (const row of this.rows) {
+            const count = counts[row.index] ?? 0;
+            const percent = total > 0 ? Math.round((count / total) * 100) : 0;
+
+            if (row.fill !== null) {
+                row.fill.style.width = `${percent}%`;
             }
-        }
-    });
-
-    evtSource.addEventListener("keepalive", (e) => {
-        const data = parse(e);
-        if (data && typeof data.time_remaining === "number") {
-            remaining = data.time_remaining;
-        }
-    });
-
-    evtSource.addEventListener("tally", (e) => {
-        const data = parse(e);
-        if (data) {
-            updateBars(data.counts);
-        }
-    });
-
-    evtSource.addEventListener("poll_ended", (e) => {
-        const data = parse(e);
-        clearInterval(timerInterval);
-        evtSource.close();
-        if (data?.results_url) {
-            window.location.href = data.results_url;
-        }
-    });
-
-    evtSource.addEventListener("poll_cancelled", () => {
-        clearInterval(timerInterval);
-        evtSource.close();
-        const status = document.getElementById("poll-status");
-        if (status) {
-            status.innerHTML =
-                '<div class="alert alert-danger mb-0" role="alert">' +
-                "This poll has been cancelled.</div>";
-        }
-        const form = document.getElementById("vote-form");
-        if (form) {
-            for (const input of form.querySelectorAll(
-                "input, button[type='submit']"
-            )) {
-                input.disabled = true;
+            if (row.count !== null) {
+                row.count.textContent = String(count);
             }
+            if (row.percent !== null) {
+                row.percent.textContent = String(percent);
+            }
+            row.countWrapper?.classList.remove("d-none");
         }
-    });
+    }
+}
 
-    // --- Multi-select validation ---
+class VotePage {
+    constructor(root, config) {
+        this.root = root;
+        this.config = config;
+        this.status = requireElement(root, "#poll-status", HTMLElement);
+        this.timer = new CountdownTimer(
+            requireElement(root, "#timer", HTMLElement),
+            config.timeRemaining
+        );
+        this.bars = new ResultsBars(root);
+        this.stream = null;
+    }
 
-    const voteForm = document.getElementById("vote-form");
-    if (voteForm && config.allowMultiple) {
-        voteForm.addEventListener("submit", (e) => {
-            const checked = voteForm.querySelectorAll(
-                'input[name="option"]:checked'
-            );
-            const count = checked.length;
+    start() {
+        this.timer.start();
 
-            if (count === 0) {
-                e.preventDefault();
-                alert("Please select at least one option.");
-                return;
-            }
+        if (!this.config.hidden || this.config.isModerator) {
+            this.bars.showCounts();
+        }
 
-            if (
-                config.minSelections !== null &&
-                count < config.minSelections
-            ) {
-                e.preventDefault();
-                alert(
-                    `Please select at least ${config.minSelections} option(s).`
-                );
-                return;
-            }
-
-            if (
-                config.maxSelections !== null &&
-                count > config.maxSelections
-            ) {
-                e.preventDefault();
-                alert(
-                    `Please select at most ${config.maxSelections} option(s).`
-                );
-                return;
-            }
+        this.stream = new PollEventStream(this.config.eventsUrl, {
+            onClosed: () => this.handleConnectionClosed(),
         });
+        this.stream.on(
+            "keepalive",
+            (data) => this.timer.setRemaining(data.time_remaining),
+            isKeepalivePayload
+        );
+        this.stream.on(
+            "tally",
+            (data) => this.bars.update(data.counts),
+            (data) => isTallyPayload(data, this.config.optionCount)
+        );
+        this.stream.on(
+            "poll_ended",
+            (data) => this.handlePollEnded(data),
+            isPollEndedPayload
+        );
+        this.stream.on("poll_cancelled", () => this.handlePollCancelled());
     }
-})();
+
+    stop() {
+        this.timer.stop();
+        if (this.stream !== null) {
+            this.stream.close();
+            this.stream = null;
+        }
+    }
+
+    handleConnectionClosed() {
+        this.timer.stop();
+        showAlert(
+            this.status,
+            "Connection lost. Results are not live. Refresh to reconnect."
+        );
+    }
+
+    handlePollEnded(data) {
+        this.stop();
+        window.location.href = data.results_url;
+    }
+
+    handlePollCancelled() {
+        this.stop();
+        showAlert(this.status, "This poll has been cancelled.");
+        disableControls(this.root);
+    }
+}
+
+const config = readJsonConfig("poll-config");
+new VotePage(document, config).start();

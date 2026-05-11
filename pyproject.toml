@@ -119,6 +119,7 @@ ignore = [
 
 [tool.codespell]
 skip = "owlbot/_version.py,uv.lock"
+ignore-words-list = "ECT,IST,PONT,TAHT,THA,WAST,WIT"
 
 [tool.coverage.run]
 source = ["owlbot"]

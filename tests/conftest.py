@@ -20,6 +20,7 @@ loaded via ``pytest_plugins`` below.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 import pytest
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 pytest_plugins = ["owlbot.testing.plugin", "pytester"]
+
+_REAL_ASYNCIO_SLEEP = asyncio.sleep
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -50,3 +53,17 @@ def pytest_collection_modifyitems(
     for item in items:
         if "integration" in item.keywords:
             item.add_marker(skip)
+
+
+@pytest.fixture
+def fast_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch ``asyncio.sleep`` so background lifecycle tasks run immediately."""
+
+    async def _fake_sleep(
+        _duration: float,
+        result: object | None = None,
+    ) -> object | None:
+        await _REAL_ASYNCIO_SLEEP(0)
+        return result
+
+    monkeypatch.setattr(asyncio, "sleep", _fake_sleep)

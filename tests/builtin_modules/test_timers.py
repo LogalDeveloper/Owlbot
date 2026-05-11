@@ -87,16 +87,6 @@ def manager(module_context: ModuleContext, repo: TimerRepository) -> TimerManage
 
 
 @pytest.fixture
-def fast_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Patch asyncio.sleep; use _REAL_ASYNCIO_SLEEP for real waits."""
-
-    async def _fake(duration: float) -> None:
-        await _REAL_ASYNCIO_SLEEP(0)
-
-    monkeypatch.setattr(asyncio, "sleep", _fake)
-
-
-@pytest.fixture
 def _suppress_timer_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub Timer.start so enabling a timer does not spawn a background task."""
     monkeypatch.setattr(Timer, "start", lambda _self: None)
