@@ -61,6 +61,7 @@ source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["owlbot"]
+exclude = ["owlbot/**/README.md"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "config.example.yaml" = "owlbot/_defaults/config.example.yaml"
