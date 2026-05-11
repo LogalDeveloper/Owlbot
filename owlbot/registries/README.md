@@ -43,7 +43,7 @@ registered handlers, cooldowns, or active route tasks.
 Every registered command, event handler, and route belongs to a `module_name`.
 The module-scoped wrappers (`ModuleCommands`, `ModuleEvents`, and
 `ModuleRoutes`) automatically supply that name for dynamic registration and keep
-modules from unregistering other modules' commands or event handlers.
+modules from unregistering other modules' commands, event handlers, or routes.
 
 During unload, `ModuleLoader._cleanup_module()` calls `unregister_by_module()`
 on all three dispatchers so a module's registrations are removed together.
@@ -159,24 +159,26 @@ Command handler exceptions and timeouts are logged and swallowed.
 ## Route Dispatch
 
 `HttpServer` owns the aiohttp catch-all routes under `/owlbot/{module_name}` and
-`/owlbot/{module_name}/{path:.*}`. Requests under those paths are delegated to
-`RouteDispatcher.dispatch()`, which matches them against module-registered
-routes.
+`/owlbot/{module_name}/{path:.*}`. Requests that reach those catch-alls are
+delegated to `RouteDispatcher.dispatch()`, which matches them against
+module-registered routes. The built-in `/owlbot/connect` session routes and
+`/owlbot/static` assets are registered before the catch-alls, and those module
+names are reserved.
 
 ```mermaid
 flowchart TD
     Request["HTTP request under /owlbot/{module}"] --> Server["HttpServer catch-all"]
     Server --> Routes["run route dispatcher"]
-    Routes --> FullPath["build module-namespaced path"]
+    Routes --> Session["resolve browser session cookie"]
+    Session --> FullPath["build module-namespaced path"]
     FullPath --> Match["match registered route and HTTP method"]
     Match --> Result{"route match result"}
     Result -->|no path| NotFound["404"]
     Result -->|method not allowed| MethodNotAllowed["405 with Allow header"]
-    Result -->|handler found| Session["resolve browser session cookie"]
-    Session --> Guards{"session/auth/moderator guards pass?"}
+    Result -->|handler found| Context["build RouteContext"]
+    Context --> Guards{"session/auth/moderator guards pass?"}
     Guards -->|no| Guidance["return 401 or 403 guidance page"]
-    Guards -->|yes| Context["build RouteContext"]
-    Context --> Streaming{"streaming route?"}
+    Guards -->|yes| Streaming{"streaming route?"}
     Streaming -->|yes| StreamTask["track streaming task for shutdown"]
     Streaming -->|no| HandlerTask["track non-streaming task for shutdown"]
     StreamTask --> NoTimeout["call handler without timeout"]
