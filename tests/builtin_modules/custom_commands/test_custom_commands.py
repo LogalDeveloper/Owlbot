@@ -632,10 +632,34 @@ class TestManager:
         self,
         manager: CommandManager,
     ) -> None:
-        """Create_command raises CommandAlreadyExistsError on conflict."""
+        """Create_command raises CommandAlreadyExistsError for custom conflicts."""
+        await manager.create_command("greet", "Hi")
         with pytest.raises(CommandAlreadyExistsError) as exc_info:
+            await manager.create_command("greet", "Info")
+        assert exc_info.value.name == "greet"
+
+    async def test_create_rejects_not_custom_conflict(
+        self,
+        manager: CommandManager,
+    ) -> None:
+        """Create_command raises NotCustomCommandError for non-custom conflicts."""
+        with pytest.raises(NotCustomCommandError) as exc_info:
             await manager.create_command("about", "Info")
         assert exc_info.value.name == "about"
+
+    async def test_create_rejects_inactive_conflict(
+        self,
+        manager: CommandManager,
+        command_dispatcher: CommandDispatcher,
+        module_context: ModuleContext,
+    ) -> None:
+        """Create_command raises InactiveCommandError for inactive custom conflicts."""
+        await manager.create_command("greet", "Hi")
+        module_context.commands.unregister("greet")
+        _register_foreign_command(command_dispatcher, "greet")
+        with pytest.raises(InactiveCommandError) as exc_info:
+            await manager.create_command("greet", "Info")
+        assert exc_info.value.name == "greet"
 
     async def test_create_rollback_on_db_failure(
         self,
@@ -1176,6 +1200,20 @@ class TestAddCommand:
 
         assert _send_bodies(owncast_client)[0] == (
             "Command !greet already exists. Use '!editcommand' to modify it."
+        )
+
+    async def test_not_custom_conflict(
+        self,
+        event_dispatcher: EventDispatcher,
+        owncast_client: RecordingOwncastClient,
+    ) -> None:
+        """!addcommand with a non-custom command name reports the right error."""
+        user = make_user(is_moderator=True)
+        event = make_chat_event(raw_body="!addcommand !about Hacked", user=user)
+        await event_dispatcher.dispatch(EventType.CHAT, event)
+
+        assert _send_bodies(owncast_client)[0] == (
+            "That command is not a custom command and cannot be modified."
         )
 
 
@@ -1897,6 +1935,7 @@ class TestInactiveCommandRejection:
         "raw_body",
         [
             pytest.param("!editcommand !greet New!", id="editcommand"),
+            pytest.param("!addcommand !greet New!", id="addcommand"),
             pytest.param("!commandmodonly !greet on", id="commandmodonly"),
             pytest.param("!resetcommand !greet", id="resetcommand"),
             pytest.param("!commandcooldown !greet 10", id="commandcooldown"),

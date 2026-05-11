@@ -156,11 +156,19 @@ class CommandManager:
         :param response: Response template.
         :return: Snapshot of the created command.
         :raises InvalidNameError: If name is invalid.
-        :raises CommandAlreadyExistsError: If name conflicts with any command.
+        :raises CommandAlreadyExistsError: If name conflicts with a custom command.
+        :raises NotCustomCommandError: If name conflicts with a non-custom command.
+        :raises InactiveCommandError: If name conflicts with an inactive custom command.
         """
         if not NAME_RE.match(name):
             raise InvalidNameError(name)
         if self._commands.exists(name):
+            try:
+                command = await self._repo.get(name)
+            except CommandNotFoundError as err:
+                raise NotCustomCommandError(name) from err
+            if self._commands.get(command.name) is None:
+                raise InactiveCommandError(command.name)
             raise CommandAlreadyExistsError(name)
 
         default_cooldown: int = self._ctx.config.get("default_cooldown", 5)

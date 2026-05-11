@@ -74,6 +74,17 @@ async def addcommand(ctx: CommandContext) -> None:
             f"Use '{prefix}editcommand' to modify it."
         )
         return
+    except NotCustomCommandError:
+        await ctx.owncast_client.send_message(
+            "That command is not a custom command and cannot be modified."
+        )
+        return
+    except InactiveCommandError as e:
+        await ctx.owncast_client.send_message(
+            f"Custom command {prefix}{e.name} is disabled because another module "
+            f"registered the same name. Delete it or resolve the conflict to re-enable."
+        )
+        return
 
     await ctx.owncast_client.send_message(f"Command {prefix}{cmd.name} created.")
 
