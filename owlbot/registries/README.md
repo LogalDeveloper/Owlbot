@@ -26,7 +26,7 @@ build the right context before invoking the handler.
 ```mermaid
 flowchart LR
     Decorator["@on_* decorator marks a handler"] --> Loader["ModuleLoader scans imported module"]
-    Dynamic["module code registers handlers at runtime"] -->|ctx.commands/events/routes.register()| Dispatcher["domain dispatcher"]
+    Dynamic["module code calls register on ctx.commands, ctx.events, or ctx.routes"] --> Dispatcher["domain dispatcher"]
     Loader --> Dispatcher
     Dispatcher --> Registry["domain registry stores metadata"]
     Registry --> Dispatcher
