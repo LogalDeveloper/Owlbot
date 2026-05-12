@@ -1768,6 +1768,25 @@ class TestRoutes:
         assert resp.status == 200
         assert expected in await resp.text()
 
+    async def test_current_page_confirms_recorded_vote(
+        self,
+        module_context: ModuleContext,
+        route_client: TestClient[Any, Any],
+        session_manager: SessionManager,
+    ) -> None:
+        """GET /current confirms an already-recorded vote."""
+        manager = get_manager(module_context)
+        user = make_user(id="alice", is_authenticated=True)
+        await _create_poll(manager)
+        await manager.record_vote(user, {1})
+        headers = _session_headers(session_manager, user=user)
+
+        resp = await route_client.get("/owlbot/polls/current", headers=headers)
+
+        assert resp.status == 200
+        body = await resp.text()
+        assert "Your vote has been recorded." in body
+
     async def test_vote_submit_records_and_redirects(
         self,
         module_context: ModuleContext,
