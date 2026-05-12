@@ -74,8 +74,8 @@ class RouteRegistry:
         # Ordered list of route groups for pattern matching.
         # Each group represents a unique path pattern with one or more handlers.
         self._groups: list[_RouteGroup] = []
-        # Maps module_name -> list of full_paths (for cleanup).
-        self._module_routes: dict[str, list[str]] = defaultdict(list)
+        # Maps module_name -> full_paths owned by that module (for cleanup).
+        self._module_routes: defaultdict[str, set[str]] = defaultdict(set)
         logger.debug("RouteRegistry initialized.")
 
     def _find_group(self, full_path: str) -> _RouteGroup | None:
@@ -155,8 +155,7 @@ class RouteRegistry:
         else:
             group.handlers.append(info)
 
-        if full_path not in self._module_routes[module_name]:
-            self._module_routes[module_name].append(full_path)
+        self._module_routes[module_name].add(full_path)
 
         module_logger = logging.getLogger(f"owlbot.modules.{module_name}.routes")
         module_logger.debug(
@@ -186,12 +185,11 @@ class RouteRegistry:
                 # Remove entire group.
                 self._groups.pop(i)
                 for handler in group.handlers:
-                    if handler.module_name in self._module_routes:
-                        self._module_routes[handler.module_name] = [
-                            p
-                            for p in self._module_routes[handler.module_name]
-                            if p != full_path
-                        ]
+                    paths = self._module_routes.get(handler.module_name)
+                    if paths is not None:
+                        paths.discard(full_path)
+                        if not paths:
+                            self._module_routes.pop(handler.module_name, None)
                 module_names = {h.module_name for h in group.handlers}
                 for name in module_names:
                     module_logger = logging.getLogger(f"owlbot.modules.{name}.routes")
@@ -209,12 +207,12 @@ class RouteRegistry:
                     still_owns_path = any(
                         h.module_name == module_name for h in group.handlers
                     )
-                    if not still_owns_path and module_name in self._module_routes:
-                        self._module_routes[module_name] = [
-                            p
-                            for p in self._module_routes[module_name]
-                            if p != full_path
-                        ]
+                    if not still_owns_path:
+                        paths = self._module_routes.get(module_name)
+                        if paths is not None:
+                            paths.discard(full_path)
+                            if not paths:
+                                self._module_routes.pop(module_name, None)
                     # Remove the group if no handlers remain.
                     if not group.handlers:
                         self._groups.pop(i)
@@ -304,7 +302,9 @@ class RouteRegistry:
         :param module_name: The module name.
         :return: List of RouteInfo for that module.
         """
-        paths = set(self._module_routes.get(module_name, []))
+        paths = self._module_routes.get(module_name)
+        if not paths:
+            return []
         return [
             handler
             for group in self._groups
@@ -320,7 +320,7 @@ class RouteRegistry:
         :return: Number of route handlers removed.
         """
         module_logger = logging.getLogger(f"owlbot.modules.{module_name}.routes")
-        paths = set(self._module_routes.get(module_name, []))
+        paths = self._module_routes.get(module_name)
 
         if not paths:
             return 0
@@ -594,6 +594,13 @@ class RouteDispatcher:
         module_name = route_info.module_name
         mod_logger = logging.getLogger(f"owlbot.modules.{module_name}.routes")
 
+        guard_response = self._guard_response(
+            route_info,
+            session=session,
+        )
+        if guard_response is not None:
+            return guard_response
+
         module_ctx = self._get_module_context(module_name)
 
         ctx = RouteContext(
@@ -602,13 +609,6 @@ class RouteDispatcher:
             match_info=match_info if match_info is not None else {},
             session=session,
         )
-
-        guard_response = self._guard_response(
-            route_info,
-            session=session,
-        )
-        if guard_response is not None:
-            return guard_response
 
         logger.debug(
             "Calling route handler: %s from module: %s",

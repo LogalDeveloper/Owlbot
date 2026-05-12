@@ -175,10 +175,10 @@ flowchart TD
     Match --> Result{"route match result"}
     Result -->|no path| NotFound["404"]
     Result -->|method not allowed| MethodNotAllowed["405 with Allow header"]
-    Result -->|handler found| Context["build RouteContext"]
-    Context --> Guards{"session/auth/moderator guards pass?"}
+    Result -->|handler found| Guards{"session/auth/moderator guards pass?"}
     Guards -->|no| Guidance["return 401 or 403 guidance page"]
-    Guards -->|yes| Streaming{"streaming route?"}
+    Guards -->|yes| Context["build RouteContext"]
+    Context --> Streaming{"streaming route?"}
     Streaming -->|yes| StreamTask["track streaming task for shutdown"]
     Streaming -->|no| HandlerTask["track non-streaming task for shutdown"]
     StreamTask --> NoTimeout["call handler without timeout"]
@@ -197,11 +197,12 @@ Multiple handlers can share the same path when their HTTP methods do not
 overlap. If a path matches but the method does not, dispatch returns `405` with
 an `Allow` header. If no path matches, dispatch returns `404`.
 
-Route guards run before the handler. `requires_session` needs any valid Owlbot
-browser session; `requires_authenticated` and `requires_moderator` require an
-authenticated user or moderator session. Any guard failure returns before the
-handler is called. Missing or stale sessions return the shared connect guidance
-page, while authentication and moderator failures return `403` guidance pages.
+Route guards run before `RouteContext` is built or the handler is called.
+`requires_session` needs any valid Owlbot browser session;
+`requires_authenticated` and `requires_moderator` require an authenticated user
+or moderator session. Any guard failure returns before module context lookup.
+Missing or stale sessions return the shared connect guidance page, while
+authentication and moderator failures return `403` guidance pages.
 
 Route handlers receive `RouteContext`, which contains the aiohttp request, the
 owning `ModuleContext`, captured path parameters, and the resolved browser
