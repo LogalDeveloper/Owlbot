@@ -1,6 +1,6 @@
 services:
   owlbot:
-    image: git.logal.dev/logaldeveloper/owlbot:latest
+    image: ghcr.io/logaldeveloper/owlbot:latest
     restart: unless-stopped
     ports:
       - "8081:8081"

@@ -68,8 +68,7 @@ class HttpClient:
             headers={
                 "User-Agent": (
                     f"Owlbot/{__version__} "
-                    "(bot; +https://git.logal.dev/"
-                    "LogalDeveloper/Owlbot)"
+                    "(bot; +https://github.com/LogalDeveloper/Owlbot)"
                 ),
             },
         )
