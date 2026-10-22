@@ -339,9 +339,7 @@ class TestRecordingOwncastAdminClient:
         client = RecordingOwncastAdminClient()
         kwargs = {} if secret is None else {"secret": secret}
         assert (
-            await client.create_webhook(
-                "https://example.test/hook", ["CHAT"], **kwargs
-            )
+            await client.create_webhook("https://example.test/hook", ["CHAT"], **kwargs)
             == ""
         )
         assert client.calls == [

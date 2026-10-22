@@ -937,6 +937,28 @@ class TestRoundTrip:
         )
         assert users == {"total": 0, "results": []}
 
+    async def test_user_listing_and_deletion_round_trip(
+        self,
+        owncast_admin_client: OwncastAdminClient,
+        owncast_server: str,
+        owncast_http: HttpClient,
+    ) -> None:
+        """Register a user, find it through the admin listing, then delete it."""
+        name = f"delete-test-{secrets.token_hex(4)}"
+        async with owncast_http.post(
+            f"{owncast_server}/api/chat/register", json={"displayName": name}
+        ) as response:
+            assert response.status == 200
+            user = await response.json()
+        users = await owncast_admin_client.get_users(search=name, status="active")
+        assert users["total"] == 1
+        assert users["results"][0]["id"] == user["id"]
+        assert isinstance(await owncast_admin_client.delete_user(user["id"]), str)
+        assert await owncast_admin_client.get_users(search=name) == {
+            "total": 0,
+            "results": [],
+        }
+
     async def test_get_directory_followers_is_empty_on_fresh_server(
         self, owncast_admin_client: OwncastAdminClient
     ) -> None:
@@ -1246,20 +1268,19 @@ class TestSmoke:
         self, owncast_admin_client: OwncastAdminClient
     ) -> None:
         """Deleting a missing user reaches the new admin route."""
-        assert isinstance(
-            await owncast_admin_client.delete_user("nonexistent-user"), str
-        )
+        with pytest.raises(OwncastError, match="not found") as exc_info:
+            await owncast_admin_client.delete_user("nonexistent-user")
+        assert exc_info.value.status == 400
 
     async def test_remove_unknown_follower(
         self, owncast_admin_client: OwncastAdminClient
     ) -> None:
         """Removing an unknown follower reaches the new admin route."""
-        assert isinstance(
+        with pytest.raises(OwncastError) as exc_info:
             await owncast_admin_client.remove_follower(
                 "https://example.test/actors/nobody"
-            ),
-            str,
-        )
+            )
+        assert exc_info.value.status == 400
 
     async def test_add_invalid_federated_server(
         self, owncast_admin_client: OwncastAdminClient
@@ -1272,7 +1293,7 @@ class TestSmoke:
     async def test_remove_unknown_federated_server(
         self, owncast_admin_client: OwncastAdminClient
     ) -> None:
-        """An unknown federated server ID returns the documented missing status."""
-        with pytest.raises(OwncastError) as exc_info:
-            await owncast_admin_client.remove_federated_server(999999)
-        assert exc_info.value.status == 404
+        """Removing a missing federated server is idempotent in Owncast v0.3.0."""
+        assert isinstance(
+            await owncast_admin_client.remove_federated_server(999999), str
+        )
