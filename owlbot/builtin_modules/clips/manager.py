@@ -303,7 +303,7 @@ class ClipManager:
                     thumbnail_path,
                     duration=actual_duration,
                 )
-            except Exception:  # noqa: BLE001  # best-effort; clip already saved, thumbnail is optional
+            except Exception:  # best-effort; clip already saved, thumbnail is optional
                 self._ctx.logger.warning(
                     "Thumbnail generation failed for clip %d.",
                     clip.id,
@@ -316,7 +316,7 @@ class ClipManager:
             if clip_id is not None:
                 try:
                     await self._repo.delete(clip_id)
-                except Exception:  # noqa: BLE001  # last-resort; cleanup itself failed, just log it
+                except Exception:  # last-resort; cleanup itself failed, just log it
                     self._ctx.logger.warning(
                         "Failed to clean up DB row for clip %d.",
                         clip_id,
