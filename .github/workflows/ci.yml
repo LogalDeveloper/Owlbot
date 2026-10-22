@@ -160,7 +160,9 @@ jobs:
         run: uv sync --locked --python ${{ matrix.python-version }}
 
       - name: Install FFmpeg for Owncast integration tests
+        timeout-minutes: 5
         run: |
+          echo 'https://archive.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors.txt
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends ffmpeg
 
