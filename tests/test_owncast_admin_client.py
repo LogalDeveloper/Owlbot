@@ -112,7 +112,12 @@ async def test_get_users_passes_pagination_and_filters(
             "/config/rtmpserverbindaddress",
             {"value": "127.0.0.1"},
         ),
-        ("set_autoplay", {"mode": "sound-only"}, "/config/autoplay", {"value": "sound-only"}),
+        (
+            "set_autoplay",
+            {"mode": "sound-only"},
+            "/config/autoplay",
+            {"value": "sound-only"},
+        ),
         (
             "set_federation_enable_quotes",
             {"enabled": True},

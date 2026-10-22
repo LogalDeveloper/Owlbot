@@ -404,9 +404,7 @@ class OwncastAdminClient:
 
     async def remove_follower(self, actor_iri: str) -> str:
         """Remove a follower by their ActivityPub actor IRI."""
-        return await self._post(
-            "/api/admin/followers/remove", {"actorIRI": actor_iri}
-        )
+        return await self._post("/api/admin/followers/remove", {"actorIRI": actor_iri})
 
     async def upload_emoji(self, name: str, base64_data_url: str) -> str:
         """Upload a custom emoji from a base64 data URL.

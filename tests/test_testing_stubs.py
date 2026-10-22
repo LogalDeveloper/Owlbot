@@ -314,6 +314,47 @@ class TestRecordingOwncastClient:
 class TestRecordingOwncastAdminClient:
     """Exercises the RecordingOwncastAdminClient stub."""
 
+    async def test_get_users_records_default_filters(self) -> None:
+        """User listing records defaults as well as explicitly supplied filters."""
+        client = RecordingOwncastAdminClient()
+        assert await client.get_users() == {}
+        assert client.calls == [
+            (
+                "get_users",
+                {
+                    "offset": 0,
+                    "limit": 25,
+                    "search": "",
+                    "status": "all",
+                    "sort": "desc",
+                },
+            )
+        ]
+
+    @pytest.mark.parametrize("secret", [None, "", "test-signing-secret"])
+    async def test_create_webhook_records_optional_secret(
+        self, secret: str | None
+    ) -> None:
+        """Webhook signing secrets are faithfully recorded, including omissions."""
+        client = RecordingOwncastAdminClient()
+        kwargs = {} if secret is None else {"secret": secret}
+        assert (
+            await client.create_webhook(
+                "https://example.test/hook", ["CHAT"], **kwargs
+            )
+            == ""
+        )
+        assert client.calls == [
+            (
+                "create_webhook",
+                {
+                    "url": "https://example.test/hook",
+                    "events": ["CHAT"],
+                    "secret": secret,
+                },
+            )
+        ]
+
     async def test_get_status_records_and_returns_dict(self) -> None:
         """get_status records the call and returns {}."""
         client = RecordingOwncastAdminClient()
