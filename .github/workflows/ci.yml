@@ -159,11 +159,24 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --python ${{ matrix.python-version }}
 
+      - name: Get runner image version
+        id: runner-image
+        run: echo "version=${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache FFmpeg package downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ffmpeg-debs/*.deb
+          key: ffmpeg-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.runner-image.outputs.version }}-${{ hashFiles('.github/workflows/ci.yml') }}
+
       - name: Install FFmpeg for Owncast integration tests
-        timeout-minutes: 5
+        timeout-minutes: 15
         run: |
+          mkdir -p "$RUNNER_TEMP/ffmpeg-debs/partial"
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends ffmpeg
+          sudo apt-get -o Dir::Cache::archives="$RUNNER_TEMP/ffmpeg-debs" \
+            -o APT::Keep-Downloaded-Packages=true \
+            install --yes --no-install-recommends ffmpeg
 
       - name: Run tests with Pytest
         run: uv run pytest -v --cov --cov-report= --run-integration
