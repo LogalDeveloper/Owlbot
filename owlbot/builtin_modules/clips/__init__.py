@@ -107,7 +107,7 @@ async def setup(ctx: ModuleContext) -> None:
         if status.get("online", False):
             ctx.logger.info("Stream is already live. Starting HLS cache.")
             await manager.start_caching()
-    except Exception:  # noqa: BLE001  # best-effort; non-fatal if Owncast is unreachable during setup
+    except Exception:  # best-effort; non-fatal if Owncast is unreachable during setup
         ctx.logger.warning(
             "Could not check Owncast status during setup.", exc_info=True
         )
