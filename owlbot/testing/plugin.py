@@ -32,10 +32,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from unittest.mock import Mock
 
 import pytest
 import pytest_asyncio
-from aiohttp import web
+from aiohttp import ClientResponse, web
 from aioresponses import aioresponses
 from ruamel.yaml import YAML
 
@@ -228,7 +229,7 @@ def templates(module_pkg: ModuleType | None, tmp_path: Path) -> ModuleTemplates:
 
 
 @pytest.fixture
-def mocked_http() -> Iterator[aioresponses]:
+def mocked_http(monkeypatch: pytest.MonkeyPatch) -> Iterator[aioresponses]:
     """Yield an ``aioresponses`` controller intercepting aiohttp requests.
 
     Active for every test that uses the ``http`` fixture (directly or via
@@ -240,6 +241,17 @@ def mocked_http() -> Iterator[aioresponses]:
     unmocked so the ``route_client`` fixture can reach its own aiohttp
     test server.
     """
+    response_init = ClientResponse.__init__
+
+    def init_compatible_response(
+        response: ClientResponse, *args: Any, **kwargs: Any
+    ) -> None:
+        # aioresponses uses aiohttp's pre-3.14 signature; 3.14 requires a
+        # stream_writer and reads its output_size for completed requests.
+        kwargs.setdefault("stream_writer", Mock(output_size=0))
+        response_init(response, *args, **kwargs)
+
+    monkeypatch.setattr(ClientResponse, "__init__", init_compatible_response)
     with aioresponses(passthrough=["http://127.0.0.1", "http://localhost"]) as m:
         yield m
 
