@@ -51,14 +51,18 @@ def _vote_error_response(
         return "There is no active poll.", False
     if isinstance(error, PollAuthenticationRequiredError):
         return (
-            "This poll requires an authenticated account to vote. "
-            f'<a href="{vote_url}"><u>Click here to view live results</u></a>.',
+            (
+                "This poll requires an authenticated account to vote. "
+                f'<a href="{vote_url}"><u>Click here to view live results</u></a>.'
+            ),
             True,
         )
     if isinstance(error, DuplicateVoteError):
         return (
-            "You have already voted in this poll. "
-            f'<a href="{vote_url}"><u>Click here to view live results</u></a>.',
+            (
+                "You have already voted in this poll. "
+                f'<a href="{vote_url}"><u>Click here to view live results</u></a>.'
+            ),
             True,
         )
     return str(error), False

@@ -95,6 +95,7 @@ ignore = [
     "PLR0912", # too many branches: inherent in parsers, validators, CLI
     "PLR0913", # too many arguments: API surfaces and constructors need them
     "PLR0915", # too many statements: inherent in parsers, validators, CLI
+    "PLR0917", # too many positional arguments: complements PLR0913 ignore
     "TRY003",  # inline exception messages are fine (complements EM ignore)
     "TRY301",  # raise inside try: guard clauses don't need helper functions
 ]
