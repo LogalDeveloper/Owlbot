@@ -72,27 +72,27 @@ class _PlatformRelease(NamedTuple):
 _PLATFORM_RELEASES: Final[dict[tuple[str, str], _PlatformRelease]] = {
     ("Linux", "x86_64"): _PlatformRelease(
         "linux-64bit",
-        "3a197c123d80e5902e70691483180c3305b7784e7c6efcd26730bfd0d5bbd465",
+        "8753c12ce58b7d1120c815e49d19f8fd3cc1a53dc8e0abb581e212694ca670d8",
     ),
     ("Linux", "i686"): _PlatformRelease(
         "linux-32bit",
-        "daf6a2df265260d950fa544af98a7f0ee5a89c86dd047d1c810a13cae576a71e",
+        "f4bc74b91ecc82a17cb12d18666199efab22151f48854ecaeb79d467ccdd18fb",
     ),
     ("Linux", "aarch64"): _PlatformRelease(
         "linux-arm64",
-        "4b2b9db1d2f899b854d1c670626f839ae7da6808daef4d73f0208432e16e1c65",
+        "81dddbe81122fb998a071035f50aa3f6cbfc0a39d72a7a37ecb80118846b4256",
     ),
     ("Linux", "armv7l"): _PlatformRelease(
         "linux-arm7",
-        "b6d5b1f06b3f5b78ea3c2af1bf582c1cae521235632af0c9383f4f7af0527738",
+        "d88a095d6424a97642b2f3c0188127bfb3cd36b0f46d0dafee36a496514f7234",
     ),
     ("Darwin", "x86_64"): _PlatformRelease(
         "macOS-64bit",
-        "bfef49e719ad9316554855df44a9ac21aec5f2a74de79eef15b6947cb383c2bb",
+        "66f603fcea7ba85a6bd2848567d11149c267ea78828b037a914059fad7f88af4",
     ),
     ("Darwin", "arm64"): _PlatformRelease(
         "macOS-arm64",
-        "7c1479e3a2e2185587b2197511860b0446f9b96591c76a20d1e2319a346f4833",
+        "3d4dcca63d448bd967d4a92ad144922ff678820e97933f88f5808c98cb82e7e7",
     ),
 }
 

@@ -1,4 +1,5 @@
 owncast:
+  # Owlbot targets Owncast v0.3.0.
   # REQUIRED: URL where viewers access your stream.
   # Example: "https://stream.logal.dev"
   url: ""

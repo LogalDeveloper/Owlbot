@@ -189,6 +189,11 @@ class RecordingOwncastAdminClient(_AdminBase):
         self.calls.append(RecordedCall("get_active_viewers", {}))
         return []
 
+    async def get_playback_clients(self) -> list[dict[str, Any]]:
+        """Get active playback clients and their current playback health."""
+        self.calls.append(RecordedCall("get_playback_clients", {}))
+        return []
+
     async def get_hardware_stats(self) -> dict[str, Any]:
         """Get server hardware statistics (CPU, memory, disk)."""
         self.calls.append(RecordedCall("get_hardware_stats", {}))
@@ -255,6 +260,35 @@ class RecordingOwncastAdminClient(_AdminBase):
         self.calls.append(RecordedCall("get_moderators", {}))
         return []
 
+    async def get_users(
+        self,
+        offset: int = 0,
+        limit: int = 25,
+        *,
+        search: str = "",
+        status: str = "all",
+        sort: str = "desc",
+    ) -> dict[str, Any]:
+        """Get paginated users, optionally filtered by display name and status."""
+        self.calls.append(
+            RecordedCall(
+                "get_users",
+                {
+                    "offset": offset,
+                    "limit": limit,
+                    "search": search,
+                    "status": status,
+                    "sort": sort,
+                },
+            )
+        )
+        return {}
+
+    async def delete_user(self, user_id: str) -> str:
+        """Delete a chat user and their chat messages."""
+        self.calls.append(RecordedCall("delete_user", {"user_id": user_id}))
+        return ""
+
     async def get_logs(self) -> list[dict[str, Any]]:
         """Get server logs."""
         self.calls.append(RecordedCall("get_logs", {}))
@@ -282,6 +316,11 @@ class RecordingOwncastAdminClient(_AdminBase):
         self.calls.append(RecordedCall("get_blocked_followers", {}))
         return []
 
+    async def get_directory_followers(self) -> list[dict[str, Any]]:
+        """Get directories featuring this server."""
+        self.calls.append(RecordedCall("get_directory_followers", {}))
+        return []
+
     async def approve_follower(self, actor_iri: str, *, approved: bool) -> str:
         """Approve or reject a follow request."""
         self.calls.append(
@@ -289,6 +328,11 @@ class RecordingOwncastAdminClient(_AdminBase):
                 "approve_follower", {"actor_iri": actor_iri, "approved": approved}
             )
         )
+        return ""
+
+    async def remove_follower(self, actor_iri: str) -> str:
+        """Remove a follower by their ActivityPub actor IRI."""
+        self.calls.append(RecordedCall("remove_follower", {"actor_iri": actor_iri}))
         return ""
 
     async def upload_emoji(self, name: str, base64_data_url: str) -> str:
@@ -458,6 +502,11 @@ class RecordingOwncastAdminClient(_AdminBase):
         self.calls.append(RecordedCall("set_rtmp_port", {"port": port}))
         return ""
 
+    async def set_rtmp_bind_address(self, address: str) -> str:
+        """Set the RTMP server bind address."""
+        self.calls.append(RecordedCall("set_rtmp_bind_address", {"address": address}))
+        return ""
+
     async def set_socket_host_override(self, host: str) -> str:
         """Set the WebSocket host override."""
         self.calls.append(RecordedCall("set_socket_host_override", {"host": host}))
@@ -473,6 +522,11 @@ class RecordingOwncastAdminClient(_AdminBase):
     async def set_nsfw(self, *, nsfw: bool) -> str:
         """Set the NSFW flag for the server."""
         self.calls.append(RecordedCall("set_nsfw", {"nsfw": nsfw}))
+        return ""
+
+    async def set_autoplay(self, mode: str) -> str:
+        """Set autoplay mode to ``off``, ``always``, or ``sound-only``."""
+        self.calls.append(RecordedCall("set_autoplay", {"mode": mode}))
         return ""
 
     async def set_directory_enabled(self, *, enabled: bool) -> str:
@@ -562,6 +616,18 @@ class RecordingOwncastAdminClient(_AdminBase):
         )
         return ""
 
+    async def set_federation_enable_quotes(self, *, enabled: bool) -> str:
+        """Enable or disable quoting the server's federated posts."""
+        self.calls.append(
+            RecordedCall("set_federation_enable_quotes", {"enabled": enabled})
+        )
+        return ""
+
+    async def set_federation_hide_followers(self, *, hide: bool) -> str:
+        """Hide or show the followers tab."""
+        self.calls.append(RecordedCall("set_federation_hide_followers", {"hide": hide}))
+        return ""
+
     async def set_federation_username(self, name: str) -> str:
         """Set the federation (ActivityPub) username."""
         self.calls.append(RecordedCall("set_federation_username", {"name": name}))
@@ -580,6 +646,28 @@ class RecordingOwncastAdminClient(_AdminBase):
             RecordedCall("set_federation_blocked_domains", {"domains": domains})
         )
         return ""
+
+    async def get_federated_servers(self) -> dict[str, Any]:
+        """Get federated servers, including pending follows."""
+        self.calls.append(RecordedCall("get_federated_servers", {}))
+        return {}
+
+    async def add_federated_server(self, url: str) -> str:
+        """Add a federated Owncast server by URL."""
+        self.calls.append(RecordedCall("add_federated_server", {"url": url}))
+        return ""
+
+    async def remove_federated_server(self, server_id: int) -> str:
+        """Remove a federated server by its numeric ID."""
+        self.calls.append(
+            RecordedCall("remove_federated_server", {"server_id": server_id})
+        )
+        return ""
+
+    async def get_feature_requests(self) -> dict[str, Any]:
+        """Get pending requests to feature this server."""
+        self.calls.append(RecordedCall("get_feature_requests", {}))
+        return {}
 
     async def set_discord_notifications(
         self, *, enabled: bool, webhook: str, go_live_message: str
@@ -619,10 +707,14 @@ class RecordingOwncastAdminClient(_AdminBase):
         self.calls.append(RecordedCall("delete_webhook", {"webhook_id": webhook_id}))
         return ""
 
-    async def create_webhook(self, url: str, events: list[str]) -> str:
+    async def create_webhook(
+        self, url: str, events: list[str], *, secret: str | None = None
+    ) -> str:
         """Create a new webhook."""
         self.calls.append(
-            RecordedCall("create_webhook", {"url": url, "events": events})
+            RecordedCall(
+                "create_webhook", {"url": url, "events": events, "secret": secret}
+            )
         )
         return ""
 
