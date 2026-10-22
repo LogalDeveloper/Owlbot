@@ -159,6 +159,11 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --python ${{ matrix.python-version }}
 
+      - name: Install FFmpeg for Owncast integration tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ffmpeg
+
       - name: Run tests with Pytest
         run: uv run pytest -v --cov --cov-report= --run-integration
 
