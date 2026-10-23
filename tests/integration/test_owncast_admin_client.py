@@ -897,7 +897,12 @@ class TestRoundTrip:
         url = f"https://example.test/webhook-{secrets.token_hex(4)}"
         before = await owncast_admin_client.get_webhooks()
         assert url not in {entry.get("url") for entry in before}
-        assert isinstance(await owncast_admin_client.create_webhook(url, ["CHAT"]), str)
+        assert isinstance(
+            await owncast_admin_client.create_webhook(
+                url, ["CHAT"], secret=secrets.token_urlsafe(32)
+            ),
+            str,
+        )
         with_webhook = await owncast_admin_client.get_webhooks()
         matching = [e for e in with_webhook if e.get("url") == url]
         assert len(matching) == 1, f"expected one match, got {matching}"
@@ -916,6 +921,110 @@ class TestRoundTrip:
         await owncast_admin_client.set_directory_enabled(enabled=not before)
         after = (await owncast_admin_client.get_server_config())["yp"]["enabled"]
         assert after is not before
+
+    async def test_get_playback_clients_is_empty_on_fresh_server(
+        self, owncast_admin_client: OwncastAdminClient
+    ) -> None:
+        """A fresh server has no active video playback clients."""
+        assert await owncast_admin_client.get_playback_clients() == []
+
+    async def test_get_users_supports_filters(
+        self, owncast_admin_client: OwncastAdminClient
+    ) -> None:
+        """Paginated user listing accepts all documented filters."""
+        users = await owncast_admin_client.get_users(
+            0, 5, search="nonexistent-user", status="all", sort="asc"
+        )
+        assert users == {"total": 0, "results": []}
+
+    async def test_user_listing_and_deletion_round_trip(
+        self,
+        owncast_admin_client: OwncastAdminClient,
+        owncast_server: str,
+        owncast_http: HttpClient,
+    ) -> None:
+        """Register a user, find it through the admin listing, then delete it."""
+        name = f"delete-test-{secrets.token_hex(4)}"
+        async with owncast_http.post(
+            f"{owncast_server}/api/chat/register", json={"displayName": name}
+        ) as response:
+            assert response.status == 200
+            user = await response.json()
+        users = await owncast_admin_client.get_users(search=name, status="active")
+        assert users["total"] == 1
+        assert users["results"][0]["id"] == user["id"]
+        assert isinstance(await owncast_admin_client.delete_user(user["id"]), str)
+        assert await owncast_admin_client.get_users(search=name) == {
+            "total": 0,
+            "results": [],
+        }
+
+    async def test_get_directory_followers_is_empty_on_fresh_server(
+        self, owncast_admin_client: OwncastAdminClient
+    ) -> None:
+        """A new server is not featured by any directory."""
+        assert await owncast_admin_client.get_directory_followers() == []
+
+    async def test_get_federated_servers_is_empty_on_fresh_server(
+        self, owncast_admin_client: OwncastAdminClient
+    ) -> None:
+        """A new server has no outgoing federated server follows."""
+        assert await owncast_admin_client.get_federated_servers() == {"servers": []}
+
+    async def test_get_feature_requests_is_empty_on_fresh_server(
+        self, owncast_admin_client: OwncastAdminClient
+    ) -> None:
+        """A new server has no pending directory feature requests."""
+        assert await owncast_admin_client.get_feature_requests() == {"requests": []}
+
+    @pytest.mark.parametrize("mode", ["off", "always", "sound-only"])
+    async def test_set_autoplay(
+        self, owncast_admin_client: OwncastAdminClient, mode: str
+    ) -> None:
+        """Every documented autoplay mode round-trips through server config."""
+        before = (await owncast_admin_client.get_server_config())["instanceDetails"][
+            "autoplay"
+        ]
+        try:
+            await owncast_admin_client.set_autoplay(mode)
+            after = (await owncast_admin_client.get_server_config())["instanceDetails"][
+                "autoplay"
+            ]
+            assert after == mode
+        finally:
+            await owncast_admin_client.set_autoplay(before)
+
+    async def test_set_federation_enable_quotes(
+        self, owncast_admin_client: OwncastAdminClient
+    ) -> None:
+        """Quote support is reflected in federation config."""
+        before = (await owncast_admin_client.get_server_config())["federation"][
+            "enableQuotes"
+        ]
+        try:
+            await owncast_admin_client.set_federation_enable_quotes(enabled=not before)
+            after = (await owncast_admin_client.get_server_config())["federation"][
+                "enableQuotes"
+            ]
+            assert after is not before
+        finally:
+            await owncast_admin_client.set_federation_enable_quotes(enabled=before)
+
+    async def test_set_federation_hide_followers(
+        self, owncast_admin_client: OwncastAdminClient
+    ) -> None:
+        """Follower-tab visibility is reflected in federation config."""
+        before = (await owncast_admin_client.get_server_config())["federation"][
+            "hideFollowersTab"
+        ]
+        try:
+            await owncast_admin_client.set_federation_hide_followers(hide=not before)
+            after = (await owncast_admin_client.get_server_config())["federation"][
+                "hideFollowersTab"
+            ]
+            assert after is not before
+        finally:
+            await owncast_admin_client.set_federation_hide_followers(hide=before)
 
 
 class TestSmoke:
@@ -1146,3 +1255,45 @@ class TestSmoke:
     ) -> None:
         """reset_yp_registration returns a response dict."""
         assert isinstance(await owncast_admin_client.reset_yp_registration(), dict)
+
+    async def test_set_rtmp_bind_address(
+        self, owncast_admin_client: OwncastAdminClient
+    ) -> None:
+        """A loopback RTMP bind address is accepted without restarting ingest."""
+        assert isinstance(
+            await owncast_admin_client.set_rtmp_bind_address("127.0.0.1"), str
+        )
+
+    async def test_delete_unknown_user(
+        self, owncast_admin_client: OwncastAdminClient
+    ) -> None:
+        """Deleting a missing user reaches the new admin route."""
+        with pytest.raises(OwncastError, match="not found") as exc_info:
+            await owncast_admin_client.delete_user("nonexistent-user")
+        assert exc_info.value.status == 400
+
+    async def test_remove_unknown_follower(
+        self, owncast_admin_client: OwncastAdminClient
+    ) -> None:
+        """Removing an unknown follower reaches the new admin route."""
+        with pytest.raises(OwncastError) as exc_info:
+            await owncast_admin_client.remove_follower(
+                "https://example.test/actors/nobody"
+            )
+        assert exc_info.value.status == 400
+
+    async def test_add_invalid_federated_server(
+        self, owncast_admin_client: OwncastAdminClient
+    ) -> None:
+        """Invalid server URLs fail validation at the federated server route."""
+        with pytest.raises(OwncastError) as exc_info:
+            await owncast_admin_client.add_federated_server("not-a-url")
+        assert exc_info.value.status == 400
+
+    async def test_remove_unknown_federated_server(
+        self, owncast_admin_client: OwncastAdminClient
+    ) -> None:
+        """Removing a missing federated server is idempotent in Owncast v0.3.0."""
+        assert isinstance(
+            await owncast_admin_client.remove_federated_server(999999), str
+        )

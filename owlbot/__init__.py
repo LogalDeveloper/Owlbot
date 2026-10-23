@@ -24,7 +24,7 @@ try:
 except ImportError:
     __version__ = "0.0.0+unknown"
 
-OWNCAST_TARGET_VERSION = "0.2.5"
+OWNCAST_TARGET_VERSION = "0.3.0"
 
 from .bot import Owlbot, StartupError
 
