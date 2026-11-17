@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.19
 
 # Build stage
-FROM python:3.14-slim-trixie AS build
+FROM python:3.15-slim-trixie AS build
 
 COPY --from=ghcr.io/astral-sh/uv:0.13.4 /uv /usr/local/bin/uv
 
@@ -23,7 +23,7 @@ RUN --mount=type=bind,source=.git,target=/app/.git \
     uv sync --no-dev --locked --no-editable
 
 # Runtime stage
-FROM python:3.14-slim-trixie AS runtime
+FROM python:3.15-slim-trixie AS runtime
 
 LABEL org.opencontainers.image.title="Owlbot" \
     org.opencontainers.image.description="A modular, event-driven chat bot for Owncast" \
